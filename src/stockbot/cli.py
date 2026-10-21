@@ -91,7 +91,8 @@ def _ctx(cfg, db, data, clock, clients) -> AppContext:
                       Budget(db, cfg, clock), clients, clock)
 
 
-async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool) -> int:
+async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool,
+                  max_cycles: int | None = None) -> int:
     from stockbot.data.recorded import RecordedData
     clock = ReplayClock(datetime.now(UTC))
     data = RecordedData(data_dir, clock)
@@ -106,6 +107,9 @@ async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fa
         while t <= s.close_utc + REPLAY_TAIL:
             clock.set(t)
             await daemon.step(t)
+            if max_cycles is not None and daemon.cycles_run >= max_cycles:
+                log.info("stopped after %d cycle(s)", daemon.cycles_run)
+                return 0
             t += timedelta(minutes=1)
         log.info("replayed %s", s.day)
     return 0
@@ -162,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--to", dest="d1", required=True)
     rp.add_argument("--fake-llm", action="store_true")
     rp.add_argument("--serve", action="store_true", help="keep dashboard up after replay")
+    rp.add_argument("--max-cycles", type=int, help="stop after N decision cycles (cheap real-model smoke test)")
     for name in ("pause", "resume"):
         sp = sub.add_parser(name)
         sp.add_argument("arm", nargs="?")
@@ -196,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_record(cfg, a.days, Path(a.out)))
         if a.cmd == "replay":
             rc = asyncio.run(_replay(cfg, db, Path(a.data), date.fromisoformat(a.d0),
-                                     date.fromisoformat(a.d1), a.fake_llm))
+                                     date.fromisoformat(a.d1), a.fake_llm, a.max_cycles))
             print(f"replay db: {db_path}")
             if rc == 0 and a.serve:
                 from stockbot.dashboard.app import serve_forever

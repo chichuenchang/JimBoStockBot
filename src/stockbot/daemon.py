@@ -30,6 +30,7 @@ class Daemon:
         self.sessions: list[Session] = []
         self._calendar_day = None
         self._data_failed = False
+        self.cycles_run = 0  # scheduled slots completed by this daemon instance
         s = ctx.cfg.settings
         for arm in ctx.cfg.arms:
             if arm.enabled:
@@ -112,6 +113,7 @@ class Daemon:
                 ok &= await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled"))
         if ok:
             self._mark("cycle", slot)
+            self.cycles_run += 1
 
     async def _wakes(self, tick) -> None:
         if tick is None or not tick.bars:

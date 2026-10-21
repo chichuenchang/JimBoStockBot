@@ -123,3 +123,14 @@ async def test_market_open_flag(tmp_path):
         clock.set(t)
         await daemon.step(t)
         assert daemon.ctx.db.kv_get("market_open") == want
+
+
+def test_max_cycles(tmp_path):
+    data = tmp_path / "rec"
+    make_day(data, DAY)
+    db_path = tmp_path / "r.db"
+    assert main(["--db", str(db_path), "replay", "--data", str(data), "--from", "2026-10-20",
+                 "--to", "2026-10-20", "--fake-llm", "--max-cycles", "1"]) == 0
+    db = DB.open(db_path)
+    for arm in CFG.arms:
+        assert db._q("SELECT COUNT(*) n FROM decisions WHERE arm=?", arm.name)[0]["n"] == 1
