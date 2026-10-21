@@ -8,7 +8,7 @@ from stockbot.clock import ET
 from stockbot.config import AppConfig
 from stockbot.data.base import MarketData
 from stockbot.db import DB
-from stockbot.llm.base import LLMClient, LLMError
+from stockbot.llm.base import LLMClient, LLMError, estimate_usage
 from stockbot.llm.budget import Budget
 from stockbot.report.features import render_computed_table, ticker_features
 
@@ -64,6 +64,9 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
             analysis = res.text.strip()
         except LLMError as e:
             reason = str(e)
+            if e.billable:
+                budget.record(analyst_model, None, "timeout_estimate",
+                              estimate_usage(len(ANALYST_SYSTEM) + len(user)))
 
     parts = [f"# CURRENT STATE OF MARKETS\nIt is {now.astimezone(ET):%A, %B %d, %Y %H:%M} ET.\n"]
     parts.append(analysis if analysis else f"Analyst unavailable: {reason}")

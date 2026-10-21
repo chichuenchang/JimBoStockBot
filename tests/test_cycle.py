@@ -214,3 +214,22 @@ async def test_same_cycle_entries_count_toward_position_cap(tmp_path):
     assert r.orders == 1
     [row] = ctx.db._q("SELECT rule FROM rejections")
     assert row["rule"] == "max_positions"
+
+
+class Slow:
+    async def complete(self, *a, **k):
+        raise LLMError("kimi-k3: timeout after 120s", billable=True)
+
+
+async def test_timeout_cost_estimated_into_budget(tmp_path):
+    ctx, _ = make_ctx(tmp_path, Slow())
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert r.status == "llm_failed"
+    [row] = ctx.db._q("SELECT purpose, cost FROM llm_usage")
+    assert row["purpose"] == "timeout_estimate" and row["cost"] > 0.05
+
+
+async def test_http_error_not_billed(tmp_path):
+    ctx, _ = make_ctx(tmp_path, Boom())
+    await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert ctx.db._q("SELECT COUNT(*) n FROM llm_usage")[0]["n"] == 0

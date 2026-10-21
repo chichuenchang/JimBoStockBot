@@ -31,7 +31,7 @@ class OpenAICompatClient:
                 async with httpx.AsyncClient() as http:
                     resp = await http.post(url, json=body, headers=headers, timeout=self.timeout)
         except httpx.TimeoutException as e:
-            raise LLMError(f"{self.cfg.name}: timeout after {self.timeout}s") from e
+            raise LLMError(f"{self.cfg.name}: timeout after {self.timeout}s", billable=True) from e
         except httpx.HTTPError as e:
             raise LLMError(f"{self.cfg.name}: transport error {type(e).__name__}") from e
         if resp.status_code != 200:

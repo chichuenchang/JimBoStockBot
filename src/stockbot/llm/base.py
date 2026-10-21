@@ -10,7 +10,15 @@ from stockbot.config import ModelCfg
 
 
 class LLMError(Exception):
-    pass
+    """billable=True when the provider likely charged anyway (timeouts: the request ran)."""
+
+    def __init__(self, message: str, billable: bool = False):
+        super().__init__(message)
+        self.billable = billable
+
+
+TIMEOUT_EST_OUTPUT_TOKENS = 4000
+CHARS_PER_TOKEN = 3  # conservative: overestimates input tokens
 
 
 @dataclass(frozen=True)
@@ -18,6 +26,10 @@ class Usage:
     input_tokens: int  # all prompt tokens, cached included
     cached_input_tokens: int
     output_tokens: int
+
+
+def estimate_usage(prompt_chars: int) -> Usage:
+    return Usage(prompt_chars // CHARS_PER_TOKEN, 0, TIMEOUT_EST_OUTPUT_TOKENS)
 
 
 @dataclass(frozen=True)

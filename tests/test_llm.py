@@ -130,3 +130,19 @@ async def test_anthropic_refusal_raises():
                         sdk=SimpleNamespace(beta=SimpleNamespace(messages=stub)))
     with pytest.raises(LLMError, match="refusal"):
         await c.complete("s", "u")
+
+
+@respx.mock
+async def test_timeout_error_is_billable():
+    respx.post(URL).mock(side_effect=httpx.ReadTimeout("t"))
+    with pytest.raises(LLMError) as e:
+        await make_client(KIMI, timeout_s=5).complete("s", "u")
+    assert e.value.billable
+
+
+@respx.mock
+async def test_http_error_not_billable():
+    respx.post(URL).mock(return_value=httpx.Response(500))
+    with pytest.raises(LLMError) as e:
+        await make_client(KIMI, timeout_s=5).complete("s", "u")
+    assert not e.value.billable

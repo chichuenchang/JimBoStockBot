@@ -32,7 +32,7 @@ class AnthropicClient:
                 fallbacks="default",
             )
         except anthropic.APITimeoutError as e:
-            raise LLMError(f"{self.cfg.name}: timeout") from e
+            raise LLMError(f"{self.cfg.name}: timeout", billable=True) from e
         except anthropic.RateLimitError as e:
             raise LLMError(f"{self.cfg.name}: HTTP 429") from e
         except anthropic.APIStatusError as e:

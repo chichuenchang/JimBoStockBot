@@ -94,3 +94,15 @@ async def test_report_records_usage(env):
     data, db, budget = env
     await build_report(data, FakeLLM(["ok"]), budget, CFG, db, NOW)
     assert db.spent(CFG.settings.analyst_model, "2026-10") > 0
+
+
+async def test_report_timeout_billed_estimate(env):
+    from stockbot.llm.base import LLMError
+
+    class Slow:
+        async def complete(self, *a, **k):
+            raise LLMError("x: timeout", billable=True)
+    data, db, budget = env
+    _, text = await build_report(data, Slow(), budget, CFG, db, NOW)
+    assert "Analyst unavailable: x: timeout" in text
+    assert db.spent(CFG.settings.analyst_model, "2026-10") > 0
