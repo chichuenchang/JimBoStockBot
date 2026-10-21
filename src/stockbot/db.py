@@ -195,7 +195,8 @@ class DB:
                 pnl = t["proceeds"] - t["cost"]
                 r_mult = pnl / (t["risk"] * qty) if t["risk"] else None
                 out.append(ClosedTrade(account, sym, parse_ts(t["entry_ts"]), parse_ts(r["ts"]),
-                                       entry, exit_, qty, pnl, r_mult, r["reason"], t["why"]))
+                                       entry, exit_, qty, pnl, r_mult, r["reason"], t["why"],
+                                       bool(r["replayed"])))
                 del open_[sym]
         return out
 

@@ -136,7 +136,8 @@ def trades(db: DB, account: str) -> list[dict]:
     return [{"symbol": t.symbol, "entry_ts": t.entry_ts.isoformat(), "exit_ts": t.exit_ts.isoformat(),
              "entry_price": t.entry_price, "exit_price": t.exit_price, "qty": t.qty,
              "hold_hours": (t.exit_ts - t.entry_ts).total_seconds() / 3600, "pnl": t.pnl,
-             "r_multiple": t.r_multiple, "exit_reason": t.exit_reason, "justification": t.justification}
+             "r_multiple": t.r_multiple, "exit_reason": t.exit_reason, "justification": t.justification,
+             "replayed": t.replayed}
             for t in reversed(db.closed_trades(account))]
 
 
@@ -165,7 +166,8 @@ def rejections(db: DB, account: str, limit: int = 100) -> list[dict]:
 
 
 def fill_markers(db: DB, account: str, symbol: str) -> list[dict]:
-    return [{"time": int(f.ts.timestamp()), "side": f.side, "price": f.price, "reason": f.reason}
+    return [{"time": int(f.ts.timestamp()), "side": f.side, "price": f.price, "reason": f.reason,
+             "replayed": f.replayed}
             for f in db.fills(account) if f.symbol == symbol]
 
 

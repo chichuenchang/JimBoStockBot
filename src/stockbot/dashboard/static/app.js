@@ -127,7 +127,7 @@ function table(id, cols, rows, empty) {
   const el = document.getElementById(id);
   if (!rows.length) { el.innerHTML = `<tr><td class="l muted">${empty}</td></tr>`; return; }
   el.innerHTML = `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
-    `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k]) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
+    `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
 }
 async function loadCandles() {
   const sym = document.getElementById("symbol").value, tf = document.getElementById("tf").value;
@@ -146,7 +146,7 @@ async function loadCandles() {
   candleSeries.setData(res.bars);
   candleSeries.setMarkers(res.markers.map((m) => ({ time: m.time, position: m.side === "buy" ? "belowBar" : "aboveBar",
     color: m.side === "buy" ? css("--series-1") : css("--series-2"), shape: m.side === "buy" ? "arrowUp" : "arrowDown",
-    text: `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}` })).sort((a, b) => a.time - b.time));
+    text: `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}` })).sort((a, b) => a.time - b.time));
   candleChart.timeScale().fitContent();
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
     : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
@@ -165,12 +165,12 @@ async function loadArm() {
   btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(); };
 
   const money = (v) => `<span class="${cls(v)}">${signed(v)}</span>`;
-  table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, fmt],
-    ["price", "price now", 0, fmt], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, fmt],
-    ["profit_target", "target", 0, fmt], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
+  table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
+    ["price", "price now", 0, (v) => fmt(v)], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, (v) => fmt(v)],
+    ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
   table("trades", [["symbol", "stock", 1], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
-    ["entry_price", "in", 0, fmt], ["exit_price", "out", 0, fmt], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
-    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)], ["exit_reason", "exit", 1],
+    ["entry_price", "in", 0, (v) => fmt(v)], ["exit_price", "out", 0, (v) => fmt(v)], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
+    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)], ["exit_reason", "exit", 1, (v, r) => esc(v) + (r.replayed ? ' <span class="chip" title="Filled while catching up after the PC was off">replayed</span>' : "")],
     ["justification", "reason", "wrap"]], trades, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");

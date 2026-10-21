@@ -120,3 +120,15 @@ def test_index_renders(db):
     assert r.status_code == 200 and "Leaderboard" in r.text
     assert client(db).get("/arm/kimi-improved").status_code == 200
     assert client(db).get("/arm/nope").status_code == 404
+
+
+def test_replayed_fills_marked(tmp_path):
+    db = DB.open(tmp_path / "r.db")
+    db.ensure_account("kimi-improved", 10000)
+    db.insert_fill(Fill("kimi-improved", "MSFT", "buy", 1, 100, T0, "entry", False))
+    db.insert_fill(Fill("kimi-improved", "MSFT", "sell", 1, 97, T0 + timedelta(hours=1), "stop", True))
+    c = client(db)
+    [t] = c.get("/api/arm/kimi-improved/trades").json()
+    assert t["replayed"] is True
+    markers = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["markers"]
+    assert [m["replayed"] for m in markers] == [False, True]

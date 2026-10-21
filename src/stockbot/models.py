@@ -84,3 +84,4 @@ class ClosedTrade:
     r_multiple: float | None
     exit_reason: str
     justification: str
+    replayed: bool = False  # exit filled during restart catch-up
