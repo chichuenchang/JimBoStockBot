@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import RealClock, ReplayClock
-from stockbot.config import AppConfig, ConfigError, load_config
+from stockbot.config import AppConfig, ConfigError, api_key, load_config
 from stockbot.daemon import Daemon
 from stockbot.db import DB
 from stockbot.llm.base import make_client
@@ -72,8 +72,10 @@ def _clients(cfg: AppConfig, fake: bool, seed: int = 0) -> dict:
     if fake:
         llm = FakeLLM(fake_trader(seed))
         return {name: llm for name, m in cfg.models.items() if m.enabled}
-    return {name: make_client(m, cfg.settings.llm_timeout_s)
-            for name, m in cfg.models.items() if m.enabled}
+    enabled = {name: m for name, m in cfg.models.items() if m.enabled}
+    for m in enabled.values():
+        api_key(m)  # fail at startup, not every 20 s inside the loop
+    return {name: make_client(m, cfg.settings.llm_timeout_s) for name, m in enabled.items()}
 
 
 def _alpaca():

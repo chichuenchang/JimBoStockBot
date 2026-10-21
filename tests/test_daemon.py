@@ -134,3 +134,14 @@ def test_max_cycles(tmp_path):
     db = DB.open(db_path)
     for arm in CFG.arms:
         assert db._q("SELECT COUNT(*) n FROM decisions WHERE arm=?", arm.name)[0]["n"] == 1
+
+
+def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("stockbot.config.load_dotenv", lambda *a, **k: None)
+    monkeypatch.setattr("stockbot.cli.load_dotenv", lambda *a, **k: None)
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
+    assert main(["--db", str(tmp_path / "x.db"), "run"]) == 2
+    assert "MOONSHOT_API_KEY" in capsys.readouterr().err
