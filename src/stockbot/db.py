@@ -237,6 +237,10 @@ class DB:
             arm, iso(slot_ts), reason, report_id, prompt, raw, parsed_json, status,
             input_tokens, cached_tokens, output_tokens, cost)
 
+    def last_decision_ts(self, arm: str) -> datetime | None:
+        rows = self._q("SELECT MAX(slot_ts) m FROM decisions WHERE arm=?", arm)
+        return parse_ts(rows[0]["m"]) if rows and rows[0]["m"] else None
+
     def insert_rejection(self, arm: str, decision_id: int | None, symbol: str, rule: str,
                          detail: str = "", ts: datetime | None = None) -> None:
         self._x("INSERT INTO rejections(arm,decision_id,symbol,rule,detail,ts) VALUES(?,?,?,?,?,?)",
