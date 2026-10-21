@@ -143,6 +143,11 @@ class DB:
         return [dict(r) for r in self._q(
             "SELECT * FROM orders WHERE symbol=? AND status='pending' ORDER BY id", symbol)]
 
+    def orders_since(self, account: str, ts: datetime) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT * FROM orders WHERE account=? AND created_ts>=? AND status!='cancelled' ORDER BY id",
+            account, iso(ts))]
+
     def mark_order_filled(self, order_id: int, fill_id: int) -> None:
         self._x("UPDATE orders SET status='filled', fill_id=? WHERE id=?", fill_id, order_id)
 
