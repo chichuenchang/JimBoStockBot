@@ -1,0 +1,24 @@
+universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR]
+benchmark_symbol: QQQ
+start_nav: 10000
+slippage_bps: 5
+commission_per_order: 0
+cycle_start: "09:45"
+cycle_end: "15:45"
+cycle_every_min: 45
+report_times: ["09:15", "12:30"]
+analyst_model: deepseek-v4.1-flash
+global_cap_usd: 100
+budget_warn_frac: 0.9
+db_path: data/stockbot.db
+dashboard_port: 8000
+llm_timeout_s: 120
+# improved-arm rules
+risk_per_trade: 0.01
+max_position_frac: 0.25
+max_positions: 5
+max_entries_per_day: 3
+min_rr: 1.5
+min_stop_atr: 0.5
+daily_loss_freeze: 0.03
+max_wakes_per_day: 3
