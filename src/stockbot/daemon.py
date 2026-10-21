@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import floor3
-from stockbot.clock import cycle_slots, et_date, report_slots
+from stockbot.clock import cycle_slots, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import Session
 from stockbot.monitor import monitor_tick, wake_due
@@ -131,6 +131,7 @@ class Daemon:
         db.kv_set("heartbeat", now.isoformat())
         await self._guard("calendar", self._refresh_calendar(now))
         session = self._today(now)
+        db.kv_set("market_open", "1" if session and in_session(now, session) else "0")
         if session is not None:
             await self._guard("benchmark", self._benchmark(now, session))
         tick, replayed = None, False

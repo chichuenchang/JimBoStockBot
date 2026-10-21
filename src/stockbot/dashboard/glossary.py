@@ -1,0 +1,24 @@
+"""Plain-English tooltips for every dashboard metric (user is new to trading)."""
+
+TIPS = {
+    "nav": "Account value now: cash plus what the shares are worth at the latest price.",
+    "return_pct": "How much the account grew or shrank since it started, in percent.",
+    "vs_benchmark_pct": "Return minus the return of simply buying QQQ and holding. Positive means the bot beat it.",
+    "pnl": "Profit or loss in dollars since the start, including open positions.",
+    "costs": "Estimated trading costs: price slippage on each order plus any commission.",
+    "llm_spend": "Money spent on AI model calls for this bot.",
+    "net_after_llm": "Profit or loss after paying for the AI calls. The number that matters.",
+    "win_rate": "Share of closed trades that made money, in percent.",
+    "avg_win": "Average dollar profit of winning trades.",
+    "avg_loss": "Average dollar loss of losing trades.",
+    "profit_factor": "Total won divided by total lost. Above 1 means winners outweigh losers.",
+    "sharpe": "Return per unit of day-to-day bumpiness, yearly scale. Above 1 is good, below 0 is losing.",
+    "max_drawdown": "Biggest drop from a previous high, in percent. Shows the worst pain so far.",
+    "trades": "Number of finished trades (bought and later sold).",
+    "invested_pct": "Share of the account currently in stocks rather than cash.",
+    "r_multiple": "Trade result divided by the amount risked. 2R means it made twice what it risked.",
+    "unrealized": "Profit or loss on a position still open, at the latest price.",
+    "stop_loss": "Price at which the position is sold to cap the loss.",
+    "profit_target": "Price at which the position is sold to take profit.",
+    "invalidation": "The model's own condition that would prove its idea wrong.",
+}

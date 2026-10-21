@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ arm }} · StockBot{% endblock %}
+{% block page %}arm{% endblock %}
+{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
+{% block body %}
+<script>window.ARM = {{ arm | tojson }};</script>
+<section class="card">
+  <h2>{{ arm }} <button id="pausebtn" style="margin-left:8px">Pause</button></h2>
+  <div class="strip" id="armstate"></div>
+</section>
+<section class="card"><h2>Open positions</h2><div class="tablewrap"><table id="positions"></table></div></section>
+<section class="card">
+  <h2>Price chart with this bot's trades
+    <select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
+    <select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option></select></h2>
+  <div id="candles" style="height:360px"></div>
+  <p class="muted" id="candlenote"></p>
+</section>
+<section class="card"><h2>Closed trades</h2><div class="tablewrap"><table id="trades"></table></div></section>
+<section class="card"><h2>Decisions</h2><div id="decisions"></div></section>
+<section class="card"><h2>Rejected orders</h2><div class="tablewrap"><table id="rejections"></table></div></section>
+{% endblock %}

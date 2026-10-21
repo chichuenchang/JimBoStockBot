@@ -115,3 +115,11 @@ def test_cli_pause_resume(tmp_path):
 def test_cli_status(tmp_path, capsys):
     assert main(["--db", str(tmp_path / "x.db"), "status"]) == 0
     assert "kimi-k3" in capsys.readouterr().out
+
+
+async def test_market_open_flag(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    for t, want in ((session.open_utc - timedelta(minutes=10), "0"), (session.open_utc + timedelta(minutes=1), "1")):
+        clock.set(t)
+        await daemon.step(t)
+        assert daemon.ctx.db.kv_get("market_open") == want

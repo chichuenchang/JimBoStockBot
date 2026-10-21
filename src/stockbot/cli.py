@@ -200,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"replay db: {db_path}")
             if rc == 0 and a.serve:
                 from stockbot.dashboard.app import serve_forever
-                serve_forever(db, cfg)
+                from stockbot.data.recorded import RecordedData
+                serve_forever(db, cfg, RecordedData(Path(a.data), ReplayClock(datetime.now(UTC))))
             return rc
         clock = RealClock()
         ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False))
