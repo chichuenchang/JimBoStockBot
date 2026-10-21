@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import asdict, dataclass
 from datetime import datetime, time
 from typing import Literal
@@ -18,7 +19,8 @@ from stockbot.llm.base import LLMClient, LLMError, estimate_usage
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 
-Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed"]
+Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
+log = logging.getLogger("stockbot")
 RETRY_SUFFIX = "\n\nYour previous reply was invalid: {err}. Reply with JSON only."
 SUMMARY_MAX = 300
 
@@ -131,8 +133,14 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         return CycleResult(arm.name, slot_ts, "llm_failed", did, orders, 0)
 
     rejections: list[tuple[str, str, str]] = []
-    orders += _apply(ctx, arm, decision, state, prices, nav, now, rejections)
-    did = _record(ctx, arm, slot_ts, reason, report_id, user, raw, decision, "ok", totals)
+    status: Status = "ok"
+    try:
+        orders += _apply(ctx, arm, decision, state, prices, nav, now, rejections)
+    except Exception:
+        # The LLM call is already paid for: record the decision so the slot is never re-called.
+        log.exception("applying decision for %s failed", arm.name)
+        status = "apply_failed"
+    did = _record(ctx, arm, slot_ts, reason, report_id, user, raw, decision, status, totals)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
     summary = "; ".join(f"{d.symbol} {d.signal}: {d.justification}"
@@ -142,7 +150,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
                       f"{now.astimezone(ET):%m-%d %H:%M} " + (summary or "no positions, all hold")[:SUMMARY_MAX])
     if decision.notes_to_self:
         db.journal_append(arm.name, now, "notes", decision.notes_to_self)
-    return CycleResult(arm.name, slot_ts, "ok", did, orders, len(rejections))
+    return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
 
 
 def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,

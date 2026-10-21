@@ -233,3 +233,17 @@ async def test_http_error_not_billed(tmp_path):
     ctx, _ = make_ctx(tmp_path, Boom())
     await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
     assert ctx.db._q("SELECT COUNT(*) n FROM llm_usage")[0]["n"] == 0
+
+
+async def test_apply_crash_records_decision_no_repeat_call(tmp_path, monkeypatch):
+    import stockbot.agent.cycle as cyc
+
+    def boom(*a, **k):
+        raise RuntimeError("bug in apply")
+    monkeypatch.setattr(cyc, "_apply", boom)
+    ctx, llm = make_ctx(tmp_path, [buy()])
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert r.status == "apply_failed"
+    assert ctx.db.decision_exists("kimi-improved", SLOT)
+    assert (await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")).status == "skipped_duplicate"
+    assert len(llm.calls) == 1
