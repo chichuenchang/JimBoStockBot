@@ -112,6 +112,10 @@ class DB:
             for r in self._q("SELECT * FROM positions WHERE account=?", account)}
         return AccountState(account, rows[0]["cash"], positions)
 
+    def holders(self, symbol: str) -> list[str]:
+        return [r["account"] for r in self._q(
+            "SELECT account FROM positions WHERE symbol=? ORDER BY account", symbol)]
+
     def save_account(self, state: AccountState) -> None:
         with self.conn:
             self.conn.execute("BEGIN")
