@@ -22,6 +22,7 @@ from stockbot.models import AccountState, ExitPlan, Position
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
 RETRY_SUFFIX = "\n\nYour previous reply was invalid: {err}. Reply with JSON only."
+RETRY_MARK = "\n\n----- retry reply -----\n\n"
 SUMMARY_MAX = 300
 
 
@@ -118,21 +119,28 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         totals[3] += cost
         return res.text
 
-    raw, decision = "", None
+    # Stored: the last prompt sent (the retry prompt contains the first) and every reply.
+    prompt, replies, decision = user, [], None
+
+    def transcript() -> str:
+        return RETRY_MARK.join(replies)
     try:
-        raw = await call(user, "decision")
+        replies.append(await call(prompt, "decision"))
         try:
-            decision = parse_decision(raw, arm.variant, s.universe)
+            decision = parse_decision(replies[-1], arm.variant, s.universe)
         except ParseError as e:
-            raw = await call(user + RETRY_SUFFIX.format(err=e), "retry")
+            prompt = user + RETRY_SUFFIX.format(err=e)
+            replies.append(await call(prompt, "retry"))
             try:
-                decision = parse_decision(raw, arm.variant, s.universe)
+                decision = parse_decision(replies[-1], arm.variant, s.universe)
             except ParseError as e2:
-                did = _record(ctx, arm, slot_ts, reason, report_id, user, raw, None, "parse_failed", totals)
+                did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None,
+                              "parse_failed", totals)
                 db.journal_append(arm.name, now, "summary", f"reply unparseable: {e2}"[:SUMMARY_MAX])
                 return CycleResult(arm.name, slot_ts, "parse_failed", did, orders, 0)
     except LLMError as e:
-        did = _record(ctx, arm, slot_ts, reason, report_id, user, str(e), None, "llm_failed", totals)
+        replies.append(str(e))
+        did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None, "llm_failed", totals)
         return CycleResult(arm.name, slot_ts, "llm_failed", did, orders, 0)
 
     rejections: list[tuple[str, str, str]] = []
@@ -143,7 +151,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         # The LLM call is already paid for: record the decision so the slot is never re-called.
         log.exception("applying decision for %s failed", arm.name)
         status = "apply_failed"
-    did = _record(ctx, arm, slot_ts, reason, report_id, user, raw, decision, status, totals)
+    did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), decision, status, totals)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
     summary = "; ".join(f"{d.symbol} {d.signal}: {d.justification}"

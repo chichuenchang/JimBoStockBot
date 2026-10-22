@@ -105,6 +105,9 @@ async def test_parse_retry_then_ok(tmp_path):
     assert "previous reply was invalid" in llm.calls[1][1]
     purposes = [row["purpose"] for row in ctx.db._q("SELECT purpose FROM llm_usage ORDER BY id")]
     assert purposes == ["decision", "retry"]
+    [d] = ctx.db._q("SELECT prompt, raw FROM decisions")
+    assert "previous reply was invalid" in d["prompt"]
+    assert d["raw"].startswith("garbage") and d["raw"].endswith(buy())
 
 
 async def test_parse_fail_twice_all_hold(tmp_path):
