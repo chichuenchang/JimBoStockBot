@@ -15,6 +15,7 @@ from stockbot.data.recorded import RecordedData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
+from stockbot.pause import ALL, flagged
 from tests.synth import make_day
 
 CFG = load_config(Path(__file__).parent.parent / "config")
@@ -105,11 +106,11 @@ async def test_step_survives_data_error(tmp_path, caplog):
 def test_cli_pause_resume(tmp_path):
     db_path = tmp_path / "x.db"
     assert main(["--db", str(db_path), "pause", "kimi-improved"]) == 0
-    assert DB.open(db_path).kv_get("pause:kimi-improved") == "1"
+    assert flagged(DB.open(db_path), "kimi-improved")
     assert main(["--db", str(db_path), "resume", "kimi-improved"]) == 0
-    assert DB.open(db_path).kv_get("pause:kimi-improved") is None
+    assert not flagged(DB.open(db_path), "kimi-improved")
     assert main(["--db", str(db_path), "pause", "--all"]) == 0
-    assert DB.open(db_path).kv_get("pause:_all") == "1"
+    assert flagged(DB.open(db_path), ALL)
 
 
 def test_cli_status(tmp_path, capsys):

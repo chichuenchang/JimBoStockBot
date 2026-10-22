@@ -26,6 +26,7 @@ from stockbot.db import DB
 from stockbot.llm.base import make_client
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
+from stockbot.pause import ALL, is_paused, set_paused
 
 log = logging.getLogger("stockbot")
 REPLAY_LEAD = timedelta(minutes=30)
@@ -148,7 +149,7 @@ def _status(cfg: AppConfig, db: DB) -> int:
             n = len(db.load_account(arm.name).positions)
         except KeyError:
             n = 0
-        paused = " PAUSED" if db.kv_get(f"pause:{arm.name}") or db.kv_get("pause:_all") else ""
+        paused = " PAUSED" if is_paused(db, arm.name) else ""
         print(f"{arm.name:24} last decision {last or '-'}  positions {n}{paused}")
     return 0
 
@@ -191,8 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         if not a.all and not a.arm:
             print("name an arm or pass --all", file=sys.stderr)
             return 2
-        key = "pause:_all" if a.all else f"pause:{a.arm}"
-        db.kv_set(key, "1") if a.cmd == "pause" else db.kv_delete(key)
+        set_paused(db, ALL if a.all else a.arm, a.cmd == "pause")
         return 0
     if a.cmd == "status":
         return _status(cfg, db)

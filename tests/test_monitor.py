@@ -13,6 +13,7 @@ from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.models import Bar, ExitPlan, Session
 from stockbot.monitor import monitor_tick, wake_due
+from stockbot.pause import set_paused
 
 CFG = load_config(Path(__file__).parent.parent / "config")
 ARMS = {a.name: a for a in CFG.arms}
@@ -60,7 +61,7 @@ async def test_improved_stop_enforced(tmp_path):
 async def test_paused_baseline_stop_enforced(tmp_path):
     ctx = mk(tmp_path, [b(5, 99, 99, 97, 97.5)])
     give(ctx, "kimi-baseline")
-    ctx.db.kv_set("pause:kimi-baseline", "1")
+    set_paused(ctx.db, "kimi-baseline", True)
     r = await monitor_tick(ctx, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=30), SESS, False)
     assert [f.account for f in r.fills] == ["kimi-baseline"]
 

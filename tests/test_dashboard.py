@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from stockbot.agent.cycle import is_paused
+from stockbot.pause import is_paused
 from stockbot.clock import ReplayClock
 from stockbot.config import load_config
 from stockbot.daemon import BENCHMARK

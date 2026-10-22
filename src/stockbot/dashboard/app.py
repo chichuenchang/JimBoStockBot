@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from stockbot import pause as pause_flags
 from stockbot.clock import RealClock
 from stockbot.config import AppConfig
 from stockbot.daemon import BENCHMARK
@@ -118,10 +119,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return {"bars": bars, "markers": q.fill_markers(db, known(arm), symbol), "error": err}
 
     def set_pause(arm: str, on: bool):
-        key = "pause:_all" if arm == "_all" else f"pause:{arm}"
-        if arm != "_all" and arm not in arm_names:
+        if arm != pause_flags.ALL and arm not in arm_names:
             raise HTTPException(404, f"unknown arm {arm}")
-        db.kv_set(key, "1") if on else db.kv_delete(key)
+        pause_flags.set_paused(db, arm, on)
         return {"ok": True}
 
     @app.post("/api/pause/{arm}")
@@ -134,11 +134,11 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     @app.post("/api/pause_all")
     def pause_all():
-        return set_pause("_all", True)
+        return set_pause(pause_flags.ALL, True)
 
     @app.post("/api/resume_all")
     def resume_all():
-        return set_pause("_all", False)
+        return set_pause(pause_flags.ALL, False)
 
     return app
 

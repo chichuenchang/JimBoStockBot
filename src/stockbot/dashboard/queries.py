@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 
+from stockbot import pause
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import et_date
 from stockbot.config import AppConfig
@@ -177,9 +178,9 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "heartbeat": hb,
         "market_open": db.kv_get("market_open") == "1",
         "data_ok": db.kv_get("data_ok") != "0",
-        "paused_all": db.kv_get("pause:_all") is not None,
+        "paused_all": pause.flagged(db, pause.ALL),
         "budget": budget.summary(),
         "arms": [{"arm": a.name, "model": a.model, "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),
-                  "paused": db.kv_get(f"pause:{a.name}") is not None} for a in cfg.arms if a.enabled],
+                  "paused": pause.flagged(db, a.name)} for a in cfg.arms if a.enabled],
     }

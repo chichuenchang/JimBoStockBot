@@ -18,6 +18,7 @@ from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError, estimate_usage
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
+from stockbot.pause import is_paused
 
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
@@ -45,10 +46,6 @@ class CycleResult:
     decision_id: int | None
     orders: int
     rejections: int
-
-
-def is_paused(db: DB, arm: str) -> bool:
-    return db.kv_get(f"pause:{arm}") is not None or db.kv_get("pause:_all") is not None
 
 
 def hold_only(ctx: AppContext, arm: ArmCfg) -> bool:

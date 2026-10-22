@@ -14,6 +14,7 @@ from stockbot.llm.base import LLMError
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, ExitPlan
+from stockbot.pause import ALL, set_paused
 
 CFG = load_config(Path(__file__).parent.parent / "config")
 SLOT = datetime(2026, 10, 21, 14, 15, tzinfo=UTC)
@@ -73,7 +74,7 @@ async def test_prompt_has_report_then_state(tmp_path):
 
 async def test_hold_only_when_paused(tmp_path):
     ctx, llm = make_ctx(tmp_path, ['{}'])
-    ctx.db.kv_set("pause:kimi-improved", "1")
+    set_paused(ctx.db, "kimi-improved", True)
     r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
     assert r.status == "hold_only" and llm.calls == []
     assert ctx.db.decision_exists("kimi-improved", SLOT)
@@ -81,7 +82,7 @@ async def test_hold_only_when_paused(tmp_path):
 
 async def test_hold_only_when_paused_all(tmp_path):
     ctx, llm = make_ctx(tmp_path, ['{}'])
-    ctx.db.kv_set("pause:_all", "1")
+    set_paused(ctx.db, ALL, True)
     assert (await run_cycle(ctx, ARMS["deepseek-baseline"], SLOT, "scheduled")).status == "hold_only"
 
 
