@@ -7,11 +7,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+from stockbot.clock import month_key
 from stockbot.models import AccountState, ClosedTrade, ExitPlan, Fill, Position
-
-_ET = ZoneInfo("America/New_York")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (account TEXT PRIMARY KEY, cash REAL NOT NULL, start_cash REAL NOT NULL);
@@ -286,7 +284,7 @@ class DB:
     # llm usage
     def insert_usage(self, model: str, arm: str | None, purpose: str, ts: datetime,
                      input_tokens: int, cached_tokens: int, output_tokens: int, cost: float) -> None:
-        month = ts.astimezone(_ET).strftime("%Y-%m")
+        month = month_key(ts)
         self._x("INSERT INTO llm_usage(model,arm,purpose,ts,month,input_tokens,cached_tokens,"
                 "output_tokens,cost) VALUES(?,?,?,?,?,?,?,?,?)",
                 model, arm, purpose, iso(ts), month, input_tokens, cached_tokens, output_tokens, cost)
