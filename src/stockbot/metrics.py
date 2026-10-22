@@ -108,8 +108,7 @@ def conviction_buckets(trades: list[ClosedTrade]) -> list[dict]:
         if not ts:
             continue
         rs = [t.r_multiple for t in ts if t.r_multiple is not None]
-        out.append({"conviction": b, "trades": len(ts),
-                    "win_rate": sum(t.pnl > 0 for t in ts) / len(ts) * 100,
+        out.append({"conviction": b, "trades": len(ts), "win_rate": trade_stats(ts).win_rate,
                     "avg_r": statistics.mean(rs) if rs else None})
     return out
 

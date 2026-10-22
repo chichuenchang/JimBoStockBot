@@ -39,7 +39,7 @@ def test_conviction_buckets():
     rows = conviction_buckets([t(0.9, 2.0), t(0.7, -1.0), t(0.1, -1.0), t(None, 0.5), t(0.5, None)])
     assert [r["conviction"] for r in rows] == ["low <0.33", "mid 0.33-0.67", "high >=0.67", "not given"]
     high = rows[2]
-    assert (high["trades"], high["win_rate"], high["avg_r"]) == (2, 50.0, 0.5)
+    assert (high["trades"], high["win_rate"], high["avg_r"]) == (2, 0.5, 0.5)
     assert rows[1]["avg_r"] is None  # its one trade has no R
 
 

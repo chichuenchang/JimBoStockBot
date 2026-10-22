@@ -144,7 +144,7 @@ def trades(db: DB, account: str) -> list[dict]:
 
 
 def conviction(db: DB, account: str) -> list[dict]:
-    return conviction_buckets(db.closed_trades(account))
+    return [{**r, "win_rate": r["win_rate"] * 100} for r in conviction_buckets(db.closed_trades(account))]
 
 
 def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
