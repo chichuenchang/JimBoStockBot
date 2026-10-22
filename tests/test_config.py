@@ -18,7 +18,7 @@ def test_loads_repo_config():
     cfg = load_config(REPO_CONFIG)
     assert [a.name for a in cfg.arms] == [
         "kimi-baseline", "kimi-improved", "deepseek-baseline", "deepseek-improved", "rules-trend",
-        "random-control"]
+        "random-control", "rules-momentum"]
     assert cfg.models["kimi-k3"].monthly_cap_usd == 80
     assert cfg.models["deepseek-v4.1-flash"].extra_body == {"thinking": {"type": "disabled"}}
     assert cfg.models["kimi-k3"].extra_body == {"reasoning_effort": "low"}
@@ -41,6 +41,14 @@ def test_arm_with_bad_key_is_config_error(tmp_path):
     (d / "arms.yaml").write_text(
         "arms:\n  - {name: typo-arm, modle: kimi-k3, variant: baseline, enabled: true}\n")
     with pytest.raises(ConfigError, match="typo-arm"):
+        load_config(d)
+
+
+def test_momentum_arm_needs_benchmark_in_universe(tmp_path):
+    d = copy_config(tmp_path)
+    text = (d / "settings.yaml").read_text().replace("universe: [TSLA, QQQ,", "universe: [TSLA,")
+    (d / "settings.yaml").write_text(text)
+    with pytest.raises(ConfigError, match="rules-momentum"):
         load_config(d)
 
 

@@ -34,7 +34,7 @@ class ModelCfg:
 class ArmCfg:
     name: str
     model: str | None  # None for control arms (no LLM)
-    variant: Literal["baseline", "improved", "rules", "random"]
+    variant: Literal["baseline", "improved", "rules", "random", "momentum"]
     enabled: bool
 
     @property
@@ -96,9 +96,9 @@ class AppConfig:
 
 ADAPTERS = ("openai_compat", "anthropic", "fake")
 LLM_VARIANTS = ("baseline", "improved")
-CONTROL_VARIANTS = ("rules", "random")
+CONTROL_VARIANTS = ("rules", "random", "momentum")
 VARIANTS = LLM_VARIANTS + CONTROL_VARIANTS
-RULED_VARIANTS = ("improved",) + CONTROL_VARIANTS
+RULED_VARIANTS = ("improved", "rules", "random")  # momentum follows its paper's rules instead
 
 
 def _read(path: Path) -> dict:
@@ -148,6 +148,8 @@ def load_config(config_dir: Path) -> AppConfig:
         if not arm.uses_llm:
             if arm.model is not None:
                 raise ConfigError(f"arm {arm.name}: {arm.variant} arms take no model")
+            if arm.variant == "momentum" and settings.benchmark_symbol not in settings.universe:
+                raise ConfigError(f"arm {arm.name}: trades {settings.benchmark_symbol}, which must be in universe")
             arms.append(arm)
             continue
         if arm.model not in models:

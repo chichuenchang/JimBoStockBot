@@ -105,4 +105,4 @@ def test_llm_arm_without_model_rejected(tmp_path):
 
 def test_repo_config_has_control_arms():
     cfg = load_config(Path(__file__).parent.parent / "config")
-    assert {a.variant for a in cfg.arms if a.model is None} == {"rules", "random"}
+    assert {a.variant for a in cfg.arms if a.model is None} == {"rules", "random", "momentum"}
