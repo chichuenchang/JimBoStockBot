@@ -29,6 +29,8 @@ class RuleContext:
     exited_today: set[str]
     day_pnl_frac: float
     atr_1h: dict[str, float | None]
+    risk_off: bool = False  # benchmark below its 50-day average
+    blackout: frozenset[str] = frozenset()  # symbols with earnings too close to enter
 
 
 def _eff_entry(p: Proposal, s: Settings) -> float:
@@ -73,11 +75,34 @@ def check_entry(p: Proposal, ctx: RuleContext, s: Settings) -> str | None:
         return "cooldown"
     if ctx.day_pnl_frac <= -s.daily_loss_freeze:
         return "daily_loss_freeze"
+    if ctx.risk_off:
+        return "regime_risk_off"
+    if p.symbol in ctx.blackout:
+        return "earnings_blackout"
     if _cap_room(p, ctx, s) < 0.001:
         return "position_cap_reached"
     if size_entry(p, ctx, s) <= 0:
         return "zero_size"
     return None
+
+
+def trail_stop(pos: Position, atr: float | None, s: Settings) -> float | None:
+    """Raised stop from the position's peak, or None when it would not rise. Nothing until the
+    peak reaches trail_breakeven_r x R; then breakeven, and chandelier peak - trail_atr_mult x ATR
+    once that is higher. With breakeven off, chandelier from entry."""
+    if pos.peak is None:
+        return None
+    r = pos.risk_per_share
+    if s.trail_breakeven_r and not (r and pos.peak >= pos.entry_price + s.trail_breakeven_r * r):
+        return None
+    candidates = [pos.entry_price] if s.trail_breakeven_r else []
+    if s.trail_atr_mult and atr:
+        candidates.append(pos.peak - s.trail_atr_mult * atr)
+    new = max(candidates, default=None)
+    cur = pos.exit_plan.stop_loss
+    if new is None or (cur is not None and new <= cur):
+        return None
+    return round(new, 4)
 
 
 def check_stop_update(old: float | None, new: float | None) -> str | None:

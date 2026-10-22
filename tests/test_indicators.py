@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from stockbot.indicators import atr, ema, macd, rel_volume, rsi, swing_levels
+from stockbot.indicators import atr, ema, macd, rel_volume, rsi, sma, swing_levels
 from stockbot.models import Bar
 
 T0 = datetime(2026, 10, 1, 13, 30, tzinfo=UTC)
@@ -63,3 +63,8 @@ def test_rel_volume():
     b = bars_from([10.0] * 21, vols=[100] * 20 + [250])
     assert rel_volume(b, 20) == pytest.approx(2.5)
     assert rel_volume(b[:5], 20) is None
+
+
+def test_sma():
+    assert sma([1, 2, 3, 4], 2) == [None, 1.5, 2.5, 3.5]
+    assert sma([1.0], 2) == [None]

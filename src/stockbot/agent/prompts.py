@@ -5,7 +5,7 @@ that providers can cache across arms within one cycle.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -51,6 +51,7 @@ class JournalView:
     summaries: list[str]
     closed: list[ClosedTrade]
     notes: str | None
+    lessons: list[str] = field(default_factory=list)  # one per closed trade, see agent/reflect.py
 
 
 def _et(now: datetime) -> str:
@@ -67,6 +68,15 @@ def _rules(s: Settings) -> str:
         f"- Stop distance must be at least {s.min_stop_atr} x ATR14 (1h)",
         "- No re-entry in a symbol on the day you exited it",
         f"- New entries frozen for the day once the account is down {s.daily_loss_freeze:.0%} today",
+        *([f"- No new entries while {s.benchmark_symbol} is below its 50-day average (see Market Regime)"]
+          if s.regime_gate else []),
+        *([f"- No entries in a symbol from {s.earnings_blackout_days} session(s) before its earnings through earnings day"]
+          if s.earnings_blackout_days >= 0 else []),
+        *([f"- Stops trail automatically: to entry once price gains {s.trail_breakeven_r:g}R"]
+          if s.trail_breakeven_r else []),
+        *([f"- Stops trail automatically: kept at least {s.trail_atr_mult:g} x ATR14 (1h) under the high since entry"
+           + (", from breakeven on" if s.trail_breakeven_r else "")]
+          if s.trail_atr_mult else []),
     ])
 
 
@@ -96,6 +106,8 @@ def render_state(variant: Variant, state: AccountState, prices: dict[str, float]
         lines += [f"- {t.symbol}: {t.entry_price:.2f} -> {t.exit_price:.2f}, P&L {t.pnl:+.2f}, "
                   f"exit {t.exit_reason}" + (f", R {t.r_multiple:+.2f}" if t.r_multiple is not None else "")
                   for t in j.closed] or ["(none)"]
+        lines.append("## Lessons from closed trades")
+        lines += [f"- {x}" for x in j.lessons] or ["(none)"]
         lines += ["## Notes to self", j.notes or "(none)", "", "# HARNESS RULES", _rules(s)]
     return "\n".join(lines)
 

@@ -7,10 +7,11 @@ from datetime import datetime, timedelta
 from stockbot.clock import ET, et_date
 from stockbot.config import AppConfig
 from stockbot.data.base import MarketData
+from stockbot.data.fundamentals import FundamentalsSource, cached_snapshot, with_earnings
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
-from stockbot.report.features import render_computed_table, ticker_features
+from stockbot.report.features import FUNDAMENTAL_COLUMNS, regime_line, render_computed_table, ticker_features
 
 ANALYST_SYSTEM = """You are a markets analyst writing a briefing for swing traders of US stocks.
 Use ONLY the numbers in the provided data; never invent prices or levels.
@@ -23,28 +24,34 @@ Write markdown with exactly these sections:
 ## 5. Edge Quality Matrix - high conviction, tactical, no edge.
 Long-only accounts: frame bearish views as reasons to avoid or exit, not to short."""
 
-HISTORY = {"1Hour": timedelta(days=15), "4Hour": timedelta(days=45), "1Day": timedelta(days=45)}
+HISTORY = {"1Hour": timedelta(days=15), "4Hour": timedelta(days=45), "1Day": timedelta(days=80)}  # 80d: >= 50 sessions for sma50
 NEWS_WINDOW = timedelta(hours=72)
 EVENT_WINDOW_DAYS = 10
 
 
-def _events(cfg: AppConfig, now: datetime) -> list[str]:
+def _events(cfg: AppConfig, features: dict[str, dict], now: datetime) -> list[str]:
     today = et_date(now)
-    return [f"{e.day} {e.time_et or ''} ET: {e.name}" + (f" ({', '.join(e.symbols)})" if e.symbols else "")
-            for e in cfg.events if 0 <= (e.day - today).days <= EVENT_WINDOW_DAYS]
+    return [f"{e.day}{' ' + e.time_et if e.time_et else ''} ET: {e.name}"
+            + (f" ({', '.join(e.symbols)})" if e.symbols else "")
+            for e in sorted(with_earnings(cfg.events, features), key=lambda e: e.day)
+            if 0 <= (e.day - today).days <= EVENT_WINDOW_DAYS]
 
 
 async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, cfg: AppConfig,
-                       db: DB, now: datetime) -> tuple[int, str]:
+                       db: DB, now: datetime, fundamentals: FundamentalsSource | None = None) -> tuple[int, str]:
     universe = list(cfg.settings.universe)
     features = {}
     for s in universe:
         b = {tf: await data.bars(s, tf, now - back, now) for tf, back in HISTORY.items()}
         features[s] = ticker_features(s, b["1Hour"], b["4Hour"], b["1Day"])
+    fund = await cached_snapshot(fundamentals, db, universe, et_date(now))
+    for s, row in fund.items():
+        if s in features:
+            features[s].update(row)
     news = await data.news(universe, now - NEWS_WINDOW)
     headlines = [f"{n.ts.astimezone(ET):%m-%d %H:%M} [{', '.join(n.symbols)}] {n.headline}"
                  for n in sorted(news, key=lambda n: n.ts, reverse=True)[:40]]
-    events = _events(cfg, now)
+    events = _events(cfg, features, now)
     table = render_computed_table(features)
 
     analyst_model = cfg.settings.analyst_model
@@ -67,7 +74,10 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
 
     parts = [f"# CURRENT STATE OF MARKETS\nIt is {now.astimezone(ET):%A, %B %d, %Y %H:%M} ET.\n"]
     parts.append(analysis if analysis else f"Analyst unavailable: {reason}")
+    parts.append("## Market Regime\n" + regime_line(features, cfg.settings.benchmark_symbol))
     parts.append("## Computed Data (harness, authoritative)\n" + table)
+    if fund:
+        parts.append("## Fundamentals (Alpha Vantage, daily)\n" + render_computed_table(features, FUNDAMENTAL_COLUMNS))
     parts.append("## Upcoming Events\n" + ("\n".join(events) or "(none)"))
     if not analysis:
         parts.append("## Headlines\n" + ("\n".join(headlines) or "(none)"))

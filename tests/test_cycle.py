@@ -1,5 +1,6 @@
+import dataclasses
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,7 @@ from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.agent.rules import Proposal, RuleContext, size_entry
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
+from stockbot.config import Event, load_config
 from stockbot.db import DB
 from stockbot.llm.base import LLMError
 from stockbot.llm.budget import Budget
@@ -262,3 +263,47 @@ async def test_stop_exit_today_blocks_reentry(tmp_path):
     assert r.orders == 0
     [row] = ctx.db._q("SELECT rule FROM rejections")
     assert row["rule"] == "cooldown"
+
+
+def set_features(ctx, feats):
+    ctx.db.insert_report(SLOT - timedelta(minutes=30), "REPORT TEXT", json.dumps(feats))
+
+
+async def test_entry_blocked_when_benchmark_below_sma50(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0}, "QQQ": {"sma50_1d": 700.0}})  # QQQ 620 < 700
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    [row] = ctx.db._q("SELECT rule FROM rejections")
+    assert r.orders == 0 and row["rule"] == "regime_risk_off"
+
+
+async def test_entry_allowed_when_benchmark_above_sma50(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0}, "QQQ": {"sma50_1d": 600.0}})
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert r.orders == 1
+
+
+async def test_improved_prompt_states_regime_rule(tmp_path):
+    ctx, llm = make_ctx(tmp_path, ['{}'])
+    await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert "50-day average" in llm.calls[0][1]
+    assert "Stops trail automatically" in llm.calls[0][1]
+
+
+@pytest.mark.parametrize("earnings,blocked", [("2026-10-22", True), ("2026-10-21", True),
+                                              ("2026-10-23", False), (None, False)])
+async def test_entry_blocked_before_earnings(tmp_path, earnings, blocked):
+    ctx, _ = make_ctx(tmp_path, [buy()])  # SLOT is Wed 2026-10-21
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0, "next_earnings": earnings}})
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert (r.orders == 0) == blocked
+
+
+async def test_symbol_event_from_config_blocks_entry(tmp_path):
+    cfg = dataclasses.replace(CFG, events=(Event(date(2026, 10, 22), None, "MSFT earnings", ("MSFT",)),))
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    ctx.cfg = cfg
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    [row] = ctx.db._q("SELECT rule FROM rejections")
+    assert r.orders == 0 and row["rule"] == "earnings_blackout"

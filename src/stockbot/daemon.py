@@ -94,7 +94,7 @@ class Daemon:
             return
         model = self.ctx.cfg.settings.analyst_model
         await build_report(self.ctx.data, self.ctx.clients.get(model), self.ctx.budget, self.ctx.cfg,
-                           self.ctx.db, now)
+                           self.ctx.db, now, self.ctx.fundamentals)
         for t in due:
             self._mark("report", t)
 

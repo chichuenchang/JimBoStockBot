@@ -1,9 +1,10 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
+from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry, trail_stop
 from stockbot.config import load_config
 from stockbot.models import ExitPlan, Position
 
@@ -109,3 +110,39 @@ def test_stop_only_moves_up():
     assert check_stop_update(98, 99) is None
     assert check_stop_update(None, 97) is None
     assert check_stop_update(98, None) == "stop_removed"
+
+
+def test_risk_off_blocks_entries():
+    assert check_entry(prop(), ctx(risk_off=True), S) == "regime_risk_off"
+
+
+def held(stop=98.0, risk=2.0, peak=None):
+    return Position("MSFT", 10, 100.0, T, ExitPlan(stop, 120, "x"), risk, peak=peak)
+
+
+def test_trail_to_breakeven_at_one_r():
+    assert trail_stop(held(peak=101.9), None, S) is None
+    assert trail_stop(held(peak=102.0), None, S) == 100.0
+
+
+def test_trail_chandelier_above_breakeven():
+    assert trail_stop(held(peak=110.0), 1.0, S) == pytest.approx(107.0)
+
+
+def test_trail_chandelier_waits_for_breakeven():
+    # wide stop: 1R = 10, so peak 105 is short of breakeven though 105 - 3 x ATR clears the stop
+    assert trail_stop(held(stop=90.0, risk=10.0, peak=105.0), 1.0, S) is None
+    assert trail_stop(held(stop=90.0, risk=10.0, peak=105.0), 1.0, replace(S, trail_breakeven_r=0)) == 102.0
+
+
+def test_trail_never_lowers():
+    assert trail_stop(held(stop=108.0, peak=110.0), 1.0, S) is None
+
+
+def test_trail_needs_peak():
+    assert trail_stop(held(peak=None), 1.0, S) is None
+
+
+def test_earnings_blackout_blocks_entries():
+    assert check_entry(prop(), ctx(blackout=frozenset({"MSFT"})), S) == "earnings_blackout"
+    assert check_entry(prop(), ctx(blackout=frozenset({"NVDA"})), S) is None

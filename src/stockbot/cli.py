@@ -27,6 +27,7 @@ from stockbot.llm.base import make_client
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.pause import ALL, is_paused, set_paused
+from stockbot.report.analyst import HISTORY
 
 log = logging.getLogger("stockbot")
 REPLAY_LEAD = timedelta(minutes=30)
@@ -88,10 +89,20 @@ def _alpaca():
     return AlpacaData(key, secret)
 
 
-def _ctx(cfg, db, data, clock, clients) -> AppContext:
+def _fundamentals():
+    from stockbot.data.fundamentals import AlphaVantage
+    load_dotenv()
+    key = os.environ.get("ALPHAVANTAGE_API_KEY")
+    if not key:
+        log.warning("ALPHAVANTAGE_API_KEY not set: no fundamentals, earnings only from events.yaml")
+        return None
+    return AlphaVantage(key)
+
+
+def _ctx(cfg, db, data, clock, clients, fundamentals=None) -> AppContext:
     s = cfg.settings
     return AppContext(cfg, db, data, SimBroker(db, s.slippage_bps, s.commission_per_order),
-                      Budget(db, cfg, clock), clients, clock)
+                      Budget(db, cfg, clock), clients, clock, fundamentals)
 
 
 async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool,
@@ -128,8 +139,7 @@ async def _record(cfg: AppConfig, days: int, out: Path) -> int:
     if not sessions:
         return 1
     start = sessions[0].open_utc
-    history = {"1Min": timedelta(0), "1Hour": timedelta(days=15), "4Hour": timedelta(days=45),
-               "1Day": timedelta(days=45)}
+    history = {"1Min": timedelta(0), **HISTORY}  # the report must find its full lookback in a recording
     for sym in cfg.settings.universe:
         for tf, back in history.items():
             write_bars(out, sym, tf, await data.bars(sym, tf, start - back, now))
@@ -215,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
                 serve_forever(db, cfg, RecordedData(Path(a.data), ReplayClock(datetime.now(UTC))))
             return rc
         clock = RealClock()
-        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False))
+        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals())
         asyncio.run(Daemon(ctx).run_forever())
         return 0
     except ConfigError as e:

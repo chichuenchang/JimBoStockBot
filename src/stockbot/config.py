@@ -27,14 +27,24 @@ class ModelCfg:
     price_out: float
     monthly_cap_usd: float
     enabled: bool
+    extra_body: dict | None = None  # merged into the request body, e.g. thinking switches
 
 
 @dataclass(frozen=True)
 class ArmCfg:
     name: str
-    model: str
-    variant: Literal["baseline", "improved"]
+    model: str | None  # None for control arms (no LLM)
+    variant: Literal["baseline", "improved", "rules", "random"]
     enabled: bool
+
+    @property
+    def uses_llm(self) -> bool:
+        return self.variant in LLM_VARIANTS
+
+    @property
+    def ruled(self) -> bool:
+        """Harness rules apply: entry checks and sizing, stops enforced intrabar and trailed."""
+        return self.variant in RULED_VARIANTS
 
 
 @dataclass(frozen=True)
@@ -62,6 +72,10 @@ class Settings:
     max_wakes_per_day: int
     llm_timeout_s: float
     benchmark_symbol: str = "QQQ"
+    regime_gate: bool = True
+    trail_breakeven_r: float = 1.0  # semantics: config/settings.yaml
+    trail_atr_mult: float = 3.0
+    earnings_blackout_days: int = 1
 
 
 @dataclass(frozen=True)
@@ -81,7 +95,10 @@ class AppConfig:
 
 
 ADAPTERS = ("openai_compat", "anthropic", "fake")
-VARIANTS = ("baseline", "improved")
+LLM_VARIANTS = ("baseline", "improved")
+CONTROL_VARIANTS = ("rules", "random")
+VARIANTS = LLM_VARIANTS + CONTROL_VARIANTS
+RULED_VARIANTS = ("improved",) + CONTROL_VARIANTS
 
 
 def _read(path: Path) -> dict:
@@ -123,13 +140,18 @@ def load_config(config_dir: Path) -> AppConfig:
     arms = []
     for a in _read(config_dir / "arms.yaml").get("arms") or []:
         try:
-            arm = ArmCfg(**a)
+            arm = ArmCfg(**{"model": None, **a})
         except TypeError as e:
             raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
-        if arm.model not in models:
-            raise ConfigError(f"arm {arm.name}: unknown model {arm.model!r}")
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
+        if not arm.uses_llm:
+            if arm.model is not None:
+                raise ConfigError(f"arm {arm.name}: {arm.variant} arms take no model")
+            arms.append(arm)
+            continue
+        if arm.model not in models:
+            raise ConfigError(f"arm {arm.name}: unknown model {arm.model!r}")
         if arm.enabled and not models[arm.model].enabled:
             raise ConfigError(f"arm {arm.name}: model {arm.model} is disabled")
         arms.append(arm)

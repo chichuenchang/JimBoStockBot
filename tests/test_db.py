@@ -107,3 +107,27 @@ def test_orders_lifecycle(db):
     assert o["id"] == oid and o["qty"] == 5 and o["stop_loss"] == 98
     db.cancel_order(oid, "insufficient_cash")
     assert db.pending_orders("MSFT") == []
+
+
+def test_position_peak_roundtrip(db):
+    db.ensure_account("a", 1000)
+    st = db.load_account("a")
+    st.positions["MSFT"] = Position("MSFT", 1, 100, T0, ExitPlan(98, 110), 2.0, peak=104.5)
+    db.save_account(st)
+    assert db.load_account("a").positions["MSFT"].peak == 104.5
+
+
+def test_old_db_gains_peak_column(tmp_path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.execute("CREATE TABLE positions (account TEXT NOT NULL, symbol TEXT NOT NULL, qty REAL NOT NULL, "
+                 "entry_price REAL NOT NULL, entry_ts TEXT NOT NULL, stop_loss REAL, profit_target REAL, "
+                 "invalidation TEXT NOT NULL DEFAULT '', risk_per_share REAL, PRIMARY KEY (account, symbol))")
+    conn.commit()
+    conn.close()
+    db = DB.open(p)
+    db.ensure_account("a", 1000)
+    st = db.load_account("a")
+    st.positions["MSFT"] = Position("MSFT", 1, 100, T0, ExitPlan(98, 110), None)
+    db.save_account(st)
+    assert db.load_account("a").positions["MSFT"].peak is None

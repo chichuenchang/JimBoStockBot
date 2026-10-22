@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS accounts (account TEXT PRIMARY KEY, cash REAL NOT NUL
 CREATE TABLE IF NOT EXISTS positions (
   account TEXT NOT NULL, symbol TEXT NOT NULL, qty REAL NOT NULL, entry_price REAL NOT NULL,
   entry_ts TEXT NOT NULL, stop_loss REAL, profit_target REAL, invalidation TEXT NOT NULL DEFAULT '',
-  risk_per_share REAL, PRIMARY KEY (account, symbol));
+  risk_per_share REAL, peak REAL, PRIMARY KEY (account, symbol));
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, account TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL, qty REAL,
   stop_loss REAL, profit_target REAL, invalidation TEXT NOT NULL DEFAULT '', risk_per_share REAL,
@@ -67,6 +67,9 @@ class DB:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(positions)")}
+        if "peak" not in cols:  # DBs created before trailing stops
+            conn.execute("ALTER TABLE positions ADD COLUMN peak REAL")
         return cls(conn)
 
     def close(self) -> None:
@@ -108,7 +111,8 @@ class DB:
         positions = {
             r["symbol"]: Position(
                 r["symbol"], r["qty"], r["entry_price"], parse_ts(r["entry_ts"]),
-                ExitPlan(r["stop_loss"], r["profit_target"], r["invalidation"]), r["risk_per_share"])
+                ExitPlan(r["stop_loss"], r["profit_target"], r["invalidation"]), r["risk_per_share"],
+                r["peak"])
             for r in self._q("SELECT * FROM positions WHERE account=?", account)}
         return AccountState(account, rows[0]["cash"], positions)
 
@@ -136,10 +140,11 @@ class DB:
             self.conn.execute("DELETE FROM positions WHERE account=?", (state.account,))
             for p in state.positions.values():
                 self.conn.execute(
-                    "INSERT INTO positions VALUES(?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO positions(account,symbol,qty,entry_price,entry_ts,stop_loss,profit_target,"
+                    "invalidation,risk_per_share,peak) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (state.account, p.symbol, p.qty, p.entry_price, iso(p.entry_ts),
                      p.exit_plan.stop_loss, p.exit_plan.profit_target, p.exit_plan.invalidation,
-                     p.risk_per_share))
+                     p.risk_per_share, p.peak))
 
     # orders
     def insert_order(self, account: str, symbol: str, side: str, qty: float | None,
@@ -215,7 +220,7 @@ class DB:
                 r_mult = pnl / (t["risk"] * qty) if t["risk"] else None
                 out.append(ClosedTrade(account, sym, parse_ts(t["entry_ts"]), parse_ts(r["ts"]),
                                        entry, exit_, qty, pnl, r_mult, r["reason"], t["why"],
-                                       bool(r["replayed"])))
+                                       bool(r["replayed"]), r["justification"]))
                 del open_[sym]
         return out
 

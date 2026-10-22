@@ -21,6 +21,7 @@ class OpenAICompatClient:
                              {"role": "user", "content": user}]}
         if json_mode:
             body["response_format"] = {"type": "json_object"}
+        body.update(self.cfg.extra_body or {})
         headers = {"Authorization": f"Bearer {api_key(self.cfg)}"}
         url = f"{self.cfg.base_url.rstrip('/')}/chat/completions"
         t0 = time.monotonic()

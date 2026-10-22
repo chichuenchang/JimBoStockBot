@@ -51,6 +51,7 @@ class Position:
     entry_ts: datetime
     exit_plan: ExitPlan
     risk_per_share: float | None = None
+    peak: float | None = None  # highest high since entry, for trailing stops
 
 
 @dataclass(frozen=True)
@@ -86,3 +87,4 @@ class ClosedTrade:
     exit_reason: str
     justification: str
     replayed: bool = False  # exit filled during restart catch-up
+    exit_justification: str = ""  # empty for stop/target fills
