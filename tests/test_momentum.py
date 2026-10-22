@@ -25,6 +25,12 @@ def test_noise_sigma_mean_abs_move_at_minute():
     assert noise_sigma(prior, 15) == pytest.approx(0.016)
 
 
+def test_noise_sigma_skips_days_closed_before_minute():
+    prior = prior_days([0.01] * 5) + [day(OPEN, [150.0] * 10)]  # half day: 10 bars, +50%
+    assert noise_sigma(prior, 15) == pytest.approx(0.01)
+    assert noise_sigma(prior, 10) == pytest.approx((0.05 + 0.5) / 6)
+
+
 def test_noise_sigma_needs_enough_days():
     assert noise_sigma(prior_days([0.01] * 4), 15) is None
 

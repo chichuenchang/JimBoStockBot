@@ -22,9 +22,10 @@ def noise_sigma(prior: list[list[Bar]], minute: int) -> float | None:
     """Mean |price / day open - 1| `minute` minutes after the open, over prior sessions."""
     moves = []
     for bars in prior:
-        upto = [b for b in bars if b.ts < bars[0].ts + timedelta(minutes=minute)] if bars else []
-        if upto:
-            moves.append(abs(upto[-1].close / bars[0].open - 1))
+        if not bars or bars[-1].ts - bars[0].ts < timedelta(minutes=minute - 1):
+            continue  # no bars, or a half day that closed before this minute
+        upto = [b for b in bars if b.ts < bars[0].ts + timedelta(minutes=minute)]
+        moves.append(abs(upto[-1].close / bars[0].open - 1))
     return sum(moves) / len(moves) if len(moves) >= MIN_NOISE_DAYS else None
 
 
