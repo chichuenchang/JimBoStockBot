@@ -37,6 +37,15 @@ class ArmCfg:
     variant: Literal["baseline", "improved", "rules", "random"]
     enabled: bool
 
+    @property
+    def uses_llm(self) -> bool:
+        return self.variant in LLM_VARIANTS
+
+    @property
+    def ruled(self) -> bool:
+        """Harness rules apply: entry checks and sizing, stops enforced intrabar and trailed."""
+        return self.variant in RULED_VARIANTS
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -89,7 +98,7 @@ ADAPTERS = ("openai_compat", "anthropic", "fake")
 LLM_VARIANTS = ("baseline", "improved")
 CONTROL_VARIANTS = ("rules", "random")
 VARIANTS = LLM_VARIANTS + CONTROL_VARIANTS
-RULED_VARIANTS = ("improved",) + CONTROL_VARIANTS  # harness rules, enforced + trailed stops
+RULED_VARIANTS = ("improved",) + CONTROL_VARIANTS
 
 
 def _read(path: Path) -> dict:
@@ -136,7 +145,7 @@ def load_config(config_dir: Path) -> AppConfig:
             raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
-        if arm.variant in CONTROL_VARIANTS:
+        if not arm.uses_llm:
             if arm.model is not None:
                 raise ConfigError(f"arm {arm.name}: {arm.variant} arms take no model")
             arms.append(arm)

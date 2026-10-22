@@ -15,7 +15,7 @@ from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
 from stockbot.clock import ET, Clock, et_date
-from stockbot.config import CONTROL_VARIANTS, RULED_VARIANTS, AppConfig, ArmCfg
+from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
 from stockbot.db import DB
@@ -55,7 +55,7 @@ class CycleResult:
 
 
 def hold_only(ctx: AppContext, arm: ArmCfg) -> bool:
-    return is_paused(ctx.db, arm.name) or (arm.model is not None and ctx.budget.state(arm.model) == "exhausted")
+    return is_paused(ctx.db, arm.name) or (arm.uses_llm and ctx.budget.state(arm.model) == "exhausted")
 
 
 def et_midnight(ts: datetime) -> datetime:
@@ -84,7 +84,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     if prices is None:
         prices = await ctx.data.latest_prices(list(s.universe))
     orders = 0
-    if arm.variant == "baseline":
+    if not arm.ruled:  # stops not enforced intrabar: checked here instead
         for sym, why in ctx.broker.due_exits(arm.name, prices).items():
             ctx.broker.submit_market(arm.name, sym, "sell", None, None, why, now)
             orders += 1
@@ -97,7 +97,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
 
     def transcript() -> str:
         return RETRY_MARK.join(replies)
-    if arm.variant in CONTROL_VARIANTS:
+    if not arm.uses_llm:
         prompt, totals = "", [0, 0, 0, 0.0]
         decision = _control_decision(arm, slot_ts, state, prices, db.latest_report_features(), s.universe)
     else:
@@ -158,7 +158,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), decision, status, totals)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
-    if arm.variant in CONTROL_VARIANTS:
+    if not arm.uses_llm:
         return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
     summary = "; ".join(f"{d.symbol} {d.signal}: {d.justification}"
                         for d in decision.per_symbol.values()
@@ -211,7 +211,7 @@ def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState
            rejections: list[tuple[str, str, str]]) -> int:
     s, broker = ctx.cfg.settings, ctx.broker
     orders = 0
-    rc = _rule_context(ctx, arm, state, nav, now, prices) if arm.variant in RULED_VARIANTS else None
+    rc = _rule_context(ctx, arm, state, nav, now, prices) if arm.ruled else None
     for sym, d in decision.per_symbol.items():
         held = state.positions.get(sym)
         if d.signal == "close_position":
@@ -246,7 +246,7 @@ def _update_plan(ctx, arm, held, d: SymbolDecision, now, rejections) -> None:
         return
     old = held.exit_plan
     stop = d.stop_loss if d.stop_loss is not None else old.stop_loss
-    if arm.variant in RULED_VARIANTS and d.stop_loss is not None:
+    if arm.ruled and d.stop_loss is not None:
         bad = check_stop_update(old.stop_loss, d.stop_loss)
         if bad:
             rejections.append((d.symbol, bad, f"old {old.stop_loss} new {d.stop_loss}"))
@@ -267,7 +267,7 @@ def _enter(ctx, arm, d: SymbolDecision, held, prices, now, rc, rejections) -> fl
     e = buy_price(price, s.slippage_bps)
     plan = ExitPlan(d.stop_loss, d.profit_target, d.invalidation_condition)
     reason = "add" if held else "entry"
-    if arm.variant == "baseline":
+    if not arm.ruled:
         if not d.quantity or d.quantity <= 0:
             rejections.append((d.symbol, "missing_quantity", ""))
             return 0.0
