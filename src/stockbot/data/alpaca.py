@@ -59,8 +59,9 @@ class AlpacaData:
         out: list[Bar] = []
         while True:
             data = await self._get(f"{DATA_URL}/v2/stocks/{symbol}/bars", params)
-            out += [Bar(symbol, _ts(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"])
-                    for b in data.get("bars") or []]
+            bars = (Bar(symbol, _ts(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"])
+                    for b in data.get("bars") or [])
+            out += [b for b in bars if b.ts < end]  # Alpaca can return a bar at end; contract is [start, end)
             token = data.get("next_page_token")
             if not token:
                 return out

@@ -44,6 +44,17 @@ async def test_bars_paginates_and_sends_iex_feed():
 
 
 @respx.mock
+async def test_bars_window_is_half_open_like_recorded():
+    """A bar stamped exactly at end belongs to the next window: the monitor starts each tick
+    at the previous end, so keeping it here would process it twice."""
+    respx.get(f"{DATA}/v2/stocks/MSFT/bars").mock(return_value=httpx.Response(200, json={
+        "bars": [bar_json("2026-10-21T19:59:00Z", 100), bar_json("2026-10-21T20:00:00Z", 101)],
+        "next_page_token": None}))
+    bars = await AlpacaData("k", "s").bars("MSFT", "1Min", T0, T1)
+    assert [b.close for b in bars] == [100]
+
+
+@respx.mock
 async def test_bars_null_list():
     respx.get(f"{DATA}/v2/stocks/MSFT/bars").mock(
         return_value=httpx.Response(200, json={"bars": None, "next_page_token": None}))
