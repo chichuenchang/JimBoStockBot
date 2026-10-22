@@ -28,18 +28,14 @@ class AlpacaData:
     def __init__(self, key: str, secret: str, http: httpx.AsyncClient | None = None,
                  timeout_s: float = 20):
         self.headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
-        self.http = http
+        self.http = http or httpx.AsyncClient()  # one pool: reuse connections across polls
         self.timeout = timeout_s
 
     async def _get(self, url: str, params: dict) -> dict | list:
         last = "unknown"
         for attempt in range(len(RETRY_DELAYS) + 1):
             try:
-                if self.http is not None:
-                    r = await self.http.get(url, params=params, headers=self.headers, timeout=self.timeout)
-                else:
-                    async with httpx.AsyncClient() as http:
-                        r = await http.get(url, params=params, headers=self.headers, timeout=self.timeout)
+                r = await self.http.get(url, params=params, headers=self.headers, timeout=self.timeout)
             except httpx.HTTPError as e:
                 last = f"{type(e).__name__}"
             else:

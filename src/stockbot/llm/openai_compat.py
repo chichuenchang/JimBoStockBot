@@ -13,7 +13,7 @@ class OpenAICompatClient:
     def __init__(self, cfg: ModelCfg, timeout_s: float, http: httpx.AsyncClient | None = None):
         self.cfg = cfg
         self.timeout = timeout_s
-        self.http = http
+        self.http = http or httpx.AsyncClient()
 
     async def complete(self, system: str, user: str, json_mode: bool = True) -> LLMResult:
         body = {"model": self.cfg.model,
@@ -25,11 +25,7 @@ class OpenAICompatClient:
         url = f"{self.cfg.base_url.rstrip('/')}/chat/completions"
         t0 = time.monotonic()
         try:
-            if self.http is not None:
-                resp = await self.http.post(url, json=body, headers=headers, timeout=self.timeout)
-            else:
-                async with httpx.AsyncClient() as http:
-                    resp = await http.post(url, json=body, headers=headers, timeout=self.timeout)
+            resp = await self.http.post(url, json=body, headers=headers, timeout=self.timeout)
         except httpx.TimeoutException as e:
             raise LLMError(f"{self.cfg.name}: timeout after {self.timeout}s", billable=True) from e
         except httpx.HTTPError as e:
