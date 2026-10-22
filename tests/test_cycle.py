@@ -247,3 +247,14 @@ async def test_apply_crash_records_decision_no_repeat_call(tmp_path, monkeypatch
     assert ctx.db.decision_exists("kimi-improved", SLOT)
     assert (await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")).status == "skipped_duplicate"
     assert len(llm.calls) == 1
+
+
+async def test_stop_exit_today_blocks_reentry(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    hold_msft(ctx, "kimi-improved")
+    [f] = ctx.broker.on_bar(Bar("MSFT", SLOT - timedelta(minutes=20), 99, 99, 97, 97, 1), lambda a: True)
+    assert f.reason == "stop"
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert r.orders == 0
+    [row] = ctx.db._q("SELECT rule FROM rejections")
+    assert row["rule"] == "cooldown"

@@ -163,6 +163,12 @@ class DB:
             fill.account, fill.symbol, fill.side, fill.qty, fill.price, iso(fill.ts), fill.reason,
             int(fill.replayed), justification, risk_per_share)
 
+    def sold_since(self, account: str, ts: datetime) -> set[str]:
+        """Symbols with any sell fill at or after ts: closes, stops and targets alike."""
+        return {r["symbol"] for r in self._q(
+            "SELECT DISTINCT symbol FROM fills WHERE account=? AND side='sell' AND ts>=?",
+            account, iso(ts))}
+
     def _fill_rows(self, account: str) -> list[sqlite3.Row]:
         return self._q("SELECT * FROM fills WHERE account=? ORDER BY ts, id", account)
 

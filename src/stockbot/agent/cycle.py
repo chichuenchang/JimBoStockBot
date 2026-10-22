@@ -163,7 +163,8 @@ def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
     return RuleContext(
         nav=nav, cash=state.cash, positions=state.positions,
         entries_today=sum(1 for o in today if o["side"] == "buy"),
-        exited_today={o["symbol"] for o in today if o["side"] == "sell"},
+        # fills catch stop/target exits (no order); orders catch sells not filled yet
+        exited_today=db.sold_since(arm.name, midnight) | {o["symbol"] for o in today if o["side"] == "sell"},
         day_pnl_frac=nav / prev - 1 if prev else 0.0,
         atr_1h={k: v.get("atr14_1h") for k, v in feats.items()})
 
