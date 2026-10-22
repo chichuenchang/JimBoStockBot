@@ -11,7 +11,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from stockbot.db import DB, parse_ts
-from stockbot.models import Bar, ExitPlan, Fill, Position
+from stockbot.models import Bar, ExitPlan, Fill, FillReason, Position
 
 
 def floor3(x: float) -> float:
@@ -59,15 +59,18 @@ class SimBroker:
             total += p.qty * px
         return total
 
-    def due_exits(self, account: str, prices: dict[str, float]) -> list[str]:
-        out = []
+    def due_exits(self, account: str, prices: dict[str, float]) -> dict[str, FillReason]:
+        """Held symbols whose price has crossed their stop or target, with which one."""
+        out: dict[str, FillReason] = {}
         for p in self.db.load_account(account).positions.values():
             px = prices.get(p.symbol)
             if px is None:
                 continue
             sl, tp = p.exit_plan.stop_loss, p.exit_plan.profit_target
-            if (sl is not None and px <= sl) or (tp is not None and px >= tp):
-                out.append(p.symbol)
+            if sl is not None and px <= sl:
+                out[p.symbol] = "stop"
+            elif tp is not None and px >= tp:
+                out[p.symbol] = "target"
         return out
 
     def on_bar(self, bar: Bar, enforce_exits: Callable[[str], bool],

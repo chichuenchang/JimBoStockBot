@@ -79,10 +79,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         prices = await ctx.data.latest_prices(list(s.universe))
     orders = 0
     if arm.variant == "baseline":
-        state = db.load_account(arm.name)
-        for sym in ctx.broker.due_exits(arm.name, prices):
-            sl = state.positions[sym].exit_plan.stop_loss
-            why = "stop" if sl is not None and prices[sym] <= sl else "target"
+        for sym, why in ctx.broker.due_exits(arm.name, prices).items():
             ctx.broker.submit_market(arm.name, sym, "sell", None, None, why, now)
             orders += 1
 

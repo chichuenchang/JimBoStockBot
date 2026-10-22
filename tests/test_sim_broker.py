@@ -99,9 +99,9 @@ def test_exits_not_enforced_when_flag_false(broker):
 
 def test_due_exits(broker):
     hold(broker)
-    assert broker.due_exits("a", {"MSFT": 97.0}) == ["MSFT"]
-    assert broker.due_exits("a", {"MSFT": 104.0}) == ["MSFT"]
-    assert broker.due_exits("a", {"MSFT": 100.0}) == []
+    assert broker.due_exits("a", {"MSFT": 97.0}) == {"MSFT": "stop"}
+    assert broker.due_exits("a", {"MSFT": 104.0}) == {"MSFT": "target"}
+    assert broker.due_exits("a", {"MSFT": 100.0}) == {}
 
 
 def test_full_close_order(broker):
