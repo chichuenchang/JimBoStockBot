@@ -8,9 +8,9 @@ from stockbot import pause
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import et_date
 from stockbot.config import AppConfig
-from stockbot.daemon import BENCHMARK
 from stockbot.db import DB, parse_ts
 from stockbot.metrics import daily_returns, max_drawdown, sharpe, trade_stats
+from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
                     "llm_spend", "net_after_llm", "win_rate", "avg_win", "avg_loss", "profit_factor",

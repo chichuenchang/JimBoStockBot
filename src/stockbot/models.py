@@ -7,6 +7,7 @@ from typing import Literal
 
 Side = Literal["buy", "sell"]
 FillReason = Literal["entry", "add", "close", "stop", "target"]
+BENCHMARK = "benchmark-QQQ"  # account of the buy-and-hold benchmark arm
 
 
 @dataclass(frozen=True)

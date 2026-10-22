@@ -9,12 +9,13 @@ from stockbot.broker.sim import SimBroker
 from stockbot.cli import fake_trader, main
 from stockbot.clock import ReplayClock
 from stockbot.config import load_config
-from stockbot.daemon import BENCHMARK, Daemon
+from stockbot.daemon import Daemon
 from stockbot.data.base import DataError
 from stockbot.data.recorded import RecordedData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
+from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
 from tests.synth import make_day
 

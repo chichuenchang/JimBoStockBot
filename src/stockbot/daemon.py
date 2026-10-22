@@ -9,12 +9,11 @@ from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
 from stockbot.clock import cycle_slots, et_date, in_session, report_slots
 from stockbot.data.base import DataError
-from stockbot.models import Session
+from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import monitor_tick, wake_due
 from stockbot.report.analyst import build_report
 
 log = logging.getLogger("stockbot")
-BENCHMARK = "benchmark-QQQ"
 REPLAY_GAP = timedelta(minutes=2)
 MINUTE = timedelta(minutes=1)
 

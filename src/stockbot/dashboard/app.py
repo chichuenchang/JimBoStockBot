@@ -13,12 +13,12 @@ from fastapi.templating import Jinja2Templates
 from stockbot import pause as pause_flags
 from stockbot.clock import RealClock
 from stockbot.config import AppConfig
-from stockbot.daemon import BENCHMARK
 from stockbot.dashboard import queries as q
 from stockbot.dashboard.glossary import TIPS
 from stockbot.data.base import DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
+from stockbot.models import BENCHMARK
 
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
