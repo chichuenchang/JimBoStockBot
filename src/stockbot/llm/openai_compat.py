@@ -36,15 +36,16 @@ class OpenAICompatClient:
             raise LLMError(f"{self.cfg.name}: transport error {type(e).__name__}") from e
         if resp.status_code != 200:
             raise LLMError(f"{self.cfg.name}: HTTP {resp.status_code} {resp.text[:200]}")
-        data = resp.json()
+        # HTTP 200: the provider ran the request, so every failure from here on is billable.
         try:
+            data = resp.json()
             text = data["choices"][0]["message"].get("content") or ""
-        except (KeyError, IndexError) as e:
-            raise LLMError(f"{self.cfg.name}: malformed response") from e
+            u = data.get("usage") or {}
+            cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens") \
+                or u.get("prompt_cache_hit_tokens") or 0
+            usage = Usage(int(u.get("prompt_tokens", 0)), int(cached), int(u.get("completion_tokens", 0)))
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
+            raise LLMError(f"{self.cfg.name}: malformed response", billable=True) from e
         if not text.strip():
-            raise LLMError(f"{self.cfg.name}: empty content")
-        u = data.get("usage") or {}
-        cached = (u.get("prompt_tokens_details") or {}).get("cached_tokens") \
-            or u.get("prompt_cache_hit_tokens") or 0
-        usage = Usage(int(u.get("prompt_tokens", 0)), int(cached), int(u.get("completion_tokens", 0)))
+            raise LLMError(f"{self.cfg.name}: empty content", billable=True)
         return LLMResult(text, usage, time.monotonic() - t0)

@@ -77,8 +77,20 @@ async def test_timeout_raises_llm_error():
 @respx.mock
 async def test_empty_content_raises():
     respx.post(URL).mock(return_value=httpx.Response(200, json=ok_body(content="")))
-    with pytest.raises(LLMError, match="empty"):
+    with pytest.raises(LLMError, match="empty") as e:
         await make_client(KIMI, timeout_s=5).complete("s", "u")
+    assert e.value.billable  # HTTP 200: the provider ran and charged
+
+
+@respx.mock
+@pytest.mark.parametrize("resp", [httpx.Response(200, text="<html>proxy</html>"),
+                                  httpx.Response(200, json={"choices": [{"message": None}]}),
+                                  httpx.Response(200, json={"choices": []})])
+async def test_unusable_200_is_billable_llm_error(resp):
+    respx.post(URL).mock(return_value=resp)
+    with pytest.raises(LLMError, match="malformed") as e:
+        await make_client(KIMI, timeout_s=5).complete("s", "u")
+    assert e.value.billable
 
 
 async def test_fake_llm_cycles_replies():
@@ -128,8 +140,9 @@ async def test_anthropic_refusal_raises():
     stub = StubMessages(anthropic_resp(stop="refusal"))
     c = AnthropicClient(CLAUDE, timeout_s=5,
                         sdk=SimpleNamespace(beta=SimpleNamespace(messages=stub)))
-    with pytest.raises(LLMError, match="refusal"):
+    with pytest.raises(LLMError, match="refusal") as e:
         await c.complete("s", "u")
+    assert e.value.billable
 
 
 @respx.mock

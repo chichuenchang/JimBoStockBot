@@ -39,11 +39,12 @@ class AnthropicClient:
             raise LLMError(f"{self.cfg.name}: HTTP {e.status_code}") from e
         except anthropic.APIConnectionError as e:
             raise LLMError(f"{self.cfg.name}: connection error") from e
+        # A response came back: the provider ran the request, so failures from here on are billable.
         if resp.stop_reason == "refusal":
-            raise LLMError(f"{self.cfg.name}: refusal")
+            raise LLMError(f"{self.cfg.name}: refusal", billable=True)
         text = "".join(b.text for b in resp.content if b.type == "text")
         if not text.strip():
-            raise LLMError(f"{self.cfg.name}: empty content")
+            raise LLMError(f"{self.cfg.name}: empty content", billable=True)
         u = resp.usage
         cached = u.cache_read_input_tokens or 0
         total_in = u.input_tokens + cached + (u.cache_creation_input_tokens or 0)

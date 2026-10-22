@@ -10,7 +10,8 @@ from stockbot.config import ModelCfg
 
 
 class LLMError(Exception):
-    """billable=True when the provider likely charged anyway (timeouts: the request ran)."""
+    """billable=True when the provider likely charged anyway: timeouts (the request ran) and
+    any unusable reply that came back with success status. Adapters raise only LLMError."""
 
     def __init__(self, message: str, billable: bool = False):
         super().__init__(message)
