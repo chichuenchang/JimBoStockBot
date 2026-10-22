@@ -10,7 +10,7 @@ from typing import Literal
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
-from stockbot.broker.sim import SimBroker
+from stockbot.broker.sim import SimBroker, buy_price
 from stockbot.clock import ET, Clock
 from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
@@ -201,7 +201,7 @@ def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState
             if qty > 0:
                 orders += 1
                 if rc is not None:
-                    rc = _after_entry(rc, d, qty, prices[sym] * (1 + s.slippage_bps / 1e4), now)
+                    rc = _after_entry(rc, d, qty, buy_price(prices[sym], s.slippage_bps), now)
     return orders
 
 
@@ -239,7 +239,7 @@ def _enter(ctx, arm, d: SymbolDecision, held, prices, now, rc, rejections) -> fl
     if price is None:
         rejections.append((d.symbol, "no_price", ""))
         return 0.0
-    e = price * (1 + s.slippage_bps / 1e4)
+    e = buy_price(price, s.slippage_bps)
     plan = ExitPlan(d.stop_loss, d.profit_target, d.invalidation_condition)
     reason = "add" if held else "entry"
     if arm.variant == "baseline":

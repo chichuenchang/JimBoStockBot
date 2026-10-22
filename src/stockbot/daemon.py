@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta
 
 from stockbot.agent.cycle import AppContext, run_cycle
-from stockbot.broker.sim import floor3
+from stockbot.broker.sim import buy_price, floor3
 from stockbot.clock import cycle_slots, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import Session
@@ -76,7 +76,7 @@ class Daemon:
         if not price:
             return
         cash = db.load_account(BENCHMARK).cash
-        qty = floor3(cash / (price * (1 + 2 * self.ctx.cfg.settings.slippage_bps / 1e4)))
+        qty = floor3(cash / buy_price(price, 2 * self.ctx.cfg.settings.slippage_bps))  # 2x: cash cushion vs open gap
         self.ctx.broker.submit_market(BENCHMARK, sym, "buy", qty, None, "entry", now)
         db.kv_set("benchmark_bought", now.isoformat())
 

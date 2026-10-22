@@ -18,9 +18,15 @@ def floor3(x: float) -> float:
     return math.floor(x * 1000 + 1e-9) / 1000
 
 
+def buy_price(price: float, slippage_bps: float) -> float:
+    """What a market buy pays: slippage always against us."""
+    return price * (1 + slippage_bps / 1e4)
+
+
 class SimBroker:
     def __init__(self, db: DB, slippage_bps: float, commission: float):
         self.db = db
+        self.slippage_bps = slippage_bps
         self.slip = slippage_bps / 1e4
         self.commission = commission
         self._last: dict[str, float] = {}
@@ -90,7 +96,7 @@ class SimBroker:
         sym = o["symbol"]
         pos = st.positions.get(sym)
         if o["side"] == "buy":
-            px = bar.open * (1 + self.slip)
+            px = buy_price(bar.open, self.slippage_bps)
             affordable = floor3(max(st.cash - self.commission, 0) / px)
             qty = floor3(min(o["qty"] or 0, affordable))
             if qty <= 0:

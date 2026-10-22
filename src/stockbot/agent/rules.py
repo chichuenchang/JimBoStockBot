@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from stockbot.broker.sim import floor3
+from stockbot.broker.sim import buy_price, floor3
 from stockbot.config import Settings
 from stockbot.models import Position
 
@@ -33,7 +33,7 @@ class RuleContext:
 
 
 def _eff_entry(p: Proposal, s: Settings) -> float:
-    return p.entry_price * (1 + s.slippage_bps / 1e4)
+    return buy_price(p.entry_price, s.slippage_bps)
 
 
 def _cap_room(p: Proposal, ctx: RuleContext, s: Settings) -> float:
