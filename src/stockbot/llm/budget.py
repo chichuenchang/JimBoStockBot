@@ -9,6 +9,7 @@ from stockbot.db import DB
 from stockbot.llm.base import Usage, cost_usd
 
 State = Literal["ok", "warn", "exhausted"]
+SEVERITY: tuple[State, ...] = ("ok", "warn", "exhausted")
 
 
 class Budget:
@@ -18,19 +19,22 @@ class Budget:
     def _month(self) -> str:
         return month_key(self.clock.now())
 
-    def state(self, model: str) -> State:
-        m = self.cfg.models[model]
-        s = self.cfg.settings
-        month = self._month()
-        spent, total = self.db.spent(model, month), self.db.spent(None, month)
-        if not m.enabled or m.monthly_cap_usd <= 0:
+    def _level(self, spent: float, cap: float) -> State:
+        if spent >= cap:
             return "exhausted"
-        if spent >= m.monthly_cap_usd or total >= s.global_cap_usd:
-            return "exhausted"
-        warn = s.budget_warn_frac
-        if spent >= warn * m.monthly_cap_usd or total >= warn * s.global_cap_usd:
+        if spent >= self.cfg.settings.budget_warn_frac * cap:
             return "warn"
         return "ok"
+
+    def state(self, model: str) -> State:
+        """Worse of the model's own cap and the global cap."""
+        m = self.cfg.models[model]
+        if not m.enabled or m.monthly_cap_usd <= 0:
+            return "exhausted"
+        month = self._month()
+        own = self._level(self.db.spent(model, month), m.monthly_cap_usd)
+        total = self._level(self.db.spent(None, month), self.cfg.settings.global_cap_usd)
+        return max(own, total, key=SEVERITY.index)
 
     def record(self, model: str, arm: str | None, purpose: str, usage: Usage) -> float:
         cost = cost_usd(self.cfg.models[model], usage)
@@ -45,7 +49,5 @@ class Budget:
                for name, m in self.cfg.models.items() if m.enabled}
         total = self.db.spent(None, month)
         cap = self.cfg.settings.global_cap_usd
-        out["_total"] = {"spent": total, "cap": cap,
-                         "state": "exhausted" if total >= cap else
-                         "warn" if total >= self.cfg.settings.budget_warn_frac * cap else "ok"}
+        out["_total"] = {"spent": total, "cap": cap, "state": self._level(total, cap)}
         return out
