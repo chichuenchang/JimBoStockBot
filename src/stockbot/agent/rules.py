@@ -29,6 +29,7 @@ class RuleContext:
     exited_today: set[str]
     day_pnl_frac: float
     atr_1h: dict[str, float | None]
+    risk_off: bool = False  # benchmark below its 50-day average
 
 
 def _eff_entry(p: Proposal, s: Settings) -> float:
@@ -73,6 +74,8 @@ def check_entry(p: Proposal, ctx: RuleContext, s: Settings) -> str | None:
         return "cooldown"
     if ctx.day_pnl_frac <= -s.daily_loss_freeze:
         return "daily_loss_freeze"
+    if ctx.risk_off:
+        return "regime_risk_off"
     if _cap_room(p, ctx, s) < 0.001:
         return "position_cap_reached"
     if size_entry(p, ctx, s) <= 0:

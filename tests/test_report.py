@@ -11,7 +11,7 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, NewsItem
 from stockbot.report.analyst import build_report
-from stockbot.report.features import render_computed_table, ticker_features
+from stockbot.report.features import regime, regime_line, render_computed_table, ticker_features
 
 CFG = load_config(Path(__file__).parent.parent / "config")
 NOW = datetime(2026, 10, 21, 13, 15, tzinfo=UTC)
@@ -30,7 +30,7 @@ def test_features_trend_up():
     assert f["atr14_1h"] > 0
     assert f["last"] == pytest.approx(200)
     assert set(f) == {"last", "chg_1d_pct", "ema20_4h", "ema50_4h", "rsi14_1h", "macd_hist_1h",
-                      "atr14_1h", "swing_highs", "swing_lows", "rel_volume", "trend_4h"}
+                      "atr14_1h", "swing_highs", "swing_lows", "rel_volume", "trend_4h", "sma50_1d"}
 
 
 def test_features_empty_bars():
@@ -41,6 +41,24 @@ def test_features_empty_bars():
 def test_computed_table_lists_symbols():
     t = render_computed_table({"MSFT": ticker_features("MSFT", [], [], [])})
     assert "| MSFT |" in t
+
+
+def test_sma50_needs_50_daily_bars():
+    assert ticker_features("QQQ", [], [], rising("QQQ", 24, 49, NOW))["sma50_1d"] is None
+    f = ticker_features("QQQ", [], [], rising("QQQ", 24, 60, NOW))
+    assert f["sma50_1d"] == pytest.approx(175.5)
+
+
+def test_regime():
+    assert regime(620.0, 600.0) == "risk_on"
+    assert regime(590.0, 600.0) == "risk_off"
+    assert regime(None, 600.0) is None and regime(620.0, None) is None
+
+
+def test_regime_line():
+    line = regime_line({"QQQ": {"last": 590.0, "sma50_1d": 600.0}}, "QQQ")
+    assert "590.0" in line and "600.0" in line and "RISK-OFF" in line
+    assert "unknown" in regime_line({}, "QQQ")
 
 
 @pytest.fixture
@@ -66,6 +84,7 @@ async def test_report_appends_computed_table(env):
     assert db.latest_report_features()["MSFT"]["trend_4h"] == "up"
     _, user = llm.calls[0]
     assert "Big MSFT news" in user and "FOMC" in user
+    assert "## Market Regime" in text
 
 
 async def test_report_fallback_when_budget_exhausted(env):

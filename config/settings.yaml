@@ -21,4 +21,5 @@ max_entries_per_day: 3
 min_rr: 1.5
 min_stop_atr: 0.5
 daily_loss_freeze: 0.03
+regime_gate: true          # no entries while benchmark < its 50-day average
 max_wakes_per_day: 3

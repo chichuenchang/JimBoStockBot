@@ -17,6 +17,10 @@ def ema(xs: list[float], n: int) -> list[float | None]:
     return out
 
 
+def sma(xs: list[float], n: int) -> list[float | None]:
+    return [None if i + 1 < n else sum(xs[i + 1 - n:i + 1]) / n for i in range(len(xs))]
+
+
 def _wilder(xs: list[float], n: int, start: int) -> list[float | None]:
     """Wilder smoothing of xs, seeded with the mean of xs[start:start+n]."""
     out: list[float | None] = [None] * len(xs)

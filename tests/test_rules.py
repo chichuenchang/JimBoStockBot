@@ -109,3 +109,7 @@ def test_stop_only_moves_up():
     assert check_stop_update(98, 99) is None
     assert check_stop_update(None, 97) is None
     assert check_stop_update(98, None) == "stop_removed"
+
+
+def test_risk_off_blocks_entries():
+    assert check_entry(prop(), ctx(risk_off=True), S) == "regime_risk_off"

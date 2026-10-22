@@ -262,3 +262,28 @@ async def test_stop_exit_today_blocks_reentry(tmp_path):
     assert r.orders == 0
     [row] = ctx.db._q("SELECT rule FROM rejections")
     assert row["rule"] == "cooldown"
+
+
+def set_features(ctx, feats):
+    ctx.db.insert_report(SLOT - timedelta(minutes=30), "REPORT TEXT", json.dumps(feats))
+
+
+async def test_entry_blocked_when_benchmark_below_sma50(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0}, "QQQ": {"sma50_1d": 700.0}})  # QQQ 620 < 700
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    [row] = ctx.db._q("SELECT rule FROM rejections")
+    assert r.orders == 0 and row["rule"] == "regime_risk_off"
+
+
+async def test_entry_allowed_when_benchmark_above_sma50(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy()])
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0}, "QQQ": {"sma50_1d": 600.0}})
+    r = await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert r.orders == 1
+
+
+async def test_improved_prompt_states_regime_rule(tmp_path):
+    ctx, llm = make_ctx(tmp_path, ['{}'])
+    await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    assert "50-day average" in llm.calls[0][1]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, time
 from typing import Literal
 
@@ -19,6 +19,7 @@ from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 from stockbot.pause import is_paused
+from stockbot.report.features import regime
 
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
@@ -156,19 +157,21 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
 
 
 def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
-                  now: datetime) -> RuleContext:
-    db = ctx.db
+                  now: datetime, prices: dict[str, float]) -> RuleContext:
+    db, s = ctx.db, ctx.cfg.settings
     midnight = et_midnight(now)
     today = db.orders_since(arm.name, midnight)
     prev = db.last_snapshot_before(arm.name, midnight) or db.start_cash(arm.name)
     feats = db.latest_report_features()
+    bench = s.benchmark_symbol
+    risk_off = s.regime_gate and regime(prices.get(bench), (feats.get(bench) or {}).get("sma50_1d")) == "risk_off"
     return RuleContext(
         nav=nav, cash=state.cash, positions=state.positions,
         entries_today=sum(1 for o in today if o["side"] == "buy"),
         # fills catch stop/target exits (no order); orders catch sells not filled yet
         exited_today=db.sold_since(arm.name, midnight) | {o["symbol"] for o in today if o["side"] == "sell"},
         day_pnl_frac=nav / prev - 1 if prev else 0.0,
-        atr_1h={k: v.get("atr14_1h") for k, v in feats.items()})
+        atr_1h={k: v.get("atr14_1h") for k, v in feats.items()}, risk_off=risk_off)
 
 
 def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState,
@@ -176,7 +179,7 @@ def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState
            rejections: list[tuple[str, str, str]]) -> int:
     s, broker = ctx.cfg.settings, ctx.broker
     orders = 0
-    rc = _rule_context(ctx, arm, state, nav, now) if arm.variant == "improved" else None
+    rc = _rule_context(ctx, arm, state, nav, now, prices) if arm.variant == "improved" else None
     for sym, d in decision.per_symbol.items():
         held = state.positions.get(sym)
         if d.signal == "close_position":
@@ -203,8 +206,7 @@ def _after_entry(rc: RuleContext, d: SymbolDecision, qty: float, e: float,
     held = positions.get(d.symbol)
     positions[d.symbol] = Position(d.symbol, qty + (held.qty if held else 0), e, now,
                                    ExitPlan(d.stop_loss, d.profit_target, d.invalidation_condition))
-    return RuleContext(rc.nav, rc.cash - qty * e, positions, rc.entries_today + 1,
-                       rc.exited_today, rc.day_pnl_frac, rc.atr_1h)
+    return replace(rc, cash=rc.cash - qty * e, positions=positions, entries_today=rc.entries_today + 1)
 
 
 def _update_plan(ctx, arm, held, d: SymbolDecision, now, rejections) -> None:

@@ -67,6 +67,8 @@ def _rules(s: Settings) -> str:
         f"- Stop distance must be at least {s.min_stop_atr} x ATR14 (1h)",
         "- No re-entry in a symbol on the day you exited it",
         f"- New entries frozen for the day once the account is down {s.daily_loss_freeze:.0%} today",
+        *([f"- No new entries while {s.benchmark_symbol} is below its 50-day average (see Market Regime)"]
+          if s.regime_gate else []),
     ])
 
 

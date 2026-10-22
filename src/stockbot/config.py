@@ -63,6 +63,7 @@ class Settings:
     max_wakes_per_day: int
     llm_timeout_s: float
     benchmark_symbol: str = "QQQ"
+    regime_gate: bool = True
 
 
 @dataclass(frozen=True)

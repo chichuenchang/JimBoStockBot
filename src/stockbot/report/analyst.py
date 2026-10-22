@@ -10,7 +10,7 @@ from stockbot.data.base import MarketData
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
-from stockbot.report.features import render_computed_table, ticker_features
+from stockbot.report.features import regime_line, render_computed_table, ticker_features
 
 ANALYST_SYSTEM = """You are a markets analyst writing a briefing for swing traders of US stocks.
 Use ONLY the numbers in the provided data; never invent prices or levels.
@@ -23,7 +23,7 @@ Write markdown with exactly these sections:
 ## 5. Edge Quality Matrix - high conviction, tactical, no edge.
 Long-only accounts: frame bearish views as reasons to avoid or exit, not to short."""
 
-HISTORY = {"1Hour": timedelta(days=15), "4Hour": timedelta(days=45), "1Day": timedelta(days=45)}
+HISTORY = {"1Hour": timedelta(days=15), "4Hour": timedelta(days=45), "1Day": timedelta(days=80)}  # 80d: >= 50 sessions for sma50
 NEWS_WINDOW = timedelta(hours=72)
 EVENT_WINDOW_DAYS = 10
 
@@ -67,6 +67,7 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
 
     parts = [f"# CURRENT STATE OF MARKETS\nIt is {now.astimezone(ET):%A, %B %d, %Y %H:%M} ET.\n"]
     parts.append(analysis if analysis else f"Analyst unavailable: {reason}")
+    parts.append("## Market Regime\n" + regime_line(features, cfg.settings.benchmark_symbol))
     parts.append("## Computed Data (harness, authoritative)\n" + table)
     parts.append("## Upcoming Events\n" + ("\n".join(events) or "(none)"))
     if not analysis:
