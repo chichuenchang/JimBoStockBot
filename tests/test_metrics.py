@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from stockbot.metrics import (aligned_daily_returns, alpha_beta, daily_closes, daily_returns, max_drawdown, sharpe,
-                              sharpe_ci, trade_stats)
+from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
+                              max_drawdown, sharpe, sharpe_ci, trade_stats)
 from stockbot.models import ClosedTrade
 
 T = datetime(2026, 10, 21, 15, tzinfo=UTC)
@@ -31,6 +31,20 @@ def test_max_drawdown():
 def test_trade_stats():
     s = trade_stats([trade(p) for p in (100, 50, -30, -20)])
     assert (s.n, s.win_rate, s.avg_win, s.avg_loss, s.profit_factor) == (4, 0.5, 75, -25, 3.0)
+
+
+def test_conviction_buckets():
+    def t(conv, r):
+        return ClosedTrade("a", "X", T, T, 100, 100, 1, r or 1.0, r, "close", "", conviction=conv)
+    rows = conviction_buckets([t(0.9, 2.0), t(0.7, -1.0), t(0.1, -1.0), t(None, 0.5), t(0.5, None)])
+    assert [r["conviction"] for r in rows] == ["low <0.33", "mid 0.33-0.67", "high >=0.67", "not given"]
+    high = rows[2]
+    assert (high["trades"], high["win_rate"], high["avg_r"]) == (2, 50.0, 0.5)
+    assert rows[1]["avg_r"] is None  # its one trade has no R
+
+
+def test_conviction_buckets_skip_empty():
+    assert conviction_buckets([]) == []
 
 
 def test_profit_factor_no_losses():

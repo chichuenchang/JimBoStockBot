@@ -8,8 +8,8 @@ from stockbot import pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
-from stockbot.metrics import (aligned_daily_returns, alpha_beta, daily_closes, daily_returns, max_drawdown,
-                              sharpe, sharpe_ci, trade_stats)
+from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
+                              max_drawdown, sharpe, sharpe_ci, trade_stats)
 from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
@@ -139,8 +139,12 @@ def trades(db: DB, account: str) -> list[dict]:
              "entry_price": t.entry_price, "exit_price": t.exit_price, "qty": t.qty,
              "hold_hours": (t.exit_ts - t.entry_ts).total_seconds() / 3600, "pnl": t.pnl,
              "r_multiple": t.r_multiple, "exit_reason": t.exit_reason, "justification": t.justification,
-             "replayed": t.replayed}
+             "replayed": t.replayed, "conviction": t.conviction}
             for t in reversed(db.closed_trades(account))]
+
+
+def conviction(db: DB, account: str) -> list[dict]:
+    return conviction_buckets(db.closed_trades(account))
 
 
 def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:

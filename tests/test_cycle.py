@@ -134,6 +134,14 @@ async def test_improved_sized_order(tmp_path):
     expected = size_entry(Proposal("MSFT", 100.0, 95, 110, "x", 1.0), rc, CFG.settings)
     assert o["qty"] == pytest.approx(expected)
     assert o["stop_loss"] == 95 and o["risk_per_share"] == pytest.approx(100.05 - 95)
+    assert o["conviction"] == 1
+
+
+async def test_omitted_conviction_stored_as_none(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy(conviction=None)])
+    await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    [o] = ctx.db.pending_orders("MSFT")
+    assert o["qty"] > 0 and o["conviction"] is None
 
 
 async def test_baseline_uses_llm_quantity(tmp_path):

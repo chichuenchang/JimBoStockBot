@@ -88,6 +88,10 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def api_trades(arm: str):
         return q.trades(db, known(arm))
 
+    @app.get("/api/arm/{arm}/conviction")
+    def api_conviction(arm: str):
+        return q.conviction(db, known(arm))
+
     @app.get("/api/arm/{arm}/decisions")
     def api_decisions(arm: str):
         return q.decisions(db, known(arm))

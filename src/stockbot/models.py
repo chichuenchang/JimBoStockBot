@@ -88,3 +88,4 @@ class ClosedTrade:
     justification: str
     replayed: bool = False  # exit filled during restart catch-up
     exit_justification: str = ""  # empty for stop/target fills
+    conviction: float | None = None  # what the model sent on the first entry; None = not sent

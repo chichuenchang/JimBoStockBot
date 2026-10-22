@@ -301,5 +301,5 @@ def _enter(ctx, arm, d: SymbolDecision, held, prices, now, rc, rejections) -> fl
         return 0.0
     qty = size_entry(p, rc, s)
     ctx.broker.submit_market(arm.name, d.symbol, "buy", qty, plan, reason, now, e - d.stop_loss,
-                             d.justification)
+                             d.justification, d.conviction)
     return qty

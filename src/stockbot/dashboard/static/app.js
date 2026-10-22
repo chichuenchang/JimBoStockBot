@@ -158,8 +158,8 @@ async function loadCandles() {
 }
 async function loadArm(st) {
   const arm = encodeURIComponent(window.ARM);
-  const [pos, trades, decs, rej] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`)]);
+  const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
+    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), get(`/api/arm/${arm}/conviction`)]);
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
   document.getElementById("armstate").innerHTML =
     `<span class="chip">model <b>${esc(me.model)}</b></span><span class="chip">setup <b>${esc(me.variant)}</b></span>` +
@@ -175,8 +175,11 @@ async function loadArm(st) {
     ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
   table("trades", [["symbol", "stock", 1], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
     ["entry_price", "in", 0, (v) => fmt(v)], ["exit_price", "out", 0, (v) => fmt(v)], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
-    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)], ["exit_reason", "exit", 1, (v, r) => esc(v) + (r.replayed ? ' <span class="chip" title="Filled while catching up after the PC was off">replayed</span>' : "")],
+    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)], ["conviction", "conviction", 0, (v) => fmt(v)],
+    ["exit_reason", "exit", 1, (v, r) => esc(v) + (r.replayed ? ' <span class="chip" title="Filled while catching up after the PC was off">replayed</span>' : "")],
     ["justification", "reason", "wrap"]], trades, "No closed trades yet.");
+  table("conviction", [["conviction", "conviction at entry", 1], ["trades", "trades"], ["win_rate", "win rate %", 0, (v) => fmt(v, 0)],
+    ["avg_r", "avg R", 0, (v) => signed(v, 2)]], conv, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
   document.getElementById("decisions").innerHTML = decs.length ? decs.map((d) =>

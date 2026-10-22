@@ -36,9 +36,10 @@ class SimBroker:
 
     def submit_market(self, account: str, symbol: str, side: str, qty: float | None,
                       exit_plan: ExitPlan | None, reason: str, ts: datetime,
-                      risk_per_share: float | None = None, justification: str = "") -> int:
+                      risk_per_share: float | None = None, justification: str = "",
+                      conviction: float | None = None) -> int:
         return self.db.insert_order(account, symbol, side, qty, exit_plan, reason, ts,
-                                    risk_per_share, justification)
+                                    risk_per_share, justification, conviction)
 
     def update_exit_plan(self, account: str, symbol: str, plan: ExitPlan) -> None:
         st = self.db.load_account(account)
@@ -132,7 +133,7 @@ class SimBroker:
             fill = Fill(o["account"], sym, "sell", qty, px, bar.ts, o["reason"], replayed)
             self._reduce(st, sym, qty, px)
         self.db.save_account(st)
-        fid = self.db.insert_fill(fill, o["justification"], o["risk_per_share"])
+        fid = self.db.insert_fill(fill, o["justification"], o["risk_per_share"], o["conviction"])
         self.db.mark_order_filled(o["id"], fid)
         return fill
 

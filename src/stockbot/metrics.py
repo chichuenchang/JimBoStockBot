@@ -89,6 +89,31 @@ def max_drawdown(navs: list[float]) -> float:
     return worst
 
 
+CONVICTION_BUCKETS = ["low <0.33", "mid 0.33-0.67", "high >=0.67", "not given"]
+
+
+def _bucket(c: float | None) -> str:
+    if c is None:
+        return CONVICTION_BUCKETS[3]
+    return CONVICTION_BUCKETS[0 if c < 1 / 3 else 1 if c < 2 / 3 else 2]
+
+
+def conviction_buckets(trades: list[ClosedTrade]) -> list[dict]:
+    """Result by the conviction the model gave at entry. Calibrated: avg R rises with conviction."""
+    groups: dict[str, list[ClosedTrade]] = {b: [] for b in CONVICTION_BUCKETS}
+    for t in trades:
+        groups[_bucket(t.conviction)].append(t)
+    out = []
+    for b, ts in groups.items():
+        if not ts:
+            continue
+        rs = [t.r_multiple for t in ts if t.r_multiple is not None]
+        out.append({"conviction": b, "trades": len(ts),
+                    "win_rate": sum(t.pnl > 0 for t in ts) / len(ts) * 100,
+                    "avg_r": statistics.mean(rs) if rs else None})
+    return out
+
+
 def trade_stats(trades: list[ClosedTrade]) -> TradeStats:
     if not trades:
         return TradeStats(0, None, None, None, None)

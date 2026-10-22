@@ -168,3 +168,16 @@ def test_replayed_fills_marked(tmp_path):
     assert t["replayed"] is True
     markers = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["markers"]
     assert [m["replayed"] for m in markers] == [False, True]
+
+
+def test_conviction_api(tmp_path):
+    db = DB.open(tmp_path / "c.db")
+    db.ensure_account("kimi-improved", 10000)
+    db.insert_fill(Fill("kimi-improved", "MSFT", "buy", 1, 100, T0, "entry", False), risk_per_share=2.0,
+                   conviction=0.9)
+    db.insert_fill(Fill("kimi-improved", "MSFT", "sell", 1, 104, T0 + timedelta(hours=1), "target", False))
+    c = client(db)
+    [t] = c.get("/api/arm/kimi-improved/trades").json()
+    assert t["conviction"] == 0.9
+    [row] = c.get("/api/arm/kimi-improved/conviction").json()
+    assert row == {"conviction": "high >=0.67", "trades": 1, "win_rate": 100.0, "avg_r": 2.0}
