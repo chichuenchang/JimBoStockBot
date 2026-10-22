@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -116,9 +118,22 @@ class DB:
         return [r["account"] for r in self._q(
             "SELECT account FROM positions WHERE symbol=? ORDER BY account", symbol)]
 
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """All writes inside commit together or not at all. Nested use joins the outer one."""
+        if self.conn.in_transaction:
+            yield
+            return
+        self.conn.execute("BEGIN")
+        try:
+            yield
+        except BaseException:
+            self.conn.execute("ROLLBACK")
+            raise
+        self.conn.execute("COMMIT")
+
     def save_account(self, state: AccountState) -> None:
-        with self.conn:
-            self.conn.execute("BEGIN")
+        with self.transaction():
             self.conn.execute("UPDATE accounts SET cash=? WHERE account=?", (state.cash, state.account))
             self.conn.execute("DELETE FROM positions WHERE account=?", (state.account,))
             for p in state.positions.values():

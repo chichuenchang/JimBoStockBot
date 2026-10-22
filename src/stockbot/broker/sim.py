@@ -70,12 +70,15 @@ class SimBroker:
         for o in self.db.pending_orders(bar.symbol):
             if parse_ts(o["created_ts"]) >= bar.ts:
                 continue
-            f = self._fill_order(o, bar, replayed)
+            # account, fill and order status commit together: a crash can never refill an order
+            with self.db.transaction():
+                f = self._fill_order(o, bar, replayed)
             if f:
                 fills.append(f)
         for account in self.db.holders(bar.symbol):
             if enforce_exits(account):
-                f = self._check_exit(account, bar, replayed)
+                with self.db.transaction():
+                    f = self._check_exit(account, bar, replayed)
                 if f:
                     fills.append(f)
         self._last[bar.symbol] = bar.close

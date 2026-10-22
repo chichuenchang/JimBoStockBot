@@ -144,3 +144,17 @@ def test_replayed_flag_set(broker):
     broker.submit_market("a", "MSFT", "buy", 1, None, "entry", T0)
     [f] = broker.on_bar(bar("MSFT", 1, 100), ALWAYS, replayed=True)
     assert f.replayed
+
+
+def test_crash_mid_fill_leaves_no_partial_state(broker, monkeypatch):
+    broker.submit_market("a", "MSFT", "buy", 10, None, "entry", T0)
+
+    def crash(*a):
+        raise RuntimeError("power cut")
+    monkeypatch.setattr(broker.db, "mark_order_filled", crash)
+    with pytest.raises(RuntimeError):
+        broker.on_bar(bar("MSFT", 1, 100), ALWAYS)
+    assert broker.db.load_account("a").cash == 10000 and broker.db.fills("a") == []
+    monkeypatch.undo()
+    [f] = broker.on_bar(bar("MSFT", 2, 100), ALWAYS)  # order still pending: fills exactly once
+    assert broker.db.load_account("a").positions["MSFT"].qty == f.qty == 10
