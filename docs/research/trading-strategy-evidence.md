@@ -12,7 +12,7 @@ Extends `related-projects.md`; no repeats. Question: best bot strategy, what fit
 | AI-Trader (arXiv 2512.10971) | Live, 6 LLMs, 3 markets. General intelligence ≠ trading skill; risk control decides cross-market robustness. |
 | ATLAS (arXiv 2510.15949) | Reflection-based feedback: no systematic gain. Prompt optimisation from windowed P&L (Adaptive-OPRO) beat fixed prompts. Self-reported. |
 | Chen et al. (AEA 2026) | LLM forecasts over-extrapolate recent returns; real stocks show short-term reversal. Expect LLM arms to chase. |
-| Barrelet agent-alpha-bench | Qwen3-8B +11% on 50 large caps from one near-100%-NAV bet; 25% per-stock cap turned it −4%. TradeRank: 46.2% model-seasons profitable (2026-09-13). |
+| Barrelet agent-alpha-bench | Qwen3-8B +11% on 50 large caps from one near-100%-NAV bet; 25% per-stock cap turned it −4%. |
 | TradeRank (2026-10-10) | 69 models, 10 seasons, 2,921 trades, 43.1% model-seasons profitable. Alpha Arena: no Season 2 results public; last = S1.5 (Dec 2025). |
 
 ## Rule strategies, evidence for our universe
