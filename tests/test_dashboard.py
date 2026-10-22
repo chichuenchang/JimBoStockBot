@@ -84,6 +84,15 @@ def test_pause_endpoint_sets_kv(db):
     assert c.post("/api/pause/nope").status_code == 404
 
 
+def test_cross_site_post_refused(db):
+    """Any web page the user visits could POST to 127.0.0.1; the browser labels it."""
+    c = client(db)
+    for site in ("cross-site", "same-site"):
+        assert c.post("/api/pause_all", headers={"Sec-Fetch-Site": site}).status_code == 403
+    assert not is_paused(db, "kimi-improved")
+    assert c.post("/api/pause_all", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+
+
 def test_glossary_covers_all_columns():
     assert set(LEADERBOARD_KEYS) - {"arm", "model", "variant"} <= set(TIPS)
     assert all(len(v.split()) <= 25 for v in TIPS.values())

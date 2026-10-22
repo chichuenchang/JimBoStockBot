@@ -6,7 +6,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -30,6 +30,13 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
+
+    @app.middleware("http")
+    async def same_origin_writes(request: Request, call_next):
+        # No auth on localhost: refuse writes the browser marks as sent from another site.
+        if request.method != "GET" and request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
+            return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+        return await call_next(request)
 
     def known(arm: str) -> str:
         if arm not in db.accounts():
