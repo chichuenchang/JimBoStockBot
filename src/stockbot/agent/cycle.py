@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import random
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, time
 from typing import Literal
 
@@ -62,11 +62,25 @@ def et_midnight(ts: datetime) -> datetime:
     return datetime.combine(ts.astimezone(ET).date(), time(0), tzinfo=ET)
 
 
-def _record(ctx, arm, slot, reason, report_id, prompt, raw, decision, status, usage_totals):
-    i, c, o, cost = usage_totals
+@dataclass
+class _Exchange:
+    """What a cycle sent its model, got back and paid. Stored: the last prompt sent (the retry
+    prompt contains the first) and every reply."""
+    prompt: str = ""
+    replies: list[str] = field(default_factory=list)
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    cost: float = 0.0
+
+    def transcript(self) -> str:
+        return RETRY_MARK.join(self.replies)
+
+
+def _record(ctx, arm, slot, reason, report_id, ex: _Exchange, decision, status):
     parsed = json.dumps(asdict(decision)) if decision else "{}"
-    return ctx.db.insert_decision(arm.name, slot, reason, report_id, prompt, raw, parsed, status,
-                                  i, c, o, cost)
+    return ctx.db.insert_decision(arm.name, slot, reason, report_id, ex.prompt, ex.transcript(), parsed, status,
+                                  ex.input_tokens, ex.cached_input_tokens, ex.output_tokens, ex.cost)
 
 
 async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
@@ -77,7 +91,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     if db.decision_exists(arm.name, slot_ts):
         return CycleResult(arm.name, slot_ts, "skipped_duplicate", None, 0, 0)
     if hold_only(ctx, arm):
-        did = _record(ctx, arm, slot_ts, reason, None, "", "", None, "hold_only", (0, 0, 0, 0.0))
+        did = _record(ctx, arm, slot_ts, reason, None, _Exchange(), None, "hold_only")
         return CycleResult(arm.name, slot_ts, "hold_only", did, 0, 0)
 
     now = ctx.clock.now()
@@ -93,59 +107,14 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     report_id, report_text = report if report else (None, "# CURRENT STATE OF MARKETS\n(no report yet)")
     state = db.load_account(arm.name)
     nav = ctx.broker.nav(arm.name, prices)
-    replies: list[str] = []
-
-    def transcript() -> str:
-        return RETRY_MARK.join(replies)
-    if not arm.uses_llm:
-        prompt, totals = "", [0, 0, 0, 0.0]
-        decision = _control_decision(arm, slot_ts, state, prices, db.latest_report_features(), s.universe)
+    ex = _Exchange()
+    if arm.uses_llm:
+        decision, failed = await _llm_decision(ctx, arm, ex, report_text, state, prices, nav, now)
+        if failed:
+            did = _record(ctx, arm, slot_ts, reason, report_id, ex, None, failed)
+            return CycleResult(arm.name, slot_ts, failed, did, orders, 0)
     else:
-        journal = None
-        if arm.variant == "improved":
-            await reflect_new_trades(ctx, arm, now)
-            notes = db.journal_recent(arm.name, "notes", 1)
-            journal = JournalView(db.journal_recent(arm.name, "summary", 5),
-                                  db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
-                                  db.journal_recent(arm.name, "lesson", 5))
-        system = system_prompt(arm.variant, s)
-        user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
-
-        client = ctx.clients[arm.model]
-        totals = [0, 0, 0, 0.0]
-
-        async def call(prompt: str, purpose: str):
-            try:
-                res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
-            except LLMError as e:
-                totals[3] += e.cost
-                raise
-            totals[0] += res.usage.input_tokens
-            totals[1] += res.usage.cached_input_tokens
-            totals[2] += res.usage.output_tokens
-            totals[3] += cost
-            return res.text
-
-        # Stored: the last prompt sent (the retry prompt contains the first) and every reply.
-        prompt, decision = user, None
-        try:
-            replies.append(await call(prompt, "decision"))
-            try:
-                decision = parse_decision(replies[-1], arm.variant, s.universe)
-            except ParseError as e:
-                prompt = user + RETRY_SUFFIX.format(err=e)
-                replies.append(await call(prompt, "retry"))
-                try:
-                    decision = parse_decision(replies[-1], arm.variant, s.universe)
-                except ParseError as e2:
-                    did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None,
-                                  "parse_failed", totals)
-                    db.journal_append(arm.name, now, "summary", f"reply unparseable: {e2}"[:SUMMARY_MAX])
-                    return CycleResult(arm.name, slot_ts, "parse_failed", did, orders, 0)
-        except LLMError as e:
-            replies.append(str(e))
-            did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None, "llm_failed", totals)
-            return CycleResult(arm.name, slot_ts, "llm_failed", did, orders, 0)
+        decision = _control_decision(arm, slot_ts, state, prices, db.latest_report_features(), s.universe)
 
     rejections: list[tuple[str, str, str]] = []
     status: Status = "ok"
@@ -155,7 +124,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         # An LLM call is already paid for: record the decision so the slot is never re-called.
         log.exception("applying decision for %s failed", arm.name)
         status = "apply_failed"
-    did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), decision, status, totals)
+    did = _record(ctx, arm, slot_ts, reason, report_id, ex, decision, status)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
     if not arm.uses_llm:
@@ -168,6 +137,52 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     if decision.notes_to_self:
         db.journal_append(arm.name, now, "notes", decision.notes_to_self)
     return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
+
+
+async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text: str, state: AccountState,
+                        prices: dict[str, float], nav: float,
+                        now: datetime) -> tuple[Decision | None, Status | None]:
+    """Ask the arm's model, retrying once on an unparseable reply. (decision, None) or
+    (None, failure status); ex collects the exchange either way."""
+    db, s = ctx.db, ctx.cfg.settings
+    journal = None
+    if arm.variant == "improved":
+        await reflect_new_trades(ctx, arm, now)
+        notes = db.journal_recent(arm.name, "notes", 1)
+        journal = JournalView(db.journal_recent(arm.name, "summary", 5),
+                              db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
+                              db.journal_recent(arm.name, "lesson", 5))
+    system = system_prompt(arm.variant, s)
+    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
+    client = ctx.clients[arm.model]
+
+    async def ask(prompt: str, purpose: str) -> str:
+        ex.prompt = prompt
+        try:
+            res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
+        except LLMError as e:
+            ex.cost += e.cost
+            ex.replies.append(str(e))
+            raise
+        ex.input_tokens += res.usage.input_tokens
+        ex.cached_input_tokens += res.usage.cached_input_tokens
+        ex.output_tokens += res.usage.output_tokens
+        ex.cost += cost
+        ex.replies.append(res.text)
+        return res.text
+
+    try:
+        try:
+            return parse_decision(await ask(user, "decision"), arm.variant, s.universe), None
+        except ParseError as e:
+            reply = await ask(user + RETRY_SUFFIX.format(err=e), "retry")
+        try:
+            return parse_decision(reply, arm.variant, s.universe), None
+        except ParseError as e:
+            db.journal_append(arm.name, now, "summary", f"reply unparseable: {e}"[:SUMMARY_MAX])
+            return None, "parse_failed"
+    except LLMError:
+        return None, "llm_failed"
 
 
 def _control_decision(arm: ArmCfg, slot_ts: datetime, state: AccountState, prices: dict[str, float],
