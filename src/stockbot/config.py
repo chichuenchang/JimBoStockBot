@@ -122,7 +122,10 @@ def load_config(config_dir: Path) -> AppConfig:
 
     arms = []
     for a in _read(config_dir / "arms.yaml").get("arms") or []:
-        arm = ArmCfg(**a)
+        try:
+            arm = ArmCfg(**a)
+        except TypeError as e:
+            raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
         if arm.model not in models:
             raise ConfigError(f"arm {arm.name}: unknown model {arm.model!r}")
         if arm.variant not in VARIANTS:

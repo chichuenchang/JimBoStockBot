@@ -33,6 +33,14 @@ def test_arm_with_unknown_model_rejected(tmp_path):
         load_config(d)
 
 
+def test_arm_with_bad_key_is_config_error(tmp_path):
+    d = copy_config(tmp_path)
+    (d / "arms.yaml").write_text(
+        "arms:\n  - {name: typo-arm, modle: kimi-k3, variant: baseline, enabled: true}\n")
+    with pytest.raises(ConfigError, match="typo-arm"):
+        load_config(d)
+
+
 def test_enabled_caps_exceed_global_rejected(tmp_path):
     d = copy_config(tmp_path)
     text = (d / "models.yaml").read_text().replace("monthly_cap_usd: 80", "monthly_cap_usd: 90")
