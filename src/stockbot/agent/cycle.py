@@ -5,7 +5,7 @@ import json
 import logging
 import random
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, time
+from datetime import date, datetime, time
 from typing import Literal
 
 from stockbot.agent.control import random_decision, rules_decision
@@ -13,9 +13,10 @@ from stockbot.agent.prompts import JournalView, build_user_prompt, render_state,
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
-from stockbot.clock import ET, Clock
+from stockbot.clock import ET, Clock, et_date
 from stockbot.config import CONTROL_VARIANTS, RULED_VARIANTS, AppConfig, ArmCfg
 from stockbot.data.base import MarketData
+from stockbot.data.fundamentals import FundamentalsSource, business_days_until
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
@@ -39,6 +40,7 @@ class AppContext:
     budget: Budget
     clients: dict[str, LLMClient]
     clock: Clock
+    fundamentals: FundamentalsSource | None = None
 
 
 @dataclass(frozen=True)
@@ -188,7 +190,18 @@ def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
         # fills catch stop/target exits (no order); orders catch sells not filled yet
         exited_today=db.sold_since(arm.name, midnight) | {o["symbol"] for o in today if o["side"] == "sell"},
         day_pnl_frac=nav / prev - 1 if prev else 0.0,
-        atr_1h={k: v.get("atr14_1h") for k, v in feats.items()}, risk_off=risk_off)
+        atr_1h={k: v.get("atr14_1h") for k, v in feats.items()}, risk_off=risk_off,
+        blackout=_blackout(ctx, feats, now))
+
+
+def _blackout(ctx: AppContext, feats: dict, now: datetime) -> frozenset[str]:
+    """Symbols with earnings (report features) or a symbol event (events.yaml) within
+    earnings_blackout_days sessions, today included."""
+    days = ctx.cfg.settings.earnings_blackout_days
+    today = et_date(now)
+    dates = [(e.day, sym) for e in ctx.cfg.events for sym in e.symbols]
+    dates += [(date.fromisoformat(f["next_earnings"]), sym) for sym, f in feats.items() if f.get("next_earnings")]
+    return frozenset(sym for d, sym in dates if 0 <= business_days_until(today, d) <= days)
 
 
 def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState,

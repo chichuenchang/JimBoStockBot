@@ -66,6 +66,7 @@ class Settings:
     regime_gate: bool = True
     trail_breakeven_r: float = 1.0  # 0 disables
     trail_atr_mult: float = 3.0  # 0 disables
+    earnings_blackout_days: int = 1  # no entries this many sessions before earnings; -1 disables
 
 
 @dataclass(frozen=True)

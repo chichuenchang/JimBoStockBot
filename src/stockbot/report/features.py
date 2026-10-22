@@ -65,15 +65,18 @@ COLUMNS = ["last", "chg_1d_pct", "trend_4h", "ema20_4h", "ema50_4h", "rsi14_1h",
            "atr14_1h", "swing_highs", "swing_lows", "rel_volume", "sma50_1d"]
 
 
-def render_computed_table(features: dict[str, dict]) -> str:
+FUNDAMENTAL_COLUMNS = ["next_earnings", "pe_ttm", "fwd_pe", "rev_growth_yoy_pct", "eps_growth_yoy_pct"]
+
+
+def render_computed_table(features: dict[str, dict], columns: list[str] = COLUMNS) -> str:
     def cell(v):
         if v is None:
             return "n/a"
         if isinstance(v, list):
             return ", ".join(str(x) for x in v) or "-"
         return str(v)
-    head = "| symbol | " + " | ".join(COLUMNS) + " |"
-    sep = "|" + "---|" * (len(COLUMNS) + 1)
-    rows = [f"| {s} | " + " | ".join(cell(f.get(c)) for c in COLUMNS) + " |"
+    head = "| symbol | " + " | ".join(columns) + " |"
+    sep = "|" + "---|" * (len(columns) + 1)
+    rows = [f"| {s} | " + " | ".join(cell(f.get(c)) for c in columns) + " |"
             for s, f in features.items()]
     return "\n".join([head, sep, *rows])

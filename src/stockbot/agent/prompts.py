@@ -69,6 +69,8 @@ def _rules(s: Settings) -> str:
         f"- New entries frozen for the day once the account is down {s.daily_loss_freeze:.0%} today",
         *([f"- No new entries while {s.benchmark_symbol} is below its 50-day average (see Market Regime)"]
           if s.regime_gate else []),
+        *([f"- No entries in a symbol from {s.earnings_blackout_days} session(s) before its earnings through earnings day"]
+          if s.earnings_blackout_days >= 0 else []),
         *([f"- Stops trail automatically: to entry once price gains {s.trail_breakeven_r:g}R"]
           if s.trail_breakeven_r else []),
         *([f"- Stops trail automatically: kept at least {s.trail_atr_mult:g} x ATR14 (1h) under the high since entry"]

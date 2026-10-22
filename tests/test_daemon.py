@@ -184,3 +184,25 @@ async def test_run_forever_survives_step_crash(tmp_path, caplog):
     with caplog.at_level(logging.ERROR), pytest.raises(Stop):
         await daemon.run_forever(poll_s=0)
     assert len(calls) == 2 and "database is locked" in caplog.text
+
+
+class OneEarnings:
+    async def snapshot(self, symbols, today):
+        return {"MSFT": {"next_earnings": "2026-11-30"}}
+
+
+async def test_reports_use_fundamentals_source(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.fundamentals = OneEarnings()
+    await run_day(daemon, session, clock, until=session.open_utc)
+    assert daemon.ctx.db.latest_report_features()["MSFT"]["next_earnings"] == "2026-11-30"
+
+
+def test_fundamentals_source_from_env(monkeypatch):
+    from stockbot.cli import _fundamentals
+    from stockbot.data.fundamentals import AlphaVantage
+    monkeypatch.setattr("stockbot.cli.load_dotenv", lambda: None)
+    monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+    assert _fundamentals() is None
+    monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k")
+    assert isinstance(_fundamentals(), AlphaVantage)

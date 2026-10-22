@@ -124,3 +124,26 @@ async def test_report_timeout_billed_estimate(env):
     _, text = await build_report(data, Slow(), budget, CFG, db, NOW)
     assert "Analyst unavailable: x: timeout" in text
     assert db.spent(CFG.settings.analyst_model, "2026-10") > 0
+
+
+class StaticFundamentals:
+    async def snapshot(self, symbols, today):
+        return {"MSFT": {"next_earnings": "2026-10-28", "pe_ttm": 35.2, "fwd_pe": 31.0,
+                         "rev_growth_yoy_pct": 12.3, "eps_growth_yoy_pct": None}}
+
+
+async def test_report_merges_fundamentals_and_earnings_events(env):
+    data, db, budget = env
+    llm = FakeLLM(["analysis"])
+    _, text = await build_report(data, llm, budget, CFG, db, NOW, StaticFundamentals())
+    f = db.latest_report_features()["MSFT"]
+    assert f["next_earnings"] == "2026-10-28" and f["pe_ttm"] == 35.2
+    assert "## Fundamentals" in text and "35.2" in text
+    assert "2026-10-28 ET: MSFT earnings" in text
+    assert "MSFT earnings" in llm.calls[0][1]
+
+
+async def test_report_without_fundamentals_has_no_section(env):
+    data, db, budget = env
+    _, text = await build_report(data, FakeLLM(["analysis"]), budget, CFG, db, NOW)
+    assert "## Fundamentals" not in text

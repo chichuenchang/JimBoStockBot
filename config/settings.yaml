@@ -24,4 +24,5 @@ daily_loss_freeze: 0.03
 regime_gate: true          # no entries while benchmark < its 50-day average
 trail_breakeven_r: 1.0     # stop to entry once peak >= entry + 1R; 0 = off
 trail_atr_mult: 3.0        # stop >= peak - 3 x ATR14(1h); 0 = off
+earnings_blackout_days: 1  # no entries from 1 session before earnings (or a symbol event) through the day; -1 = off
 max_wakes_per_day: 3

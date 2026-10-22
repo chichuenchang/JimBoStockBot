@@ -30,6 +30,7 @@ class RuleContext:
     day_pnl_frac: float
     atr_1h: dict[str, float | None]
     risk_off: bool = False  # benchmark below its 50-day average
+    blackout: frozenset[str] = frozenset()  # symbols with earnings too close to enter
 
 
 def _eff_entry(p: Proposal, s: Settings) -> float:
@@ -76,6 +77,8 @@ def check_entry(p: Proposal, ctx: RuleContext, s: Settings) -> str | None:
         return "daily_loss_freeze"
     if ctx.risk_off:
         return "regime_risk_off"
+    if p.symbol in ctx.blackout:
+        return "earnings_blackout"
     if _cap_room(p, ctx, s) < 0.001:
         return "position_cap_reached"
     if size_entry(p, ctx, s) <= 0:

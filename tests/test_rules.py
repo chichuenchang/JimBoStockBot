@@ -134,3 +134,8 @@ def test_trail_never_lowers():
 
 def test_trail_needs_peak():
     assert trail_stop(held(peak=None), 1.0, S) is None
+
+
+def test_earnings_blackout_blocks_entries():
+    assert check_entry(prop(), ctx(blackout=frozenset({"MSFT"})), S) == "earnings_blackout"
+    assert check_entry(prop(), ctx(blackout=frozenset({"NVDA"})), S) is None
