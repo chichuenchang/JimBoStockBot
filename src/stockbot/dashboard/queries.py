@@ -8,12 +8,13 @@ from stockbot import pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
-from stockbot.metrics import daily_closes, daily_returns, max_drawdown, sharpe, trade_stats
+from stockbot.metrics import (aligned_daily_returns, alpha_beta, daily_closes, daily_returns, max_drawdown,
+                              sharpe, sharpe_ci, trade_stats)
 from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
                     "llm_spend", "net_after_llm", "win_rate", "avg_win", "avg_loss", "profit_factor",
-                    "sharpe", "max_drawdown", "trades", "invested_pct"]
+                    "sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown", "trades", "invested_pct"]
 MAX_POINTS = 2000
 
 
@@ -39,6 +40,7 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
     broker = _broker(db, cfg)
     navs = {a: broker.nav(a, {}) for a in db.accounts()}
     bench_ret = (navs[BENCHMARK] / db.start_cash(BENCHMARK) - 1) * 100 if BENCHMARK in navs else None
+    bench_series = db.equity_series(BENCHMARK) if BENCHMARK in navs else []
     rows = []
     for account, nav in navs.items():
         start = db.start_cash(account)
@@ -49,7 +51,9 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
         pnl = nav - start
         spend = db.spent_by_arm(account)
         ret = (nav / start - 1) * 100
-        sh = sharpe(daily_returns(series))
+        daily = daily_returns(series)
+        alpha, beta = (None, None) if account == BENCHMARK else \
+            alpha_beta(*aligned_daily_returns(series, bench_series))
         rows.append(dict(zip(LEADERBOARD_KEYS, [
             account,
             arm.model if arm else "-",
@@ -58,7 +62,8 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
             None if bench_ret is None or account == BENCHMARK else ret - bench_ret,
             pnl, _costs(db, account, cfg), spend, pnl - spend,
             None if stats.win_rate is None else stats.win_rate * 100,
-            stats.avg_win, stats.avg_loss, stats.profit_factor, sh,
+            stats.avg_win, stats.avg_loss, stats.profit_factor, sharpe(daily), sharpe_ci(daily),
+            None if alpha is None else alpha * 100, beta,
             max_drawdown([v for _, v in series] + [nav]) * 100,
             stats.n,
             (nav - cash) / nav * 100 if nav else 0.0,

@@ -6,7 +6,9 @@
 {%- elif k in ("pnl", "net_after_llm") -%}<span class="{{ 'pos' if v > 0 else 'neg' if v < 0 else '' }}">{{ '%+.2f' % v }}</span>
 {%- elif k in ("nav", "costs", "llm_spend", "avg_win", "avg_loss") -%}{{ '%.2f' % v }}
 {%- elif k in ("win_rate", "max_drawdown", "invested_pct") -%}{{ '%.1f' % v }}%
-{%- elif k in ("profit_factor", "sharpe") -%}{{ '%.2f' % v }}
+{%- elif k in ("profit_factor", "sharpe", "beta") -%}{{ '%.2f' % v }}
+{%- elif k == "sharpe_ci" -%}{{ '%.2f to %.2f' % (v[0], v[1]) }}
+{%- elif k == "alpha_pct" -%}<span class="{{ 'pos' if v > 0 else 'neg' if v < 0 else '' }}">{{ '%+.1f' % v }}%</span>
 {%- else -%}{{ v }}{%- endif -%}
 {%- endmacro %}
 {% block body %}

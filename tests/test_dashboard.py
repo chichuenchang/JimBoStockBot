@@ -1,3 +1,4 @@
+import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -72,6 +73,33 @@ def test_net_after_llm(db):
     assert r["net_after_llm"] == pytest.approx(480)
     assert r["trades"] == 1 and r["win_rate"] == pytest.approx(100.0)
     assert r["costs"] > 0  # slippage estimate on both fills
+
+
+def test_alpha_beta_and_sharpe_ci_vs_benchmark(tmp_path):
+    db = DB.open(tmp_path / "ab.db")
+    rng = random.Random(3)
+    arm, bench = 10000.0, 10000.0
+    for a in ("kimi-improved", BENCHMARK):
+        db.ensure_account(a, 10000)
+    for i in range(30):
+        r = rng.gauss(0, 0.01)
+        bench *= 1 + r
+        arm *= 1 + 0.5 * r
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), arm)
+        db.snapshot_equity(BENCHMARK, T0 + timedelta(days=i), bench)
+    r = row(leaderboard(db, CFG), "kimi-improved")
+    assert r["beta"] == pytest.approx(0.5)
+    assert r["alpha_pct"] == pytest.approx(0.0, abs=1e-9)
+    lo, hi = r["sharpe_ci"]
+    assert lo < hi
+    assert row(leaderboard(db, CFG), BENCHMARK)["beta"] is None
+    html = client(db).get("/").text
+    assert f"{lo:.2f} to {hi:.2f}" in html
+
+
+def test_alpha_none_with_one_day(db):
+    r = row(leaderboard(db, CFG), "kimi-improved")
+    assert r["alpha_pct"] is None and r["beta"] is None and r["sharpe_ci"] is None
 
 
 def test_pause_endpoint_sets_kv(db):

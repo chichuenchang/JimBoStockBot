@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 import statistics
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -36,6 +37,48 @@ def sharpe(daily: list[float]) -> float | None:
     if sd == 0:
         return None
     return statistics.mean(daily) / sd * math.sqrt(252)
+
+
+def aligned_daily_returns(a: list[tuple[datetime, float]],
+                          b: list[tuple[datetime, float]]) -> tuple[list[float], list[float]]:
+    """Daily returns of two NAV series over the ET days both have."""
+    ca, cb = daily_closes(a), daily_closes(b)
+    days = [d for d in ca if d in cb]
+    ra, rb = [], []
+    for d0, d1 in zip(days, days[1:]):
+        if ca[d0] and cb[d0]:
+            ra.append(ca[d1] / ca[d0] - 1)
+            rb.append(cb[d1] / cb[d0] - 1)
+    return ra, rb
+
+
+def alpha_beta(ra: list[float], rb: list[float]) -> tuple[float | None, float | None]:
+    """OLS of arm on benchmark daily returns: (yearly alpha, beta). Alpha = return not
+    explained by riding the benchmark."""
+    if len(ra) < 2:
+        return None, None
+    var_b = statistics.variance(rb)
+    if var_b == 0:
+        return None, None
+    beta = statistics.covariance(ra, rb) / var_b
+    return (statistics.mean(ra) - beta * statistics.mean(rb)) * 252, beta
+
+
+SHARPE_CI_MIN_DAYS = 20
+
+
+def sharpe_ci(daily: list[float], level: float = 0.9, n: int = 1000,
+              seed: int = 0) -> tuple[float, float] | None:
+    """Bootstrap interval for the Sharpe ratio; None until enough days to mean anything."""
+    if len(daily) < SHARPE_CI_MIN_DAYS:
+        return None
+    rng = random.Random(seed)
+    vals = sorted(v for v in (sharpe(rng.choices(daily, k=len(daily))) for _ in range(n))
+                  if v is not None)
+    if not vals:
+        return None
+    tail = (1 - level) / 2
+    return vals[int(tail * (len(vals) - 1))], vals[int((1 - tail) * (len(vals) - 1))]
 
 
 def max_drawdown(navs: list[float]) -> float:
