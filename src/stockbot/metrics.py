@@ -95,7 +95,7 @@ CONVICTION_BUCKETS = ["low <0.33", "mid 0.33-0.67", "high >=0.67", "not given"]
 def _bucket(c: float | None) -> str:
     if c is None:
         return CONVICTION_BUCKETS[3]
-    return CONVICTION_BUCKETS[0 if c < 1 / 3 else 1 if c < 2 / 3 else 2]
+    return CONVICTION_BUCKETS[0 if c < 0.33 else 1 if c < 0.67 else 2]
 
 
 def conviction_buckets(trades: list[ClosedTrade]) -> list[dict]:

@@ -43,6 +43,14 @@ def test_conviction_buckets():
     assert rows[1]["avg_r"] is None  # its one trade has no R
 
 
+def test_conviction_bucket_edges_match_labels():
+    def t(conv):
+        return ClosedTrade("a", "X", T, T, 100, 100, 1, 1.0, 1.0, "close", "", conviction=conv)
+    rows = conviction_buckets([t(0.329), t(0.33), t(0.669), t(0.67)])
+    assert [(r["conviction"], r["trades"]) for r in rows] == [
+        ("low <0.33", 1), ("mid 0.33-0.67", 2), ("high >=0.67", 1)]
+
+
 def test_conviction_buckets_skip_empty():
     assert conviction_buckets([]) == []
 
