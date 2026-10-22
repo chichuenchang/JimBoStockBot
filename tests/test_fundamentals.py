@@ -4,8 +4,9 @@ import httpx
 import pytest
 import respx
 
+from stockbot.data import fundamentals
 from stockbot.data.base import DataError
-from stockbot.data.fundamentals import AV_URL, AlphaVantage, business_days_until, cached_snapshot
+from stockbot.data.fundamentals import AV_URL, AlphaVantage, PartialSnapshot, business_days_until, cached_snapshot
 from stockbot.db import DB
 
 TODAY = date(2026, 10, 21)
@@ -27,7 +28,7 @@ async def test_snapshot_parses_earnings_and_overview():
     route("EARNINGS_CALENDAR", return_value=httpx.Response(200, text=CSV))
     route("OVERVIEW", side_effect=lambda req: httpx.Response(
         200, json=OVERVIEW if req.url.params["symbol"] == "MSFT" else {}))
-    snap = await AlphaVantage("k").snapshot(["MSFT", "NVDA", "QQQ"], TODAY)
+    snap = await AlphaVantage("k", gap_s=0).snapshot(["MSFT", "NVDA", "QQQ"], TODAY)
     assert snap["MSFT"] == {"next_earnings": "2026-10-28", "pe_ttm": 35.2, "fwd_pe": 31.0,
                             "rev_growth_yoy_pct": pytest.approx(12.3), "eps_growth_yoy_pct": None}
     assert snap["NVDA"]["next_earnings"] is None  # past date only
@@ -40,7 +41,34 @@ async def test_rate_limit_note_is_data_error():
     route("EARNINGS_CALENDAR", return_value=httpx.Response(
         200, json={"Information": "We have detected your API key ... 25 requests per day"}))
     with pytest.raises(DataError, match="25 requests"):
-        await AlphaVantage("k").snapshot(["MSFT"], TODAY)
+        await AlphaVantage("k", gap_s=0).snapshot(["MSFT"], TODAY)
+
+
+@respx.mock
+async def test_failed_overview_keeps_calendar_and_skips_cache(tmp_path):
+    route("EARNINGS_CALENDAR", return_value=httpx.Response(200, text=CSV))
+    ov = route("OVERVIEW", return_value=httpx.Response(200, json={"Information": "spread out your requests"}))
+    db, src = DB.open(tmp_path / "t.db"), AlphaVantage("k", gap_s=0)
+    with pytest.raises(PartialSnapshot, match="MSFT"):
+        await src.snapshot(["MSFT"], TODAY)
+    snap = await cached_snapshot(src, db, ["MSFT"], TODAY)
+    assert snap["MSFT"]["next_earnings"] == "2026-10-28" and snap["MSFT"]["pe_ttm"] is None
+    await cached_snapshot(src, db, ["MSFT"], TODAY)
+    assert ov.call_count == 3  # not cached: every report retries
+
+
+@respx.mock
+async def test_calls_spaced_by_gap(monkeypatch):
+    waits = []
+
+    async def sleep(s):
+        waits.append(s)
+    monkeypatch.setattr(fundamentals.asyncio, "sleep", sleep)
+    route("OVERVIEW", return_value=httpx.Response(200, json={}))
+    src = AlphaVantage("k", gap_s=5)
+    await src.overview("MSFT")
+    await src.overview("NVDA")
+    assert waits[0] == 0 and 4 < waits[1] <= 5
 
 
 class Counting:

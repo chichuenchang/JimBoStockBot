@@ -1,11 +1,14 @@
 """Alpha Vantage earnings dates + company overview. Free key = 25 calls/day, so one snapshot
-(1 calendar + 1 overview per symbol) per ET day, cached in kv."""
+(1 calendar + 1 overview per symbol) per ET day, cached in kv. Calls spaced GAP_S apart: free
+keys are also throttled on bursts."""
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
 import logging
+import time
 from datetime import date, timedelta
 from typing import Protocol
 
@@ -16,6 +19,7 @@ from stockbot.data.base import DataError
 from stockbot.db import DB
 
 AV_URL = "https://www.alphavantage.co/query"
+GAP_S = 1.2
 log = logging.getLogger("stockbot")
 # field -> (OVERVIEW key, scale). Growth comes as a fraction.
 OVERVIEW_FIELDS = {"pe_ttm": ("PERatio", 1), "fwd_pe": ("ForwardPE", 1),
@@ -47,13 +51,26 @@ def business_days_until(today: date, d: date) -> int:
     return sum(1 for i in range(1, (d - today).days + 1) if (today + timedelta(days=i)).weekday() < 5)
 
 
+class PartialSnapshot(DataError):
+    """Some overviews failed. rows still carry the calendar: use them now, refetch next report."""
+
+    def __init__(self, msg: str, rows: dict[str, dict]):
+        super().__init__(msg)
+        self.rows = rows
+
+
 class AlphaVantage:
-    def __init__(self, key: str, http: httpx.AsyncClient | None = None, timeout_s: float = 30):
+    def __init__(self, key: str, http: httpx.AsyncClient | None = None, timeout_s: float = 30,
+                 gap_s: float = GAP_S):
         self.key = key
         self.http = http or httpx.AsyncClient()
         self.timeout = timeout_s
+        self.gap_s = gap_s
+        self._last = float("-inf")
 
     async def _get(self, params: dict) -> httpx.Response:
+        await asyncio.sleep(max(0.0, self._last + self.gap_s - time.monotonic()))
+        self._last = time.monotonic()
         try:
             r = await self.http.get(AV_URL, params={**params, "apikey": self.key}, timeout=self.timeout)
         except httpx.HTTPError as e:
@@ -85,25 +102,27 @@ class AlphaVantage:
 
     async def snapshot(self, symbols: list[str], today: date) -> dict[str, dict]:
         earnings = await self.earnings(symbols, today)  # blackout depends on it: errors propagate
-        out = {}
+        out, failed = {}, []
         for sym in symbols:
             try:
                 ov = await self.overview(sym)
             except DataError as e:  # nice-to-have: one missing overview must not lose the calendar
-                log.warning("%s", e)
+                failed.append(f"{sym} ({e})")
                 ov = {}
             row = {"next_earnings": earnings[sym].isoformat() if sym in earnings else None}
             for field, (key, scale) in OVERVIEW_FIELDS.items():
                 v = _num(ov.get(key))
                 row[field] = None if v is None else v * scale
             out[sym] = row
+        if failed:
+            raise PartialSnapshot(f"overview failed: {'; '.join(failed)}", out)
         return out
 
 
 async def cached_snapshot(src: FundamentalsSource | None, db: DB, symbols: list[str],
                           today: date) -> dict[str, dict]:
-    """Today's snapshot, fetched at most once per day. {} when no source or the fetch failed
-    (retried at the next report)."""
+    """Today's snapshot, fetched until one comes back complete, then cached for the day.
+    {} when no source or the fetch failed; partial rows when only overviews failed."""
     if src is None:
         return {}
     key = f"fundamentals:{today.isoformat()}"
@@ -112,6 +131,9 @@ async def cached_snapshot(src: FundamentalsSource | None, db: DB, symbols: list[
         return json.loads(raw)
     try:
         snap = await src.snapshot(symbols, today)
+    except PartialSnapshot as e:
+        log.warning("fundamentals: %s", e)
+        return e.rows
     except DataError as e:
         log.error("fundamentals: %s", e)
         return {}
