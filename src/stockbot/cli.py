@@ -89,8 +89,6 @@ def _alpaca():
 
 
 def _fundamentals():
-    """Earnings dates + fundamentals. Optional: without a key the earnings blackout only sees
-    symbol events in config/events.yaml."""
     from stockbot.data.fundamentals import AlphaVantage
     load_dotenv()
     key = os.environ.get("ALPHAVANTAGE_API_KEY")

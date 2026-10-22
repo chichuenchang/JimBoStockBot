@@ -2,7 +2,7 @@
 
 Local LLM paper-trading arena. Alpha Arena replica vs improved harness, several models side by side. Paper money only.
 Design: `docs/superpowers/specs/2026-10-21-llm-trading-arena-design.md`. AA teardown: `docs/research/alpha-arena-teardown.md`. Related work + why the improved-arm extras exist: `docs/research/related-projects.md`.
-Control arms `rules-trend`, `random-control`: no LLM, improved-arm rules, $0. Improved arm must beat them to show LLM skill.
+Control arms `rules-trend`, `random-control`: `src/stockbot/agent/control.py`.
 
 ## Setup
 
@@ -38,4 +38,4 @@ uv run stockbot status
 uv run stockbot pause kimi-improved   # or --all; resume same way
 ```
 
-DB `data/stockbot.db`, logs `logs/stockbot.log`. Macro events (FOMC, CPI) hand-kept in `config/events.yaml`. Earnings + fundamentals from Alpha Vantage free key (8 of 25 daily calls, cached per day); no key = earnings only from symbol events in `events.yaml`.
+DB `data/stockbot.db`, logs `logs/stockbot.log`. Macro events (FOMC, CPI) hand-kept in `config/events.yaml`. Earnings + fundamentals: Alpha Vantage free key, `src/stockbot/data/fundamentals.py`; no key = earnings only from symbol events in `events.yaml`.

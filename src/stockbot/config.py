@@ -64,9 +64,9 @@ class Settings:
     llm_timeout_s: float
     benchmark_symbol: str = "QQQ"
     regime_gate: bool = True
-    trail_breakeven_r: float = 1.0  # 0 disables
-    trail_atr_mult: float = 3.0  # 0 disables
-    earnings_blackout_days: int = 1  # no entries this many sessions before earnings; -1 disables
+    trail_breakeven_r: float = 1.0  # semantics: config/settings.yaml
+    trail_atr_mult: float = 3.0
+    earnings_blackout_days: int = 1
 
 
 @dataclass(frozen=True)
