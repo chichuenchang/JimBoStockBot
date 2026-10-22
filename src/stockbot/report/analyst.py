@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-from stockbot.clock import ET
+from stockbot.clock import ET, et_date
 from stockbot.config import AppConfig
 from stockbot.data.base import MarketData
 from stockbot.db import DB
@@ -57,7 +57,7 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
         user = (f"Time: {now.astimezone(ET):%A %Y-%m-%d %H:%M} ET\n\n"
                 f"Features JSON:\n{json.dumps(features)}\n\n"
                 f"Upcoming events:\n" + ("\n".join(events) or "(none)") + "\n\n"
-                f"Headlines (newest first):\n" + ("\n".join(headlines) or "(none)"))
+                "Headlines (newest first):\n" + ("\n".join(headlines) or "(none)"))
         try:
             res, _ = await budget.complete(llm, analyst_model, None, "analyst", ANALYST_SYSTEM, user,
                                            json_mode=False)

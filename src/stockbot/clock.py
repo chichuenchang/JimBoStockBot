@@ -65,5 +65,5 @@ def month_key(ts: datetime) -> str:
     return ts.astimezone(ET).strftime("%Y-%m")
 
 
-def et_date(ts: datetime):
+def et_date(ts: datetime) -> date:
     return ts.astimezone(ET).date()
