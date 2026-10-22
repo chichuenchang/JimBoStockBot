@@ -143,27 +143,14 @@ def trades(db: DB, account: str) -> list[dict]:
 
 
 def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
-    rows = db._q("SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
-                 "ORDER BY slot_ts DESC LIMIT ?", account, limit)
     out = []
-    for r in rows:
+    for r in db.recent_decisions(account, limit):
         parsed = json.loads(r["parsed_json"] or "{}").get("per_symbol", {})
         acts = [f"{s} {d['signal']}: {d.get('justification', '')}".strip(": ")
                 for s, d in parsed.items() if d["signal"] != "hold" or d.get("justification")]
         out.append({"id": r["id"], "slot_ts": r["slot_ts"], "reason": r["reason"], "status": r["status"],
                     "cost": r["cost"], "summary": " | ".join(acts) or "hold all"})
     return out
-
-
-def decision_detail(db: DB, decision_id: int) -> dict | None:
-    rows = db._q("SELECT id, arm, slot_ts, status, prompt, raw FROM decisions WHERE id=?", decision_id)
-    return dict(rows[0]) if rows else None
-
-
-def rejections(db: DB, account: str, limit: int = 100) -> list[dict]:
-    return [dict(r) for r in db._q(
-        "SELECT ts, symbol, rule, detail, decision_id FROM rejections WHERE arm=? ORDER BY id DESC LIMIT ?",
-        account, limit)]
 
 
 def fill_markers(db: DB, account: str, symbol: str) -> list[dict]:

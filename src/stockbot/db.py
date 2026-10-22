@@ -263,10 +263,25 @@ class DB:
         rows = self._q("SELECT MAX(slot_ts) m FROM decisions WHERE arm=?", arm)
         return parse_ts(rows[0]["m"]) if rows and rows[0]["m"] else None
 
+    def recent_decisions(self, arm: str, limit: int) -> list[dict]:
+        """Newest first, without the bulky prompt and raw reply."""
+        return [dict(r) for r in self._q(
+            "SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
+            "ORDER BY slot_ts DESC LIMIT ?", arm, limit)]
+
+    def decision(self, decision_id: int) -> dict | None:
+        rows = self._q("SELECT id, arm, slot_ts, status, prompt, raw FROM decisions WHERE id=?", decision_id)
+        return dict(rows[0]) if rows else None
+
     def insert_rejection(self, arm: str, decision_id: int | None, symbol: str, rule: str,
                          detail: str = "", ts: datetime | None = None) -> None:
         self._x("INSERT INTO rejections(arm,decision_id,symbol,rule,detail,ts) VALUES(?,?,?,?,?,?)",
                 arm, decision_id, symbol, rule, detail, iso(ts or datetime.now(UTC)))
+
+    def recent_rejections(self, arm: str, limit: int) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT ts, symbol, rule, detail, decision_id FROM rejections WHERE arm=? ORDER BY id DESC LIMIT ?",
+            arm, limit)]
 
     # llm usage
     def insert_usage(self, model: str, arm: str | None, purpose: str, ts: datetime,

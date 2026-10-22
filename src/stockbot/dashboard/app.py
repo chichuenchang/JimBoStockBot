@@ -94,11 +94,11 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     @app.get("/api/arm/{arm}/rejections")
     def api_rejections(arm: str):
-        return q.rejections(db, known(arm))
+        return db.recent_rejections(known(arm), 100)
 
     @app.get("/api/decision/{decision_id}")
     def api_decision(decision_id: int):
-        d = q.decision_detail(db, decision_id)
+        d = db.decision(decision_id)
         if d is None:
             raise HTTPException(404)
         return d
