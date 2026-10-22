@@ -21,7 +21,7 @@ CALENDAR_LOOKBACK = timedelta(days=30)  # covers NOISE_DAYS sessions plus holida
 def noise_sigma(prior: list[list[Bar]], minute: int) -> float | None:
     """Mean |price / day open - 1| `minute` minutes after the open, over prior sessions."""
     moves = []
-    for bars in prior[-NOISE_DAYS:]:
+    for bars in prior:
         upto = [b for b in bars if b.ts < bars[0].ts + timedelta(minutes=minute)] if bars else []
         if upto:
             moves.append(abs(upto[-1].close / bars[0].open - 1))
