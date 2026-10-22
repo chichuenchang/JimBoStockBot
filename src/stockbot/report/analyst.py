@@ -29,7 +29,7 @@ EVENT_WINDOW_DAYS = 10
 
 
 def _events(cfg: AppConfig, now: datetime) -> list[str]:
-    today = now.astimezone(ET).date()
+    today = et_date(now)
     return [f"{e.day} {e.time_et or ''} ET: {e.name}" + (f" ({', '.join(e.symbols)})" if e.symbols else "")
             for e in cfg.events if 0 <= (e.day - today).days <= EVENT_WINDOW_DAYS]
 
