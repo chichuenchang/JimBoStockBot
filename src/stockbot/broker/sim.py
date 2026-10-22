@@ -23,11 +23,14 @@ def buy_price(price: float, slippage_bps: float) -> float:
     return price * (1 + slippage_bps / 1e4)
 
 
+def sell_price(price: float, slippage_bps: float) -> float:
+    return price * (1 - slippage_bps / 1e4)
+
+
 class SimBroker:
     def __init__(self, db: DB, slippage_bps: float, commission: float):
         self.db = db
         self.slippage_bps = slippage_bps
-        self.slip = slippage_bps / 1e4
         self.commission = commission
         self._last: dict[str, float] = {}
 
@@ -124,7 +127,7 @@ class SimBroker:
             if pos is None:
                 self.db.cancel_order(o["id"], "no_position")
                 return None
-            px = bar.open * (1 - self.slip)
+            px = sell_price(bar.open, self.slippage_bps)
             qty = pos.qty if o["qty"] is None else min(o["qty"], pos.qty)
             fill = Fill(o["account"], sym, "sell", qty, px, bar.ts, o["reason"], replayed)
             self._reduce(st, sym, qty, px)
@@ -138,7 +141,7 @@ class SimBroker:
         pos = st.positions[bar.symbol]
         sl, tp = pos.exit_plan.stop_loss, pos.exit_plan.profit_target
         if sl is not None and bar.low <= sl:
-            px, reason = min(sl, bar.open) * (1 - self.slip), "stop"
+            px, reason = sell_price(min(sl, bar.open), self.slippage_bps), "stop"
         elif tp is not None and bar.high >= tp:
             px, reason = tp, "target"
         else:
