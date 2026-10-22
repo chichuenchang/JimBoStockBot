@@ -127,8 +127,12 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     did = _record(ctx, arm, slot_ts, reason, report_id, ex, decision, status)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
-    if not arm.uses_llm:
-        return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
+    if arm.uses_llm:
+        _journal(db, arm, decision, state, now)
+    return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
+
+
+def _journal(db: DB, arm: ArmCfg, decision: Decision, state: AccountState, now: datetime) -> None:
     summary = "; ".join(f"{d.symbol} {d.signal}: {d.justification}"
                         for d in decision.per_symbol.values()
                         if d.signal != "hold" or d.symbol in state.positions or d.justification)
@@ -136,7 +140,6 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
                       f"{now.astimezone(ET):%m-%d %H:%M} " + (summary or "no positions, all hold")[:SUMMARY_MAX])
     if decision.notes_to_self:
         db.journal_append(arm.name, now, "notes", decision.notes_to_self)
-    return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
 
 
 async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text: str, state: AccountState,
