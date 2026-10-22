@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from stockbot.clock import ET, et_date
-from stockbot.config import AppConfig, Event
+from stockbot.config import AppConfig
 from stockbot.data.base import MarketData
-from stockbot.data.fundamentals import FundamentalsSource, cached_snapshot
+from stockbot.data.fundamentals import FundamentalsSource, cached_snapshot, with_earnings
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
@@ -31,11 +31,9 @@ EVENT_WINDOW_DAYS = 10
 
 def _events(cfg: AppConfig, features: dict[str, dict], now: datetime) -> list[str]:
     today = et_date(now)
-    earnings = [Event(date.fromisoformat(f["next_earnings"]), None, f"{s} earnings", (s,))
-                for s, f in features.items() if f.get("next_earnings")]
     return [f"{e.day}{' ' + e.time_et if e.time_et else ''} ET: {e.name}"
             + (f" ({', '.join(e.symbols)})" if e.symbols else "")
-            for e in sorted([*cfg.events, *earnings], key=lambda e: e.day)
+            for e in sorted(with_earnings(cfg.events, features), key=lambda e: e.day)
             if 0 <= (e.day - today).days <= EVENT_WINDOW_DAYS]
 
 

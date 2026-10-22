@@ -11,6 +11,7 @@ from typing import Protocol
 
 import httpx
 
+from stockbot.config import Event
 from stockbot.data.base import DataError
 from stockbot.db import DB
 
@@ -31,6 +32,12 @@ def _num(v) -> float | None:
         return float(v)
     except (TypeError, ValueError):  # "None", "-", missing
         return None
+
+
+def with_earnings(events: tuple[Event, ...], features: dict[str, dict]) -> list[Event]:
+    """Config events plus one event per report-features next_earnings."""
+    return [*events, *(Event(date.fromisoformat(f["next_earnings"]), None, f"{s} earnings", (s,))
+                       for s, f in features.items() if f.get("next_earnings"))]
 
 
 def business_days_until(today: date, d: date) -> int:
