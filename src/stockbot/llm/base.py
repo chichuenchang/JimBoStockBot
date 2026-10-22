@@ -16,6 +16,7 @@ class LLMError(Exception):
     def __init__(self, message: str, billable: bool = False):
         super().__init__(message)
         self.billable = billable
+        self.cost = 0.0  # estimate Budget.complete billed for this failure
 
 
 TIMEOUT_EST_OUTPUT_TOKENS = 4000

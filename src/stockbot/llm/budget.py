@@ -6,7 +6,7 @@ from typing import Literal
 from stockbot.clock import Clock, month_key
 from stockbot.config import AppConfig
 from stockbot.db import DB
-from stockbot.llm.base import Usage, cost_usd
+from stockbot.llm.base import LLMClient, LLMError, LLMResult, Usage, cost_usd, estimate_usage
 
 State = Literal["ok", "warn", "exhausted"]
 SEVERITY: tuple[State, ...] = ("ok", "warn", "exhausted")
@@ -41,6 +41,19 @@ class Budget:
         self.db.insert_usage(model, arm, purpose, self.clock.now(), usage.input_tokens,
                              usage.cached_input_tokens, usage.output_tokens, cost)
         return cost
+
+    async def complete(self, client: LLMClient, model: str, arm: str | None, purpose: str,
+                       system: str, user: str, json_mode: bool = True) -> tuple[LLMResult, float]:
+        """Call the model and bill it. A billable failure bills an estimate, so the cap still
+        binds, and carries that cost on the raised LLMError."""
+        try:
+            res = await client.complete(system, user, json_mode)
+        except LLMError as e:
+            if e.billable:
+                e.cost = self.record(model, arm, "timeout_estimate",
+                                     estimate_usage(len(system) + len(user)))
+            raise
+        return res, self.record(model, arm, purpose, res.usage)
 
     def summary(self) -> dict:
         month = self._month()

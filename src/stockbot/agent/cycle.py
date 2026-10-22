@@ -15,7 +15,7 @@ from stockbot.clock import ET, Clock
 from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.db import DB
-from stockbot.llm.base import LLMClient, LLMError, estimate_usage
+from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 from stockbot.pause import is_paused
@@ -100,13 +100,10 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
 
     async def call(prompt: str, purpose: str):
         try:
-            res = await client.complete(system, prompt)
+            res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
         except LLMError as e:
-            if e.billable:  # provider ran the request; count an estimate so the cap still binds
-                totals[3] += ctx.budget.record(arm.model, arm.name, "timeout_estimate",
-                                               estimate_usage(len(system) + len(prompt)))
+            totals[3] += e.cost
             raise
-        cost = ctx.budget.record(arm.model, arm.name, purpose, res.usage)
         totals[0] += res.usage.input_tokens
         totals[1] += res.usage.cached_input_tokens
         totals[2] += res.usage.output_tokens
