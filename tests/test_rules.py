@@ -21,7 +21,7 @@ def ctx(**kw):
 
 def prop(**kw):
     base = dict(symbol="MSFT", entry_price=100.0, stop=98.0, target=103.2,
-                invalidation="4h close < 97", conviction=1.0, is_add=False)
+                invalidation="4h close < 97", conviction=1.0)
     base.update(kw)
     return Proposal(**base)
 
@@ -81,7 +81,7 @@ def test_max_positions_add_exempt():
     held = {s: pos(s) for s in ("NVDA", "TSLA", "QQQ", "AMZN", "PLTR")}
     c = ctx(positions=held)
     assert check_entry(prop(), c, S) == "max_positions"
-    assert check_entry(prop(symbol="NVDA", is_add=True), c, S) != "max_positions"
+    assert check_entry(prop(symbol="NVDA"), c, S) != "max_positions"
 
 
 def test_max_entries_per_day():
@@ -98,7 +98,7 @@ def test_daily_loss_freeze():
 
 def test_position_cap_reached_on_add():
     c = ctx(positions={"MSFT": pos("MSFT", qty=25, entry=100.0)})
-    assert check_entry(prop(is_add=True), c, S) == "position_cap_reached"
+    assert check_entry(prop(), c, S) == "position_cap_reached"
 
 
 def test_zero_size_when_no_cash():

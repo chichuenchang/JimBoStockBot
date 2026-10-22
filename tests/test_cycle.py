@@ -130,7 +130,7 @@ async def test_improved_sized_order(tmp_path):
     await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
     [o] = ctx.db.pending_orders("MSFT")
     rc = RuleContext(10000, 10000, {}, 0, set(), 0.0, {"MSFT": 1.0})
-    expected = size_entry(Proposal("MSFT", 100.0, 95, 110, "x", 1.0, False), rc, CFG.settings)
+    expected = size_entry(Proposal("MSFT", 100.0, 95, 110, "x", 1.0), rc, CFG.settings)
     assert o["qty"] == pytest.approx(expected)
     assert o["stop_loss"] == 95 and o["risk_per_share"] == pytest.approx(100.05 - 95)
 

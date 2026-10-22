@@ -248,7 +248,7 @@ def _enter(ctx, arm, d: SymbolDecision, held, prices, now, rc, rejections) -> fl
                                  risk, d.justification)
         return d.quantity
     p = Proposal(d.symbol, price, d.stop_loss, d.profit_target, d.invalidation_condition,
-                 d.conviction, d.is_add or held is not None)
+                 d.conviction)
     bad = check_entry(p, rc, s)
     if bad:
         rejections.append((d.symbol, bad, f"entry {price} stop {d.stop_loss} target {d.profit_target}"))

@@ -17,8 +17,7 @@ class Proposal:
     stop: float | None
     target: float | None
     invalidation: str
-    conviction: float | None
-    is_add: bool
+    conviction: float | None  # an add is detected from held positions, not a flag
 
 
 @dataclass(frozen=True)
