@@ -84,5 +84,8 @@ async def momentum_bars(data: MarketData, symbol: str,
     prior_s = sessions[:-1][-NOISE_DAYS:]
     first = prior_s[0].open_utc if prior_s else sessions[-1].open_utc
     bars = await data.bars(symbol, "1Min", first, now)
-    split = lambda s: [b for b in bars if s.open_utc <= b.ts < s.close_utc]  # noqa: E731
+
+    def split(s: Session) -> list[Bar]:
+        return [b for b in bars if s.open_utc <= b.ts < s.close_utc]
+
     return split(sessions[-1]), [split(s) for s in prior_s], sessions[-1]
