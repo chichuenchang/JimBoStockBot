@@ -31,9 +31,14 @@ async function loadStatus() {
     `<span class="chip">market <b>${st.market_open ? "open" : "closed"}</b></span>`,
     `<span class="chip"><span class="dot" style="background:${st.data_ok ? css("--good") : css("--critical")}"></span>price feed <b>${st.data_ok ? "ok" : "error"}</b></span>`,
   ];
+  // dot shows the worst state of any model cap or the global cap; text names the models over
   const t = st.budget._total;
-  const bcol = t.state === "ok" ? css("--good") : t.state === "warn" ? css("--warning") : css("--critical");
-  chips.push(`<span class="chip"><span class="dot" style="background:${bcol}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${t.state !== "ok" ? " " + t.state : ""}</span>`);
+  const rank = { ok: 0, warn: 1, exhausted: 2 };
+  const hot = Object.entries(st.budget).filter(([, b]) => b.state !== "ok");
+  const worst = hot.reduce((w, [, b]) => (rank[b.state] > rank[w] ? b.state : w), "ok");
+  const why = hot.map(([name, b]) => `${name === "_total" ? "total" : esc(name)} ${b.state}`).join(", ");
+  const bcol = worst === "ok" ? css("--good") : worst === "warn" ? css("--warning") : css("--critical");
+  chips.push(`<span class="chip"><span class="dot" style="background:${bcol}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
   chips.push(`<button id="pauseall">${st.paused_all ? "Resume all" : "Pause all"}</button>`);
   document.getElementById("status").innerHTML = chips.join("");
   document.getElementById("pauseall").onclick = async () => {
