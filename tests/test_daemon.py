@@ -109,6 +109,7 @@ def test_cli_pause_resume(tmp_path):
     assert flagged(DB.open(db_path), "kimi-improved")
     assert main(["--db", str(db_path), "resume", "kimi-improved"]) == 0
     assert not flagged(DB.open(db_path), "kimi-improved")
+    assert main(["--db", str(db_path), "pause", "kimi-improvd"]) == 2  # typo must not look paused
     assert main(["--db", str(db_path), "pause", "--all"]) == 0
     assert flagged(DB.open(db_path), ALL)
 

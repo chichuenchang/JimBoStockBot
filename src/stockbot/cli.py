@@ -192,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         if not a.all and not a.arm:
             print("name an arm or pass --all", file=sys.stderr)
             return 2
+        names = [arm.name for arm in cfg.arms]
+        if not a.all and a.arm not in names:
+            print(f"unknown arm {a.arm!r}; arms: {', '.join(names)}", file=sys.stderr)
+            return 2
         set_paused(db, ALL if a.all else a.arm, a.cmd == "pause")
         return 0
     if a.cmd == "status":
