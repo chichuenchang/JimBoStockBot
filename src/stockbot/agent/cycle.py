@@ -3,16 +3,18 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, time
 from typing import Literal
 
+from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
 from stockbot.clock import ET, Clock
-from stockbot.config import AppConfig, ArmCfg
+from stockbot.config import CONTROL_VARIANTS, RULED_VARIANTS, AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
@@ -50,7 +52,7 @@ class CycleResult:
 
 
 def hold_only(ctx: AppContext, arm: ArmCfg) -> bool:
-    return is_paused(ctx.db, arm.name) or ctx.budget.state(arm.model) == "exhausted"
+    return is_paused(ctx.db, arm.name) or (arm.model is not None and ctx.budget.state(arm.model) == "exhausted")
 
 
 def et_midnight(ts: datetime) -> datetime:
@@ -88,64 +90,71 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     report_id, report_text = report if report else (None, "# CURRENT STATE OF MARKETS\n(no report yet)")
     state = db.load_account(arm.name)
     nav = ctx.broker.nav(arm.name, prices)
-    journal = None
-    if arm.variant == "improved":
-        notes = db.journal_recent(arm.name, "notes", 1)
-        journal = JournalView(db.journal_recent(arm.name, "summary", 5),
-                              db.closed_trades(arm.name)[-10:], notes[0] if notes else None)
-    system = system_prompt(arm.variant, s)
-    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
-
-    client = ctx.clients[arm.model]
-    totals = [0, 0, 0, 0.0]
-
-    async def call(prompt: str, purpose: str):
-        try:
-            res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
-        except LLMError as e:
-            totals[3] += e.cost
-            raise
-        totals[0] += res.usage.input_tokens
-        totals[1] += res.usage.cached_input_tokens
-        totals[2] += res.usage.output_tokens
-        totals[3] += cost
-        return res.text
-
-    # Stored: the last prompt sent (the retry prompt contains the first) and every reply.
-    prompt, replies, decision = user, [], None
+    replies: list[str] = []
 
     def transcript() -> str:
         return RETRY_MARK.join(replies)
-    try:
-        replies.append(await call(prompt, "decision"))
+    if arm.variant in CONTROL_VARIANTS:
+        prompt, totals = "", [0, 0, 0, 0.0]
+        decision = _control_decision(arm, slot_ts, state, prices, db.latest_report_features(), s.universe)
+    else:
+        journal = None
+        if arm.variant == "improved":
+            notes = db.journal_recent(arm.name, "notes", 1)
+            journal = JournalView(db.journal_recent(arm.name, "summary", 5),
+                                  db.closed_trades(arm.name)[-10:], notes[0] if notes else None)
+        system = system_prompt(arm.variant, s)
+        user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
+
+        client = ctx.clients[arm.model]
+        totals = [0, 0, 0, 0.0]
+
+        async def call(prompt: str, purpose: str):
+            try:
+                res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
+            except LLMError as e:
+                totals[3] += e.cost
+                raise
+            totals[0] += res.usage.input_tokens
+            totals[1] += res.usage.cached_input_tokens
+            totals[2] += res.usage.output_tokens
+            totals[3] += cost
+            return res.text
+
+        # Stored: the last prompt sent (the retry prompt contains the first) and every reply.
+        prompt, decision = user, None
         try:
-            decision = parse_decision(replies[-1], arm.variant, s.universe)
-        except ParseError as e:
-            prompt = user + RETRY_SUFFIX.format(err=e)
-            replies.append(await call(prompt, "retry"))
+            replies.append(await call(prompt, "decision"))
             try:
                 decision = parse_decision(replies[-1], arm.variant, s.universe)
-            except ParseError as e2:
-                did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None,
-                              "parse_failed", totals)
-                db.journal_append(arm.name, now, "summary", f"reply unparseable: {e2}"[:SUMMARY_MAX])
-                return CycleResult(arm.name, slot_ts, "parse_failed", did, orders, 0)
-    except LLMError as e:
-        replies.append(str(e))
-        did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None, "llm_failed", totals)
-        return CycleResult(arm.name, slot_ts, "llm_failed", did, orders, 0)
+            except ParseError as e:
+                prompt = user + RETRY_SUFFIX.format(err=e)
+                replies.append(await call(prompt, "retry"))
+                try:
+                    decision = parse_decision(replies[-1], arm.variant, s.universe)
+                except ParseError as e2:
+                    did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None,
+                                  "parse_failed", totals)
+                    db.journal_append(arm.name, now, "summary", f"reply unparseable: {e2}"[:SUMMARY_MAX])
+                    return CycleResult(arm.name, slot_ts, "parse_failed", did, orders, 0)
+        except LLMError as e:
+            replies.append(str(e))
+            did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), None, "llm_failed", totals)
+            return CycleResult(arm.name, slot_ts, "llm_failed", did, orders, 0)
 
     rejections: list[tuple[str, str, str]] = []
     status: Status = "ok"
     try:
         orders += _apply(ctx, arm, decision, state, prices, nav, now, rejections)
     except Exception:
-        # The LLM call is already paid for: record the decision so the slot is never re-called.
+        # An LLM call is already paid for: record the decision so the slot is never re-called.
         log.exception("applying decision for %s failed", arm.name)
         status = "apply_failed"
     did = _record(ctx, arm, slot_ts, reason, report_id, prompt, transcript(), decision, status, totals)
     for sym, rule, detail in rejections:
         db.insert_rejection(arm.name, did, sym, rule, detail, now)
+    if arm.variant in CONTROL_VARIANTS:
+        return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
     summary = "; ".join(f"{d.symbol} {d.signal}: {d.justification}"
                         for d in decision.per_symbol.values()
                         if d.signal != "hold" or d.symbol in state.positions or d.justification)
@@ -154,6 +163,14 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     if decision.notes_to_self:
         db.journal_append(arm.name, now, "notes", decision.notes_to_self)
     return CycleResult(arm.name, slot_ts, status, did, orders, len(rejections))
+
+
+def _control_decision(arm: ArmCfg, slot_ts: datetime, state: AccountState, prices: dict[str, float],
+                      feats: dict, universe: tuple[str, ...]) -> Decision:
+    if arm.variant == "rules":
+        return rules_decision(state.positions, prices, feats, universe)
+    rng = random.Random(f"{arm.name}|{slot_ts.isoformat()}")  # same slot, same draws on rerun
+    return random_decision(rng, state.positions, prices, feats, universe)
 
 
 def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
@@ -179,7 +196,7 @@ def _apply(ctx: AppContext, arm: ArmCfg, decision: Decision, state: AccountState
            rejections: list[tuple[str, str, str]]) -> int:
     s, broker = ctx.cfg.settings, ctx.broker
     orders = 0
-    rc = _rule_context(ctx, arm, state, nav, now, prices) if arm.variant == "improved" else None
+    rc = _rule_context(ctx, arm, state, nav, now, prices) if arm.variant in RULED_VARIANTS else None
     for sym, d in decision.per_symbol.items():
         held = state.positions.get(sym)
         if d.signal == "close_position":
@@ -214,7 +231,7 @@ def _update_plan(ctx, arm, held, d: SymbolDecision, now, rejections) -> None:
         return
     old = held.exit_plan
     stop = d.stop_loss if d.stop_loss is not None else old.stop_loss
-    if arm.variant == "improved" and d.stop_loss is not None:
+    if arm.variant in RULED_VARIANTS and d.stop_loss is not None:
         bad = check_stop_update(old.stop_loss, d.stop_loss)
         if bad:
             rejections.append((d.symbol, bad, f"old {old.stop_loss} new {d.stop_loss}"))

@@ -165,7 +165,7 @@ async def test_all_arms_see_same_prices(tmp_path):
     slot = session.open_utc + timedelta(minutes=15)
     clock.set(slot)
     await daemon.step(slot)
-    rows = daemon.ctx.db._q("SELECT prompt FROM decisions WHERE slot_ts=?", slot.isoformat())
+    rows = daemon.ctx.db._q("SELECT prompt FROM decisions WHERE slot_ts=? AND prompt != ''", slot.isoformat())
     price_lines = {r["prompt"].split("# CURRENT PRICES OF TRADEABLE COINS\n")[1].split("\n")[0] for r in rows}
     assert len(rows) == 4 and len(price_lines) == 1
 

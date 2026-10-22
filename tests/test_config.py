@@ -17,7 +17,8 @@ def copy_config(tmp_path: Path) -> Path:
 def test_loads_repo_config():
     cfg = load_config(REPO_CONFIG)
     assert [a.name for a in cfg.arms] == [
-        "kimi-baseline", "kimi-improved", "deepseek-baseline", "deepseek-improved"]
+        "kimi-baseline", "kimi-improved", "deepseek-baseline", "deepseek-improved", "rules-trend",
+        "random-control"]
     assert cfg.models["kimi-k3"].monthly_cap_usd == 80
     assert cfg.models["deepseek-v4.1-flash"].extra_body == {"thinking": {"type": "disabled"}}
     assert cfg.models["kimi-k3"].extra_body == {"reasoning_effort": "low"}

@@ -153,3 +153,10 @@ async def test_baseline_stop_not_trailed(tmp_path):
     give(ctx, "kimi-baseline")
     await monitor_tick(ctx, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=30), SESS, False)
     assert ctx.db.load_account("kimi-baseline").positions["MSFT"].exit_plan.stop_loss == 98.0
+
+
+async def test_control_arm_stop_enforced(tmp_path):
+    ctx = mk(tmp_path, [b(5, 99, 99, 97, 97.5)])
+    give(ctx, "rules-trend")
+    r = await monitor_tick(ctx, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=30), SESS, False)
+    assert [f.reason for f in r.fills if f.account == "rules-trend"] == ["stop"]

@@ -56,7 +56,7 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
             alpha_beta(*aligned_daily_returns(series, bench_series))
         rows.append(dict(zip(LEADERBOARD_KEYS, [
             account,
-            arm.model if arm else "-",
+            (arm.model or "-") if arm else "-",
             arm.variant if arm else "benchmark",
             nav, ret,
             None if bench_ret is None or account == BENCHMARK else ret - bench_ret,
@@ -168,7 +168,7 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "data_ok": db.kv_get("data_ok") != "0",
         "paused_all": pause.flagged(db, pause.ALL),
         "budget": budget.summary(),
-        "arms": [{"arm": a.name, "model": a.model, "variant": a.variant,
+        "arms": [{"arm": a.name, "model": a.model or "-", "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),
                   "paused": pause.flagged(db, a.name)} for a in cfg.arms if a.enabled],
     }

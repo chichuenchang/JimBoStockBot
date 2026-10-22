@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from stockbot.agent.cycle import AppContext, hold_only
 from stockbot.agent.rules import trail_stop
 from stockbot.clock import et_date, in_session
-from stockbot.config import ArmCfg
+from stockbot.config import RULED_VARIANTS, ArmCfg
 from stockbot.models import Bar, Fill, Session
 
 WAKE_STOP_FRACTION = 0.75
@@ -28,7 +28,7 @@ def _enforce_map(ctx: AppContext) -> dict[str, bool]:
     out = {}
     for account in ctx.db.accounts():
         arm = arms.get(account)
-        out[account] = arm is None or arm.variant == "improved" or hold_only(ctx, arm)
+        out[account] = arm is None or arm.variant in RULED_VARIANTS or hold_only(ctx, arm)
     return out
 
 
@@ -58,7 +58,7 @@ async def monitor_tick(ctx: AppContext, start: datetime, end: datetime,
     bars = [b for b in bars if any(in_session(b.ts, s) for s in sessions)]
     bars.sort(key=lambda b: (b.ts, b.symbol))
     enforce = _enforce_map(ctx)
-    trailing = {a.name for a in ctx.cfg.arms if a.enabled and a.variant == "improved"}
+    trailing = {a.name for a in ctx.cfg.arms if a.enabled and a.variant in RULED_VARIANTS}
     atr = {k: v.get("atr14_1h") for k, v in ctx.db.latest_report_features().items()}
     accounts = list(enforce)
     fills: list[Fill] = []

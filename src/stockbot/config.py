@@ -33,8 +33,8 @@ class ModelCfg:
 @dataclass(frozen=True)
 class ArmCfg:
     name: str
-    model: str
-    variant: Literal["baseline", "improved"]
+    model: str | None  # None for control arms (no LLM)
+    variant: Literal["baseline", "improved", "rules", "random"]
     enabled: bool
 
 
@@ -85,7 +85,10 @@ class AppConfig:
 
 
 ADAPTERS = ("openai_compat", "anthropic", "fake")
-VARIANTS = ("baseline", "improved")
+LLM_VARIANTS = ("baseline", "improved")
+CONTROL_VARIANTS = ("rules", "random")
+VARIANTS = LLM_VARIANTS + CONTROL_VARIANTS
+RULED_VARIANTS = ("improved",) + CONTROL_VARIANTS  # harness rules, enforced + trailed stops
 
 
 def _read(path: Path) -> dict:
@@ -127,13 +130,18 @@ def load_config(config_dir: Path) -> AppConfig:
     arms = []
     for a in _read(config_dir / "arms.yaml").get("arms") or []:
         try:
-            arm = ArmCfg(**a)
+            arm = ArmCfg(**{"model": None, **a})
         except TypeError as e:
             raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
-        if arm.model not in models:
-            raise ConfigError(f"arm {arm.name}: unknown model {arm.model!r}")
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
+        if arm.variant in CONTROL_VARIANTS:
+            if arm.model is not None:
+                raise ConfigError(f"arm {arm.name}: {arm.variant} arms take no model")
+            arms.append(arm)
+            continue
+        if arm.model not in models:
+            raise ConfigError(f"arm {arm.name}: unknown model {arm.model!r}")
         if arm.enabled and not models[arm.model].enabled:
             raise ConfigError(f"arm {arm.name}: model {arm.model} is disabled")
         arms.append(arm)
