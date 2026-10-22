@@ -70,13 +70,11 @@ def swing_levels(bars: list[Bar], lookback: int = 3) -> tuple[list[float], list[
     """Pivot highs/lows: bar extreme beyond `lookback` bars each side. Newest first, max 3 each."""
     highs, lows = [], []
     for i in range(lookback, len(bars) - lookback):
-        window = bars[i - lookback:i + lookback + 1]
+        others = bars[i - lookback:i] + bars[i + 1:i + lookback + 1]
         b = bars[i]
-        if b.high == max(x.high for x in window) and b.high > max(
-                x.high for j, x in enumerate(window) if j != lookback):
+        if b.high > max(x.high for x in others):
             highs.append(b.high)
-        if b.low == min(x.low for x in window) and b.low < min(
-                x.low for j, x in enumerate(window) if j != lookback):
+        if b.low < min(x.low for x in others):
             lows.append(b.low)
     return highs[::-1][:3], lows[::-1][:3]
 
