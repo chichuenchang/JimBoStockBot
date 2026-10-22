@@ -27,6 +27,7 @@ class ModelCfg:
     price_out: float
     monthly_cap_usd: float
     enabled: bool
+    extra_body: dict | None = None  # merged into the request body, e.g. thinking switches
 
 
 @dataclass(frozen=True)

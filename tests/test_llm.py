@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from types import SimpleNamespace
 
@@ -58,6 +59,16 @@ async def test_openai_compat_sends_json_mode_and_bearer():
     assert body["model"] == "kimi-k3"
     assert [m["role"] for m in body["messages"]] == ["system", "user"]
     assert req.headers["Authorization"] == "Bearer k"
+
+
+@respx.mock
+async def test_openai_compat_merges_extra_body():
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=ok_body()))
+    cfg = dataclasses.replace(KIMI, extra_body={"thinking": {"type": "disabled"}})
+    await make_client(cfg, timeout_s=5).complete("sys", "user")
+    body = json.loads(route.calls.last.request.content)
+    assert body["thinking"] == {"type": "disabled"}
+    assert body["model"] == "kimi-k3"
 
 
 @respx.mock
