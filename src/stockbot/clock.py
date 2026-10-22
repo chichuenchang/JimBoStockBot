@@ -1,7 +1,7 @@
 """Clock abstraction and ET schedule helpers."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -34,15 +34,16 @@ class ReplayClock:
         self._now = dt
 
 
-def _et_on(session: Session, hhmm: str) -> datetime:
+def et_at(day: date, hhmm: str) -> datetime:
+    """UTC instant of wall-clock hh:mm ET on day."""
     h, m = map(int, hhmm.split(":"))
-    return datetime.combine(session.day, time(h, m), tzinfo=ET).astimezone(UTC)
+    return datetime.combine(day, time(h, m), tzinfo=ET).astimezone(UTC)
 
 
 def cycle_slots(session: Session, s: Settings) -> list[datetime]:
     """Decision times from cycle_start to cycle_end every cycle_every_min, inside the session."""
-    t = _et_on(session, s.cycle_start)
-    end = _et_on(session, s.cycle_end)
+    t = et_at(session.day, s.cycle_start)
+    end = et_at(session.day, s.cycle_end)
     out = []
     while t <= end:
         if in_session(t, session):
@@ -53,7 +54,7 @@ def cycle_slots(session: Session, s: Settings) -> list[datetime]:
 
 def report_slots(session: Session, s: Settings) -> list[datetime]:
     """Report times for the session day; ones at or after close are dropped."""
-    return [t for t in (_et_on(session, hm) for hm in s.report_times) if t < session.close_utc]
+    return [t for t in (et_at(session.day, hm) for hm in s.report_times) if t < session.close_utc]
 
 
 def in_session(ts: datetime, session: Session) -> bool:

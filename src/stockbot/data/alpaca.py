@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 
 import httpx
 
-from stockbot.clock import ET
+from stockbot.clock import et_at
 from stockbot.data.base import DataError, Timeframe
 from stockbot.models import Bar, NewsItem, Session
 
@@ -84,9 +84,5 @@ class AlpacaData:
         out = []
         for d in data:
             day = date.fromisoformat(d["date"])
-
-            def at(hm: str) -> datetime:
-                h, m = map(int, hm.split(":"))
-                return datetime.combine(day, time(h, m), tzinfo=ET).astimezone(UTC)
-            out.append(Session(day, at(d["open"]), at(d["close"])))
+            out.append(Session(day, et_at(day, d["open"]), et_at(day, d["close"])))
         return out
