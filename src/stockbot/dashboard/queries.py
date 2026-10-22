@@ -6,10 +6,9 @@ from collections import defaultdict
 
 from stockbot import pause
 from stockbot.broker.sim import SimBroker
-from stockbot.clock import et_date
 from stockbot.config import AppConfig
-from stockbot.db import DB, parse_ts
-from stockbot.metrics import daily_returns, max_drawdown, sharpe, trade_stats
+from stockbot.db import DB
+from stockbot.metrics import daily_closes, daily_returns, max_drawdown, sharpe, trade_stats
 from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
@@ -100,13 +99,10 @@ def drawdown(db: DB) -> dict[str, list]:
 def daily_pnl(db: DB) -> dict[str, list]:
     out = {}
     for a in db.accounts():
-        last = {}
-        for ts, nav in db.equity_series(a):
-            last[et_date(ts)] = nav
         prev, rows = db.start_cash(a), []
-        for d in sorted(last):
-            rows.append([d.isoformat(), last[d] - prev])
-            prev = last[d]
+        for d, nav in daily_closes(db.equity_series(a)).items():
+            rows.append([d.isoformat(), nav - prev])
+            prev = nav
         out[a] = rows
     return out
 

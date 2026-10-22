@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from stockbot.clock import et_date
 from stockbot.models import ClosedTrade
@@ -19,11 +19,13 @@ class TradeStats:
     profit_factor: float | None
 
 
+def daily_closes(series: list[tuple[datetime, float]]) -> dict[date, float]:
+    """Last NAV of each ET day, in day order (series must be time-ordered)."""
+    return {et_date(ts): nav for ts, nav in series}
+
+
 def daily_returns(series: list[tuple[datetime, float]]) -> list[float]:
-    last: dict = {}
-    for ts, nav in series:
-        last[et_date(ts)] = nav
-    navs = [last[d] for d in sorted(last)]
+    navs = list(daily_closes(series).values())
     return [b / a - 1 for a, b in zip(navs, navs[1:]) if a]
 
 
