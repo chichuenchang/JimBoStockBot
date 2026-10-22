@@ -64,6 +64,8 @@ class Settings:
     llm_timeout_s: float
     benchmark_symbol: str = "QQQ"
     regime_gate: bool = True
+    trail_breakeven_r: float = 1.0  # 0 disables
+    trail_atr_mult: float = 3.0  # 0 disables
 
 
 @dataclass(frozen=True)

@@ -135,3 +135,21 @@ async def test_wake_spacing_after_decision(tmp_path):
                            "{}", "ok", 0, 0, 0, 0)
     assert not wake_due(ctx, ARMS["kimi-improved"], b(15, 96.5, 96.5, 96.1, 96.1), feats())
     assert wake_due(ctx, ARMS["kimi-improved"], b(21, 96.5, 96.5, 96.1, 96.1), feats())
+
+
+async def test_improved_stop_trails_to_breakeven_then_fills(tmp_path):
+    ctx = mk(tmp_path, [b(5, 101, 102.5, 101, 102), b(6, 101, 101, 99.5, 99.6)])
+    ctx.broker.submit_market("kimi-improved", "MSFT", "buy", 10, ExitPlan(98, 110, "x"), "entry",
+                             OPEN - timedelta(minutes=1), risk_per_share=2.0)
+    ctx.broker.on_bar(Bar("MSFT", OPEN, 100, 100, 100, 100, 1), lambda a: False)
+    entry = ctx.db.load_account("kimi-improved").positions["MSFT"].entry_price
+    r = await monitor_tick(ctx, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=30), SESS, False)
+    [f] = [f for f in r.fills if f.account == "kimi-improved"]
+    assert f.reason == "stop" and f.price == pytest.approx(min(entry, 101) * (1 - 5 / 1e4))
+
+
+async def test_baseline_stop_not_trailed(tmp_path):
+    ctx = mk(tmp_path, [b(5, 101, 105, 101, 104)])
+    give(ctx, "kimi-baseline")
+    await monitor_tick(ctx, OPEN + timedelta(minutes=1), OPEN + timedelta(minutes=30), SESS, False)
+    assert ctx.db.load_account("kimi-baseline").positions["MSFT"].exit_plan.stop_loss == 98.0

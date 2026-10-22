@@ -287,3 +287,4 @@ async def test_improved_prompt_states_regime_rule(tmp_path):
     ctx, llm = make_ctx(tmp_path, ['{}'])
     await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
     assert "50-day average" in llm.calls[0][1]
+    assert "Stops trail automatically" in llm.calls[0][1]
