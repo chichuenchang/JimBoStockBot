@@ -31,12 +31,13 @@ def daily_returns(series: list[tuple[datetime, float]]) -> list[float]:
 
 
 def sharpe(daily: list[float]) -> float | None:
-    if len(daily) < 2:
+    # plain floats, not statistics.stdev (exact fractions): sharpe_ci calls this 1000x per render
+    n = len(daily)
+    if n < 2 or max(daily) == min(daily):
         return None
-    sd = statistics.stdev(daily)
-    if sd == 0:
-        return None
-    return statistics.mean(daily) / sd * math.sqrt(252)
+    mean = math.fsum(daily) / n
+    sd = math.sqrt(math.fsum((x - mean) ** 2 for x in daily) / (n - 1))
+    return mean / sd * math.sqrt(252)
 
 
 def aligned_daily_returns(a: list[tuple[datetime, float]],
