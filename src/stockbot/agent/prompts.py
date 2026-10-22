@@ -24,7 +24,7 @@ Reply with ONE JSON object keyed by symbol. Each value:
   "signal": "hold" | "buy_to_enter" | "close_position"
   "stop_loss": price, "profit_target": price, "invalidation_condition": text,
   "is_add": true when buying more of a symbol you already hold,
-  "justification": one or two sentences{sizing_field}
+  "justification": one or two sentences,
 Symbols you omit are treated as "hold". "close_position" sells the whole position.
 """
 
@@ -42,7 +42,7 @@ You may add a top-level "notes_to_self" string (max 500 chars); it is shown to y
 
 def system_prompt(variant: Variant, s: Settings) -> str:
     extra = _BASELINE if variant == "baseline" else _IMPROVED
-    head = _COMMON.format(universe=", ".join(s.universe), sizing_field=",")
+    head = _COMMON.format(universe=", ".join(s.universe))
     return head + extra
 
 
