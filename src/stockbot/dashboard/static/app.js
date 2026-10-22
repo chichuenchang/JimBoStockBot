@@ -156,10 +156,10 @@ async function loadCandles() {
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
     : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
 }
-async function loadArm() {
+async function loadArm(st) {
   const arm = encodeURIComponent(window.ARM);
-  const [pos, trades, decs, rej, st] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), get("/api/status")]);
+  const [pos, trades, decs, rej] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
+    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`)]);
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
   document.getElementById("armstate").innerHTML =
     `<span class="chip">model <b>${esc(me.model)}</b></span><span class="chip">setup <b>${esc(me.variant)}</b></span>` +
@@ -167,7 +167,7 @@ async function loadArm() {
     (me.paused ? `<span class="chip"><span class="dot" style="background:${css("--warning")}"></span><b>paused</b></span>` : "");
   const btn = document.getElementById("pausebtn");
   btn.textContent = me.paused ? "Resume" : "Pause";
-  btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(); };
+  btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(await loadStatus()); };
 
   const money = (v) => `<span class="${cls(v)}">${signed(v)}</span>`;
   table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
@@ -201,7 +201,7 @@ function initArm() {
   const page = document.body.dataset.page;
   const refresh = page === "index" ? initIndex() : page === "arm" ? initArm() : async () => {};
   async function tick() {
-    try { await loadStatus(); await refresh(); } catch (e) { console.error(e); }
+    try { await refresh(await loadStatus()); } catch (e) { console.error(e); }
     setTimeout(tick, marketOpen ? 5000 : 60000);
   }
   tick();
