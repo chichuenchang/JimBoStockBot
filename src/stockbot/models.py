@@ -87,3 +87,4 @@ class ClosedTrade:
     exit_reason: str
     justification: str
     replayed: bool = False  # exit filled during restart catch-up
+    exit_justification: str = ""  # empty for stop/target fills

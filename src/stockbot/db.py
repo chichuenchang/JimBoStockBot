@@ -220,7 +220,7 @@ class DB:
                 r_mult = pnl / (t["risk"] * qty) if t["risk"] else None
                 out.append(ClosedTrade(account, sym, parse_ts(t["entry_ts"]), parse_ts(r["ts"]),
                                        entry, exit_, qty, pnl, r_mult, r["reason"], t["why"],
-                                       bool(r["replayed"])))
+                                       bool(r["replayed"]), r["justification"]))
                 del open_[sym]
         return out
 

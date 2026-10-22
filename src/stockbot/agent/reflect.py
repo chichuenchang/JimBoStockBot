@@ -32,8 +32,11 @@ def _facts(t: ClosedTrade, bench_pct: float | None) -> str:
         + (f", {t.r_multiple:+.2f}R" if t.r_multiple is not None else ""),
         f"Entry reasoning: {t.justification or '(none)'}",
     ]
+    if t.exit_justification:
+        lines.append(f"Exit reasoning: {t.exit_justification}")
     if bench_pct is not None:
-        lines.append(f"QQQ over the same window: {bench_pct:+.2f}%")
+        lines.append(f"QQQ over the same window: {bench_pct:+.2f}%, "
+                     f"trade {trade_pct - bench_pct:+.2f} points {'ahead' if trade_pct >= bench_pct else 'behind'}")
     return "\n".join(lines)
 
 

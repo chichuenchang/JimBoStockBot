@@ -25,9 +25,19 @@ async def test_lesson_written_for_closed_trade(tmp_path):
     await reflect_new_trades(ctx, ARM, SLOT)
     [(system, user)] = llm.calls
     assert "MSFT" in user and "+2.00R" in user and "breakout above 99" in user
-    assert "QQQ over the same window: +1.00%" in user
+    assert "QQQ over the same window: +1.00%, trade +3.00 points ahead" in user
+    assert "Exit reasoning" not in user  # target fill, no decision behind it
     assert ctx.db.journal_recent(ARM.name, "lesson", 5) == ["MSFT +2.00R: Took profit at target; size was fine."]
     assert ctx.db.spent_by_arm(ARM.name) > 0
+
+
+async def test_exit_reasoning_shown_for_decided_close(tmp_path):
+    ctx, llm = make_ctx(tmp_path, ["lesson"])
+    ctx.db.insert_fill(Fill(ARM.name, "MSFT", "buy", 10, 100.0, T0, "entry"), "breakout above 99", 2.0)
+    ctx.db.insert_fill(Fill(ARM.name, "MSFT", "sell", 10, 98.5, T0 + timedelta(hours=1), "close"),
+                       "invalidation hit: back under 99")
+    await reflect_new_trades(ctx, ARM, SLOT)
+    assert "Exit reasoning: invalidation hit: back under 99" in llm.calls[0][1]
 
 
 async def test_each_trade_reflected_once(tmp_path):
