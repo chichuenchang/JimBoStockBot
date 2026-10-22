@@ -145,3 +145,23 @@ def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
     assert main(["--db", str(tmp_path / "x.db"), "run"]) == 2
     assert "MOONSHOT_API_KEY" in capsys.readouterr().err
+
+
+class DriftingData(RecordedData):
+    """Every price call returns different numbers, like a live feed between slow LLM calls."""
+    calls = 0
+
+    async def latest_prices(self, symbols):
+        self.calls += 1
+        return {s: p + self.calls for s, p in (await super().latest_prices(symbols)).items()}
+
+
+async def test_all_arms_see_same_prices(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.data = DriftingData(tmp_path / "rec", clock)
+    slot = session.open_utc + timedelta(minutes=15)
+    clock.set(slot)
+    await daemon.step(slot)
+    rows = daemon.ctx.db._q("SELECT prompt FROM decisions WHERE slot_ts=?", slot.isoformat())
+    price_lines = {r["prompt"].split("# CURRENT PRICES OF TRADEABLE COINS\n")[1].split("\n")[0] for r in rows}
+    assert len(rows) == 4 and len(price_lines) == 1

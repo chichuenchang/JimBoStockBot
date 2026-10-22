@@ -107,10 +107,16 @@ class Daemon:
         for old in due[:-1]:
             self._mark("cycle", old)  # missed during downtime; only the latest slot runs
         slot = due[-1]
+        prices: dict[str, float] = {}
+
+        async def snapshot():  # one price snapshot for all arms: slow LLM calls must not skew it
+            prices.update(await self.ctx.data.latest_prices(list(self.ctx.cfg.settings.universe)))
+        if not await self._guard("cycle prices", snapshot()):
+            return
         ok = True
         for arm in self.ctx.cfg.arms:
             if arm.enabled:
-                ok &= await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled"))
+                ok &= await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices))
         if ok:
             self._mark("cycle", slot)
             self.cycles_run += 1

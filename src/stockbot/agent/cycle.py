@@ -66,7 +66,9 @@ def _record(ctx, arm, slot, reason, report_id, prompt, raw, decision, status, us
 
 
 async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
-                    reason: Literal["scheduled", "wake"]) -> CycleResult:
+                    reason: Literal["scheduled", "wake"],
+                    prices: dict[str, float] | None = None) -> CycleResult:
+    """prices: one snapshot shared by every arm of a scheduled slot; fetched when None."""
     db, s = ctx.db, ctx.cfg.settings
     if db.decision_exists(arm.name, slot_ts):
         return CycleResult(arm.name, slot_ts, "skipped_duplicate", None, 0, 0)
@@ -75,7 +77,8 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
         return CycleResult(arm.name, slot_ts, "hold_only", did, 0, 0)
 
     now = ctx.clock.now()
-    prices = await ctx.data.latest_prices(list(s.universe))
+    if prices is None:
+        prices = await ctx.data.latest_prices(list(s.universe))
     orders = 0
     if arm.variant == "baseline":
         state = db.load_account(arm.name)
