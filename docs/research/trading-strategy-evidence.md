@@ -28,7 +28,7 @@ Extends `related-projects.md`; no repeats. Question: best bot strategy, what fit
 
 ## Built from this
 
-1. `rules-momentum` control arm: noise-band breakout on benchmark, paper rules at our 45-min cadence. Tests LLM arms vs best published simple system, not only vs strawman trend rule. `src/stockbot/agent/momentum.py`.
+1. `rules-momentum` control arm: noise-band breakout on benchmark, paper rules at our 45-min cadence. Tests LLM arms vs best published simple system, not only vs strawman trend rule. `src/stockbot/agent/momentum.py`. Trades from 5 prior sessions, paper uses 14: first ~2 weeks run on noisier sigma, weigh less.
 2. Conviction stored on entry orders/fills; arm page shows R by conviction bucket. Tests Alpha Illusion claim on our own arms: if high conviction ≠ higher R, `size_entry` conviction multiplier is noise.
 
 ## Not built, reason
