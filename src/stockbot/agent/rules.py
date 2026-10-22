@@ -87,14 +87,15 @@ def check_entry(p: Proposal, ctx: RuleContext, s: Settings) -> str | None:
 
 
 def trail_stop(pos: Position, atr: float | None, s: Settings) -> float | None:
-    """Raised stop from the position's peak, or None when it would not rise. Breakeven once
-    the peak reaches trail_breakeven_r x R, chandelier peak - trail_atr_mult x ATR always."""
+    """Raised stop from the position's peak, or None when it would not rise. Nothing until the
+    peak reaches trail_breakeven_r x R; then breakeven, and chandelier peak - trail_atr_mult x ATR
+    once that is higher. With breakeven off, chandelier from entry."""
     if pos.peak is None:
         return None
-    candidates = []
     r = pos.risk_per_share
-    if s.trail_breakeven_r and r and pos.peak >= pos.entry_price + s.trail_breakeven_r * r:
-        candidates.append(pos.entry_price)
+    if s.trail_breakeven_r and not (r and pos.peak >= pos.entry_price + s.trail_breakeven_r * r):
+        return None
+    candidates = [pos.entry_price] if s.trail_breakeven_r else []
     if s.trail_atr_mult and atr:
         candidates.append(pos.peak - s.trail_atr_mult * atr)
     new = max(candidates, default=None)

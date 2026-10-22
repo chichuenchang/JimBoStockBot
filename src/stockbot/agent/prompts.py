@@ -74,7 +74,8 @@ def _rules(s: Settings) -> str:
           if s.earnings_blackout_days >= 0 else []),
         *([f"- Stops trail automatically: to entry once price gains {s.trail_breakeven_r:g}R"]
           if s.trail_breakeven_r else []),
-        *([f"- Stops trail automatically: kept at least {s.trail_atr_mult:g} x ATR14 (1h) under the high since entry"]
+        *([f"- Stops trail automatically: kept at least {s.trail_atr_mult:g} x ATR14 (1h) under the high since entry"
+           + (", from breakeven on" if s.trail_breakeven_r else "")]
           if s.trail_atr_mult else []),
     ])
 
