@@ -165,3 +165,19 @@ async def test_all_arms_see_same_prices(tmp_path):
     rows = daemon.ctx.db._q("SELECT prompt FROM decisions WHERE slot_ts=?", slot.isoformat())
     price_lines = {r["prompt"].split("# CURRENT PRICES OF TRADEABLE COINS\n")[1].split("\n")[0] for r in rows}
     assert len(rows) == 4 and len(price_lines) == 1
+
+
+async def test_run_forever_survives_step_crash(tmp_path, caplog):
+    daemon, *_ = build(tmp_path)
+
+    class Stop(BaseException):
+        pass
+    calls = []
+
+    async def step(now):
+        calls.append(now)
+        raise RuntimeError("database is locked") if len(calls) == 1 else Stop()
+    daemon.step = step
+    with caplog.at_level(logging.ERROR), pytest.raises(Stop):
+        await daemon.run_forever(poll_s=0)
+    assert len(calls) == 2 and "database is locked" in caplog.text

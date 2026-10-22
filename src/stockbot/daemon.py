@@ -164,7 +164,10 @@ class Daemon:
             server_task = asyncio.create_task(serve(self.ctx))
         try:
             while True:
-                await self.step(self.ctx.clock.now())
+                try:
+                    await self.step(self.ctx.clock.now())
+                except Exception:  # e.g. DB locked: next pass retries; never die unattended
+                    log.exception("daemon step failed")
                 await asyncio.sleep(poll_s)
         finally:
             if server_task:
