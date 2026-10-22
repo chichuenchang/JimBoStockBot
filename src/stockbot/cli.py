@@ -27,6 +27,7 @@ from stockbot.llm.base import make_client
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.pause import ALL, is_paused, set_paused
+from stockbot.report.analyst import HISTORY
 
 log = logging.getLogger("stockbot")
 REPLAY_LEAD = timedelta(minutes=30)
@@ -138,8 +139,7 @@ async def _record(cfg: AppConfig, days: int, out: Path) -> int:
     if not sessions:
         return 1
     start = sessions[0].open_utc
-    history = {"1Min": timedelta(0), "1Hour": timedelta(days=15), "4Hour": timedelta(days=45),
-               "1Day": timedelta(days=80)}
+    history = {"1Min": timedelta(0), **HISTORY}  # the report must find its full lookback in a recording
     for sym in cfg.settings.universe:
         for tf, back in history.items():
             write_bars(out, sym, tf, await data.bars(sym, tf, start - back, now))
