@@ -109,10 +109,10 @@ async def test_momentum_bars_split_by_session():
                         datetime(2026, 10, d, 20, tzinfo=UTC)) for d in (16, 19, 20, 21)]
     bars = [b for s in sessions for b in day(s.open_utc, [100.0] * 5)]
     now = sessions[-1].open_utc + timedelta(minutes=3)
-    today, prior, close = await momentum_bars(Data(sessions, bars), "QQQ", now)
+    today, prior, session = await momentum_bars(Data(sessions, bars), "QQQ", now)
     assert len(today) == 3 and today[0].ts == sessions[-1].open_utc
     assert [p[0].ts for p in prior] == [s.open_utc for s in sessions[:-1]]
-    assert close == sessions[-1].close_utc
+    assert session == sessions[-1]
 
 
 async def test_momentum_bars_empty_when_market_closed():

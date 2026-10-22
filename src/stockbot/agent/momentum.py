@@ -11,7 +11,7 @@ from stockbot.agent.schema import Decision, SymbolDecision
 from stockbot.broker.sim import buy_price, floor3
 from stockbot.clock import et_date
 from stockbot.data.base import MarketData
-from stockbot.models import Bar, Position
+from stockbot.models import Bar, Position, Session
 
 NOISE_DAYS = 14
 MIN_NOISE_DAYS = 5
@@ -74,9 +74,9 @@ def momentum_decision(symbol: str, universe: tuple[str, ...], held: Position | N
 
 
 async def momentum_bars(data: MarketData, symbol: str,
-                        now: datetime) -> tuple[list[Bar], list[list[Bar]], datetime | None]:
+                        now: datetime) -> tuple[list[Bar], list[list[Bar]], Session | None]:
     """Today's 1-min bars so far, up to NOISE_DAYS prior sessions' (oldest first), and today's
-    close. ([], [], None) when today is not a session."""
+    session. ([], [], None) when today is not a session."""
     today = et_date(now)
     sessions = await data.calendar(today - CALENDAR_LOOKBACK, today)
     if not sessions or sessions[-1].day != today:
@@ -85,4 +85,4 @@ async def momentum_bars(data: MarketData, symbol: str,
     first = prior_s[0].open_utc if prior_s else sessions[-1].open_utc
     bars = await data.bars(symbol, "1Min", first, now)
     split = lambda s: [b for b in bars if s.open_utc <= b.ts < s.close_utc]  # noqa: E731
-    return split(sessions[-1]), [split(s) for s in prior_s], sessions[-1].close_utc
+    return split(sessions[-1]), [split(s) for s in prior_s], sessions[-1]
