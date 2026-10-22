@@ -170,15 +170,18 @@ async function loadArm(st) {
   btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(await loadStatus()); };
 
   const money = (v) => `<span class="${cls(v)}">${signed(v)}</span>`;
+  const sized = me.variant === "improved";  // only improved arms send conviction
   table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
     ["price", "price now", 0, (v) => fmt(v)], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, (v) => fmt(v)],
     ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
   table("trades", [["symbol", "stock", 1], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
     ["entry_price", "in", 0, (v) => fmt(v)], ["exit_price", "out", 0, (v) => fmt(v)], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
-    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)], ["conviction", "conviction", 0, (v) => fmt(v)],
+    ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)],
+    ...(sized ? [["conviction", "conviction", 0, (v) => fmt(v)]] : []),
     ["exit_reason", "exit", 1, (v, r) => esc(v) + (r.replayed ? ' <span class="chip" title="Filled while catching up after the PC was off">replayed</span>' : "")],
     ["justification", "reason", "wrap"]], trades, "No closed trades yet.");
-  table("conviction", [["conviction", "conviction at entry", 1], ["trades", "trades"], ["win_rate", "win rate %", 0, (v) => fmt(v, 0)],
+  document.getElementById("convcard").hidden = !sized;
+  if (sized) table("conviction", [["conviction", "conviction at entry", 1], ["trades", "trades"], ["win_rate", "win rate %", 0, (v) => fmt(v, 0)],
     ["avg_r", "avg R", 0, (v) => signed(v, 2)]], conv, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
