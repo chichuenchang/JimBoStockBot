@@ -1,8 +1,8 @@
 """Noise-band intraday momentum control arm: Zarattini, Aziz, Barbon 2024 (SSRN 4824172) on the
 benchmark, long only, cash only, at our cycle times. Why: docs/research/trading-strategy-evidence.md.
 
-Long once price clears the day's noise band top; exit below max(band top, VWAP); flat at the
-last slot of the day. No harness rules: the paper's own rules are the strategy."""
+Long once price clears max(noise band top, VWAP), the exit level, so an entry is never already
+an exit; exit below it; flat at the last slot of the day. No harness rules: the paper's own rules are the strategy."""
 from __future__ import annotations
 
 from datetime import datetime, timedelta
