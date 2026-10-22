@@ -1,13 +1,14 @@
 # StockBot
 
 Local LLM paper-trading arena. Alpha Arena replica vs improved harness, several models side by side. Paper money only.
-Design: `docs/superpowers/specs/2026-10-21-llm-trading-arena-design.md`. AA teardown: `docs/research/alpha-arena-teardown.md`.
+Design: `docs/superpowers/specs/2026-10-21-llm-trading-arena-design.md`. AA teardown: `docs/research/alpha-arena-teardown.md`. Related work + why the improved-arm extras exist: `docs/research/related-projects.md`.
+Control arms `rules-trend`, `random-control`: no LLM, improved-arm rules, $0. Improved arm must beat them to show LLM skill.
 
 ## Setup
 
 ```powershell
 uv sync
-copy .env.example .env   # fill keys: Alpaca paper (data only), Moonshot, DeepSeek
+copy .env.example .env   # fill keys: Alpaca paper (data only), Moonshot, DeepSeek; Alpha Vantage optional
 ```
 
 Alpaca paper account: email signup, works from Canada. Model ids + prices in `config/models.yaml` unverified — check provider pages.
@@ -16,7 +17,7 @@ Alpaca paper account: email signup, works from Canada. Model ids + prices in `co
 
 ```powershell
 uv run stockbot record --days 5 --out data/recorded
-uv run stockbot replay --data data/recorded --from 2026-10-20 --to 2026-10-20 --fake-llm --db data/replay.db --serve
+uv run stockbot --db data/replay.db replay --data data/recorded --from 2026-10-20 --to 2026-10-20 --fake-llm --serve
 ```
 
 Real-model smoke test, one cycle, < $1: same `replay` without `--fake-llm`, add `--max-cycles 1`.
@@ -37,4 +38,4 @@ uv run stockbot status
 uv run stockbot pause kimi-improved   # or --all; resume same way
 ```
 
-DB `data/stockbot.db`, logs `logs/stockbot.log`. Events (FOMC, CPI, earnings) hand-kept in `config/events.yaml`.
+DB `data/stockbot.db`, logs `logs/stockbot.log`. Macro events (FOMC, CPI) hand-kept in `config/events.yaml`. Earnings + fundamentals from Alpha Vantage free key (8 of 25 daily calls, cached per day); no key = earnings only from symbol events in `events.yaml`.
