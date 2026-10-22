@@ -10,6 +10,7 @@ from typing import Literal
 
 from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
+from stockbot.agent.reflect import reflect_new_trades
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
@@ -102,9 +103,11 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
     else:
         journal = None
         if arm.variant == "improved":
+            await reflect_new_trades(ctx, arm, now)
             notes = db.journal_recent(arm.name, "notes", 1)
             journal = JournalView(db.journal_recent(arm.name, "summary", 5),
-                                  db.closed_trades(arm.name)[-10:], notes[0] if notes else None)
+                                  db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
+                                  db.journal_recent(arm.name, "lesson", 5))
         system = system_prompt(arm.variant, s)
         user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
 

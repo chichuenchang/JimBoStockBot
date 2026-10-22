@@ -5,7 +5,7 @@ that providers can cache across arms within one cycle.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 
@@ -51,6 +51,7 @@ class JournalView:
     summaries: list[str]
     closed: list[ClosedTrade]
     notes: str | None
+    lessons: list[str] = field(default_factory=list)  # one per closed trade, see agent/reflect.py
 
 
 def _et(now: datetime) -> str:
@@ -104,6 +105,8 @@ def render_state(variant: Variant, state: AccountState, prices: dict[str, float]
         lines += [f"- {t.symbol}: {t.entry_price:.2f} -> {t.exit_price:.2f}, P&L {t.pnl:+.2f}, "
                   f"exit {t.exit_reason}" + (f", R {t.r_multiple:+.2f}" if t.r_multiple is not None else "")
                   for t in j.closed] or ["(none)"]
+        lines.append("## Lessons from closed trades")
+        lines += [f"- {x}" for x in j.lessons] or ["(none)"]
         lines += ["## Notes to self", j.notes or "(none)", "", "# HARNESS RULES", _rules(s)]
     return "\n".join(lines)
 
