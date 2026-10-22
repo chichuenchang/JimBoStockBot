@@ -40,7 +40,7 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
     broker = _broker(db, cfg)
     navs = {a: broker.nav(a, {}) for a in db.accounts()}
     bench_ret = (navs[BENCHMARK] / db.start_cash(BENCHMARK) - 1) * 100 if BENCHMARK in navs else None
-    bench_series = db.equity_series(BENCHMARK) if BENCHMARK in navs else []
+    bench_closes = daily_closes(db.equity_series(BENCHMARK)) if BENCHMARK in navs else {}
     rows = []
     for account, nav in navs.items():
         start = db.start_cash(account)
@@ -53,7 +53,7 @@ def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
         ret = (nav / start - 1) * 100
         daily = daily_returns(series)
         alpha, beta = (None, None) if account == BENCHMARK else \
-            alpha_beta(*aligned_daily_returns(series, bench_series))
+            alpha_beta(*aligned_daily_returns(daily_closes(series), bench_closes))
         rows.append(dict(zip(LEADERBOARD_KEYS, [
             account,
             (arm.model or "-") if arm else "-",

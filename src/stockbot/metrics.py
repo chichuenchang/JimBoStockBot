@@ -40,10 +40,8 @@ def sharpe(daily: list[float]) -> float | None:
     return mean / sd * math.sqrt(252)
 
 
-def aligned_daily_returns(a: list[tuple[datetime, float]],
-                          b: list[tuple[datetime, float]]) -> tuple[list[float], list[float]]:
-    """Daily returns of two NAV series over the ET days both have."""
-    ca, cb = daily_closes(a), daily_closes(b)
+def aligned_daily_returns(ca: dict[date, float], cb: dict[date, float]) -> tuple[list[float], list[float]]:
+    """Daily returns of two daily_closes over the ET days both have."""
     days = [d for d in ca if d in cb]
     ra, rb = [], []
     for d0, d1 in zip(days, days[1:]):

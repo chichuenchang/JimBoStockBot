@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from stockbot.metrics import (aligned_daily_returns, alpha_beta, daily_returns, max_drawdown, sharpe,
+from stockbot.metrics import (aligned_daily_returns, alpha_beta, daily_closes, daily_returns, max_drawdown, sharpe,
                               sharpe_ci, trade_stats)
 from stockbot.models import ClosedTrade
 
@@ -62,7 +62,7 @@ def test_alpha_beta_of_leveraged_copy():
     arm = [100]
     for r in rb:
         arm.append(arm[-1] * (1 + 2 * r + 0.001))
-    ra, rb2 = aligned_daily_returns(series(arm), series(bench))
+    ra, rb2 = aligned_daily_returns(daily_closes(series(arm)), daily_closes(series(bench)))
     alpha, beta = alpha_beta(ra, rb2)
     assert beta == pytest.approx(2.0)
     assert alpha == pytest.approx(0.001 * 252)
@@ -71,7 +71,7 @@ def test_alpha_beta_of_leveraged_copy():
 def test_aligned_returns_skip_days_missing_from_either():
     a = series([100, 110, 121])
     b = [(a[0][0], 50), (a[2][0], 50)]  # benchmark missing middle day
-    ra, rb = aligned_daily_returns(a, b)
+    ra, rb = aligned_daily_returns(daily_closes(a), daily_closes(b))
     assert ra == pytest.approx([0.21]) and rb == pytest.approx([0.0])
 
 
