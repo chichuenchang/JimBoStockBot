@@ -109,7 +109,7 @@ def parse_decision(text: str, variant: Literal["baseline", "improved"],
             stop_loss=_price(d.get("stop_loss"), "stop_loss", sym),
             profit_target=_price(d.get("profit_target"), "profit_target", sym),
             invalidation_condition=str(d.get("invalidation_condition") or ""),
-            is_add=bool(d.get("is_add", False)),
+            is_add=str(d.get("is_add")).strip().lower() == "true",  # bool("false") is True
             justification=str(d.get("justification") or ""))
     for sym in universe:
         out.setdefault(sym, SymbolDecision(sym, "hold"))

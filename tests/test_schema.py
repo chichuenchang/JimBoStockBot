@@ -90,3 +90,10 @@ def test_conviction_clamped_and_baseline_ignores_it():
 def test_decisions_list_shape_accepted():
     text = json.dumps({"decisions": [{"coin": "MSFT", "signal": "close_position"}]})
     assert parse_decision(text, "baseline", U).per_symbol["MSFT"].signal == "close_position"
+
+
+@pytest.mark.parametrize("raw,want", [(True, True), ("true", True), ("false", False), ("False", False),
+                                      (False, False), (None, False)])
+def test_is_add_string_flags(raw, want):
+    d = parse_decision(json.dumps({"MSFT": {"signal": "hold", "is_add": raw}}), "baseline", U)
+    assert d.per_symbol["MSFT"].is_add is want
