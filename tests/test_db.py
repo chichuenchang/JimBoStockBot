@@ -189,3 +189,23 @@ def test_reader_waits_for_open_transaction(db):
         db.save_account(AccountState("a", 50.0, {"MSFT": pos}))
     reader.join(5)
     assert list(seen[0]) == ["MSFT"]
+
+
+def test_load_account_not_torn_by_writer(db, monkeypatch):
+    # a fill committing between the cash and positions reads must not show old cash with new positions
+    db.ensure_account("a", 100.0)
+    pos = Position("MSFT", 5, 100.0, T0, ExitPlan(90.0, 120.0, "x"))
+    writer = threading.Thread(target=lambda: db.save_account(AccountState("a", 50.0, {"MSFT": pos})))
+    q = db._q
+
+    def q_then_write(sql, *args):
+        rows = q(sql, *args)
+        if "FROM accounts" in sql:
+            writer.start()
+            writer.join(0.3)
+        return rows
+
+    monkeypatch.setattr(db, "_q", q_then_write)
+    st = db.load_account("a")
+    writer.join(5)
+    assert (st.cash, st.positions) == (100.0, {})

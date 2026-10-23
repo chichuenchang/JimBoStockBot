@@ -112,15 +112,17 @@ class DB:
         return self._q("SELECT start_cash FROM accounts WHERE account=?", account)[0]["start_cash"]
 
     def load_account(self, account: str) -> AccountState:
-        rows = self._q("SELECT cash FROM accounts WHERE account=?", account)
-        if not rows:
-            raise KeyError(account)
+        with self._lock:  # cash and positions from one moment, not either side of a fill
+            rows = self._q("SELECT cash FROM accounts WHERE account=?", account)
+            if not rows:
+                raise KeyError(account)
+            position_rows = self._q("SELECT * FROM positions WHERE account=?", account)
         positions = {
             r["symbol"]: Position(
                 r["symbol"], r["qty"], r["entry_price"], parse_ts(r["entry_ts"]),
                 ExitPlan(r["stop_loss"], r["profit_target"], r["invalidation"]), r["risk_per_share"],
                 r["peak"])
-            for r in self._q("SELECT * FROM positions WHERE account=?", account)}
+            for r in position_rows}
         return AccountState(account, rows[0]["cash"], positions)
 
     def holders(self, symbol: str) -> list[str]:
