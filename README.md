@@ -8,7 +8,7 @@ Control arms `rules-trend`, `random-control`: `src/stockbot/agent/control.py`. `
 
 ```powershell
 uv sync
-copy .env.example .env   # fill keys: Alpaca paper (data only), Moonshot, DeepSeek; Alpha Vantage optional
+copy .env.example .env   # fill keys: Alpaca paper (data only), Moonshot, DeepSeek; Alpha Vantage, AnySearch optional
 ```
 
 Alpaca paper account: email signup, works from Canada. Model ids + prices in `config/models.yaml` unverified — check provider pages.
@@ -36,6 +36,7 @@ Dashboard `http://127.0.0.1:8000`. PC must stay awake 09:30–16:00 ET; downtime
 ```powershell
 uv run stockbot status
 uv run stockbot pause kimi-improved   # or --all; resume same way
+uv run stockbot interval 5           # minutes between decisions, live; no arg = show, --reset = settings.yaml
 ```
 
 DB `data/stockbot.db`, logs `logs/stockbot.log`. Macro events (FOMC, CPI) hand-kept in `config/events.yaml`. Earnings + fundamentals: Alpha Vantage free key, `src/stockbot/data/fundamentals.py`; no key = earnings only from symbol events in `events.yaml`.

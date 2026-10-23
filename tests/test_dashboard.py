@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from stockbot import interval
 from stockbot.clock import ReplayClock
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
@@ -107,6 +108,20 @@ def test_pause_endpoint_sets_kv(db):
     c.post("/api/resume/kimi-improved")
     assert not is_paused(db, "kimi-improved")
     assert c.post("/api/pause/nope").status_code == 404
+
+
+def test_interval_endpoint(db):
+    c = client(db)
+    assert c.post("/api/interval", json={"minutes": 5}).status_code == 200
+    assert interval.get(db, CFG.settings) == 5
+    assert c.get("/api/status").json()["interval"] == {"minutes": 5, "source": "override"}
+    for bad in (0, 61, "abc", 2.5):
+        assert c.post("/api/interval", json={"minutes": bad}).status_code == 400
+    assert c.post("/api/interval", json={"minutes": 7},
+                  headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert c.post("/api/interval", json={"minutes": None}).status_code == 200
+    assert c.get("/api/status").json()["interval"] == {"minutes": CFG.settings.cycle_every_min,
+                                                        "source": "default"}
 
 
 def test_cross_site_post_refused(db):

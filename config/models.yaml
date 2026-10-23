@@ -21,7 +21,7 @@ models:
     price_in: 0.30
     price_in_cached: 0.03
     price_out: 1.20
-    monthly_cap_usd: 20
+    monthly_cap_usd: 35
     enabled: true
     extra_body: {thinking: {type: disabled}}  # V4 thinks by default (effort high)
 

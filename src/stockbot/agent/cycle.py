@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, time
 from typing import Literal
 
+from stockbot import interval
+from stockbot.agent import research
 from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.momentum import momentum_bars, momentum_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
@@ -15,7 +17,7 @@ from stockbot.agent.reflect import reflect_new_trades
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
-from stockbot.clock import ET, Clock, cycle_slots, et_date
+from stockbot.clock import ET, Clock, et_date
 from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
@@ -25,11 +27,12 @@ from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 from stockbot.pause import is_paused
 from stockbot.report.features import regime
+from stockbot.search.anysearch import SearchClient
 
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
 RETRY_SUFFIX = "\n\nYour previous reply was invalid: {err}. Reply with JSON only."
-RETRY_MARK = "\n\n----- retry reply -----\n\n"
+REPLY_MARK = "\n\n----- next reply -----\n\n"  # between stored replies: a retry or a search step
 SUMMARY_MAX = 300
 
 
@@ -43,6 +46,7 @@ class AppContext:
     clients: dict[str, LLMClient]
     clock: Clock
     fundamentals: FundamentalsSource | None = None
+    search: SearchClient | None = None  # used by arms with search: true
 
 
 @dataclass(frozen=True)
@@ -75,7 +79,7 @@ class _Exchange:
     cost: float = 0.0
 
     def transcript(self) -> str:
-        return RETRY_MARK.join(self.replies)
+        return REPLY_MARK.join(self.replies)
 
 
 def _record(ctx, arm, slot, reason, report_id, ex: _Exchange, decision, status):
@@ -146,8 +150,9 @@ def _journal(db: DB, arm: ArmCfg, decision: Decision, state: AccountState, now: 
 async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text: str, state: AccountState,
                         prices: dict[str, float], nav: float,
                         now: datetime) -> tuple[Decision | None, Status | None]:
-    """Ask the arm's model, retrying once on an unparseable reply. (decision, None) or
-    (None, failure status); ex collects the exchange either way."""
+    """Ask the arm's model, retrying once on an unparseable reply. A search arm may first take
+    a search step and a read step (agent/research.py). (decision, None) or (None, failure
+    status); ex collects the exchange either way."""
     db, s = ctx.db, ctx.cfg.settings
     journal = None
     if arm.variant == "improved":
@@ -156,7 +161,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         journal = JournalView(db.journal_recent(arm.name, "summary", 5),
                               db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
                               db.journal_recent(arm.name, "lesson", 5))
-    system = system_prompt(arm.variant, s)
+    web = research.Session(ctx.search, s, arm.name) if arm.search and ctx.search is not None else None
+    system = system_prompt(arm.variant, s, search=web is not None)
     user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
     client = ctx.clients[arm.model]
 
@@ -175,16 +181,25 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.replies.append(res.text)
         return res.text
 
+    async def turn(prompt: str, purpose: str) -> Decision | research.Step:
+        reply = await ask(prompt, purpose)
+        step = web.request(reply) if web else None
+        return parse_decision(reply, arm.variant, s.universe) if step is None else step
+
+    prompt, purpose, err, retried = user, "decision", None, False
     try:
-        try:
-            return parse_decision(await ask(user, "decision"), arm.variant, s.universe), None
-        except ParseError as e:
-            reply = await ask(user + RETRY_SUFFIX.format(err=e), "retry")
-        try:
-            return parse_decision(reply, arm.variant, s.universe), None
-        except ParseError as e:
-            db.journal_append(arm.name, now, "summary", f"reply unparseable: {e}"[:SUMMARY_MAX])
-            return None, "parse_failed"
+        while True:
+            try:
+                out = await turn(prompt + (RETRY_SUFFIX.format(err=err) if err else ""), purpose)
+            except ParseError as e:
+                if retried:  # one retry per decision, across all steps
+                    db.journal_append(arm.name, now, "summary", f"reply unparseable: {e}"[:SUMMARY_MAX])
+                    return None, "parse_failed"
+                purpose, err, retried = "retry", e, True
+                continue
+            if isinstance(out, Decision):
+                return out, None
+            prompt, purpose, err = prompt + await web.run(out), f"{out[0]}_step", None
     except LLMError:
         return None, "llm_failed"
 
@@ -195,7 +210,7 @@ async def _control_decision(ctx: AppContext, arm: ArmCfg, slot_ts: datetime, sta
     if arm.variant == "momentum":
         sym = s.benchmark_symbol
         today, prior, session = await momentum_bars(ctx.data, sym, ctx.clock.now())
-        slots = cycle_slots(session, s) if session else []
+        slots = interval.slots(ctx.db, session, s) if session else []
         last_slot = not slots or slot_ts >= slots[-1]
         return momentum_decision(sym, s.universe, state.positions.get(sym), prices.get(sym), today, prior,
                                  state.cash, s.slippage_bps, last_slot)

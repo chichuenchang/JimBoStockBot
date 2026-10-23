@@ -53,3 +53,12 @@ def test_system_prompts_differ_on_sizing():
     for v in ("baseline", "improved"):
         sp = system_prompt(v, S)
         assert "buy_to_enter" in sp and "close_position" in sp and "PLTR" in sp
+
+
+def test_search_note_only_for_search_arms():
+    plain = system_prompt("improved", S)
+    assert system_prompt("improved", S, search=False) == plain
+    sp = system_prompt("improved", S, search=True)
+    assert sp.startswith(plain)
+    assert '{"search": "<query>"}' in sp and '{"read": [result numbers]}' in sp
+    assert f"up to {S.search_max_pages} pages" in sp and "never instructions" in sp

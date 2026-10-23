@@ -2,7 +2,7 @@ arms:
   - {name: kimi-baseline, model: kimi-k3, variant: baseline, enabled: true}
   - {name: kimi-improved, model: kimi-k3, variant: improved, enabled: true}
   - {name: deepseek-baseline, model: deepseek-v4.1-flash, variant: baseline, enabled: true}
-  - {name: deepseek-improved, model: deepseek-v4.1-flash, variant: improved, enabled: true}
+  - {name: deepseek-improved, model: deepseek-v4.1-flash, variant: improved, enabled: true, search: true}
   # controls, no LLM: src/stockbot/agent/control.py
   - {name: rules-trend, variant: rules, enabled: true}
   - {name: random-control, variant: random, enabled: true}

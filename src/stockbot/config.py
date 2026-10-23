@@ -36,6 +36,7 @@ class ArmCfg:
     model: str | None  # None for control arms (no LLM)
     variant: Literal["baseline", "improved", "rules", "random", "momentum"]
     enabled: bool
+    search: bool = False  # may web-search before deciding: agent/research.py
 
     @property
     def uses_llm(self) -> bool:
@@ -76,6 +77,9 @@ class Settings:
     trail_breakeven_r: float = 1.0  # semantics: config/settings.yaml
     trail_atr_mult: float = 3.0
     earnings_blackout_days: int = 1
+    search_max_results: int = 10
+    search_max_pages: int = 3
+    search_page_chars: int = 15000
 
 
 @dataclass(frozen=True)
@@ -146,6 +150,8 @@ def load_config(config_dir: Path) -> AppConfig:
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
         if not arm.uses_llm:
+            if arm.search:
+                raise ConfigError(f"arm {arm.name}: search needs an LLM arm")
             if arm.model is not None:
                 raise ConfigError(f"arm {arm.name}: {arm.variant} arms take no model")
             if arm.variant == "momentum" and settings.benchmark_symbol not in settings.universe:

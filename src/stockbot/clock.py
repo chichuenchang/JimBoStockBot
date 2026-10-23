@@ -40,15 +40,15 @@ def et_at(day: date, hhmm: str) -> datetime:
     return datetime.combine(day, time(h, m), tzinfo=ET).astimezone(UTC)
 
 
-def cycle_slots(session: Session, s: Settings) -> list[datetime]:
-    """Decision times from cycle_start to cycle_end every cycle_every_min, inside the session."""
+def cycle_slots(session: Session, s: Settings, every_min: int) -> list[datetime]:
+    """Decision times from cycle_start to cycle_end every every_min minutes, inside the session."""
     t = et_at(session.day, s.cycle_start)
     end = et_at(session.day, s.cycle_end)
     out = []
     while t <= end:
         if in_session(t, session):
             out.append(t)
-        t += timedelta(minutes=s.cycle_every_min)
+        t += timedelta(minutes=every_min)
     return out
 
 
