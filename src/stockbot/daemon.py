@@ -53,7 +53,7 @@ class Daemon:
         return next((s for s in self.sessions if s.day == d), None)
 
     def _log_market(self, now: datetime, is_open: bool, session: Session | None) -> None:
-        """One line per open/close change, so an idle console still shows the daemon is alive."""
+        """One line per open/close change: last console line tells state and next open. Liveness = heartbeat."""
         if is_open == self._market_open:
             return
         self._market_open = is_open
