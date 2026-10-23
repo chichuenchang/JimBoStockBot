@@ -1,6 +1,5 @@
 import random
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -8,7 +7,7 @@ from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.cycle import run_cycle
 from stockbot.config import ConfigError, load_config
 from stockbot.models import ExitPlan, Position
-from tests.test_config import copy_config
+from tests.test_config import REPO_CONFIG, copy_config
 from tests.test_cycle import CFG, PRICES, SLOT, make_ctx, set_features
 
 ARMS = {a.name: a for a in CFG.arms}
@@ -104,5 +103,5 @@ def test_llm_arm_without_model_rejected(tmp_path):
 
 
 def test_repo_config_has_control_arms():
-    cfg = load_config(Path(__file__).parent / "config")
+    cfg = load_config(REPO_CONFIG)
     assert {a.variant for a in cfg.arms if a.model is None} == {"rules", "random", "momentum"}
