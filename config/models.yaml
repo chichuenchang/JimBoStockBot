@@ -10,7 +10,7 @@ models:
     price_in_cached: 0.30
     price_out: 15.0
     monthly_cap_usd: 80
-    enabled: true
+    enabled: false
     extra_body: {reasoning_effort: low}  # K3 always thinks; low effort is the floor
   deepseek-v4.1-flash:
     # peak prices (conservative); off-peak is half
