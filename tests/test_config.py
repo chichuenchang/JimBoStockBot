@@ -56,6 +56,28 @@ def test_momentum_arm_needs_benchmark_in_universe(tmp_path):
         load_config(d)
 
 
+def test_search_flag_loaded():
+    assert [a.name for a in CFG.arms if a.search] == ["deepseek-improved"]
+
+
+def test_repo_search_arm():
+    cfg = load_config(REPO_CONFIG)
+    assert [a.name for a in cfg.arms if a.search] == ["deepseek-improved"]
+    assert cfg.models["deepseek-v4.1-flash"].monthly_cap_usd == 35
+
+
+def test_search_on_control_arm_rejected(tmp_path):
+    d = copy_config(tmp_path)
+    (d / "arms.yaml").write_text("arms:\n  - {name: r, variant: rules, enabled: true, search: true}\n")
+    with pytest.raises(ConfigError, match="search needs an LLM arm"):
+        load_config(d)
+
+
+def test_search_settings_defaults():
+    s = CFG.settings
+    assert (s.search_max_results, s.search_max_pages, s.search_page_chars) == (10, 3, 15000)
+
+
 def test_enabled_caps_exceed_global_rejected(tmp_path):
     d = copy_config(tmp_path)
     text = (d / "models.yaml").read_text().replace("monthly_cap_usd: 80", "monthly_cap_usd: 90")
