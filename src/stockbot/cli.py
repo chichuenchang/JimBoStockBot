@@ -43,6 +43,8 @@ def setup_logging(log_dir: Path) -> None:
     sh.setFormatter(fmt)
     root = logging.getLogger("stockbot")
     root.setLevel(logging.INFO)
+    for h in root.handlers:  # a repeat call must not leak the old file handle
+        h.close()
     root.handlers = [fh, sh]
 
 
