@@ -16,4 +16,5 @@ def _tmp_logs(monkeypatch, tmp_path):
     for h in logger.handlers:
         if h not in handlers:
             h.close()
-    logger.handlers, logger.level = handlers, level
+    logger.handlers = handlers
+    logger.setLevel(level)
