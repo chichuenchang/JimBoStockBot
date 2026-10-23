@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -59,6 +60,8 @@ def parse_ts(s: str) -> datetime:
 class DB:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        # one connection shared with dashboard threads; held per statement and across transactions
+        self._lock = threading.RLock()
 
     @classmethod
     def open(cls, path: Path) -> DB:
@@ -78,10 +81,12 @@ class DB:
         self.conn.close()
 
     def _q(self, sql: str, *args) -> list[sqlite3.Row]:
-        return self.conn.execute(sql, args).fetchall()
+        with self._lock:
+            return self.conn.execute(sql, args).fetchall()
 
     def _x(self, sql: str, *args) -> int:
-        return self.conn.execute(sql, args).lastrowid
+        with self._lock:
+            return self.conn.execute(sql, args).lastrowid
 
     # kv
     def kv_get(self, key: str) -> str | None:
@@ -125,16 +130,17 @@ class DB:
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """All writes inside commit together or not at all. Nested use joins the outer one."""
-        if self.conn.in_transaction:
-            yield
-            return
-        self.conn.execute("BEGIN")
-        try:
-            yield
-        except BaseException:
-            self.conn.execute("ROLLBACK")
-            raise
-        self.conn.execute("COMMIT")
+        with self._lock:
+            if self.conn.in_transaction:
+                yield
+                return
+            self.conn.execute("BEGIN")
+            try:
+                yield
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+            self.conn.execute("COMMIT")
 
     def save_account(self, state: AccountState) -> None:
         with self.transaction():

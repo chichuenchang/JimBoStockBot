@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
@@ -158,3 +160,32 @@ def test_old_db_gains_conviction_columns(tmp_path):
     db.insert_fill(Fill("a", "MSFT", "buy", 5, 100.0, T0, "entry", False), conviction=0.4)
     assert db.pending_orders("MSFT")[0]["conviction"] == 0.4
     assert db._q("SELECT conviction FROM fills")[0]["conviction"] == 0.4
+
+
+def test_parallel_reads_from_threads(db):
+    # dashboard serves API calls from a threadpool on one shared connection
+    db.ensure_account("a", 100.0)
+    db.kv_set("k", "v")
+
+    def read(i: int):
+        return db.accounts() if i % 2 else db.kv_get("k")
+
+    with ThreadPoolExecutor(8) as ex:
+        results = list(ex.map(read, range(4000)))
+    assert results == [["a"] if i % 2 else "v" for i in range(4000)]
+
+
+def test_reader_waits_for_open_transaction(db):
+    db.ensure_account("a", 100.0)
+    pos = Position("MSFT", 5, 100.0, T0, ExitPlan(90.0, 120.0, "x"))
+    db.save_account(AccountState("a", 50.0, {"MSFT": pos}))
+    seen = []
+    with db.transaction():
+        db.conn.execute("DELETE FROM positions WHERE account='a'")
+        reader = threading.Thread(target=lambda: seen.append(db.load_account("a").positions))
+        reader.start()
+        reader.join(0.3)
+        assert reader.is_alive()
+        db.save_account(AccountState("a", 50.0, {"MSFT": pos}))
+    reader.join(5)
+    assert list(seen[0]) == ["MSFT"]
