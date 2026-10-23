@@ -158,9 +158,10 @@ async function loadCandles() {
 }
 async function loadArm(st) {
   const arm = encodeURIComponent(window.ARM);
-  const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), get(`/api/arm/${arm}/conviction`)]);
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
+  const sized = me.variant === "improved";  // only improved arms send conviction
+  const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
+    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : []]);
   document.getElementById("armstate").innerHTML =
     `<span class="chip">model <b>${esc(me.model)}</b></span><span class="chip">setup <b>${esc(me.variant)}</b></span>` +
     `<span class="chip">last decision <b>${me.last_decision ? etTime(me.last_decision) : "–"}</b></span>` +
@@ -170,7 +171,6 @@ async function loadArm(st) {
   btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(await loadStatus()); };
 
   const money = (v) => `<span class="${cls(v)}">${signed(v)}</span>`;
-  const sized = me.variant === "improved";  // only improved arms send conviction
   table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
     ["price", "price now", 0, (v) => fmt(v)], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, (v) => fmt(v)],
     ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
