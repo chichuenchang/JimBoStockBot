@@ -411,6 +411,7 @@ async def test_search_read_decide(tmp_path):
     assert purposes(ctx) == ["decision", "search_step", "read_step"]
     [d] = ctx.db._q("SELECT prompt, raw FROM decisions")
     assert "PAGE ONE" in d["prompt"] and '{"search": "hormuz"}' in d["raw"]
+    assert "retry reply" not in d["raw"] and d["raw"].count("----- next reply -----") == 2
 
 
 async def test_read_caps_pages(tmp_path):

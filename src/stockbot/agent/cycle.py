@@ -33,7 +33,7 @@ from stockbot.report.features import regime
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
 RETRY_SUFFIX = "\n\nYour previous reply was invalid: {err}. Reply with JSON only."
-RETRY_MARK = "\n\n----- retry reply -----\n\n"
+REPLY_MARK = "\n\n----- next reply -----\n\n"  # between stored replies: a retry or a search step
 SUMMARY_MAX = 300
 
 
@@ -80,7 +80,7 @@ class _Exchange:
     cost: float = 0.0
 
     def transcript(self) -> str:
-        return RETRY_MARK.join(self.replies)
+        return REPLY_MARK.join(self.replies)
 
 
 def _record(ctx, arm, slot, reason, report_id, ex: _Exchange, decision, status):
