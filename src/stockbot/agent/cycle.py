@@ -161,8 +161,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         journal = JournalView(db.journal_recent(arm.name, "summary", 5),
                               db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
                               db.journal_recent(arm.name, "lesson", 5))
-    researching = arm.search and ctx.search is not None
-    system = system_prompt(arm.variant, s, search=researching)
+    web = research.Session(ctx.search, s, arm.name) if arm.search and ctx.search is not None else None
+    system = system_prompt(arm.variant, s, search=web is not None)
     user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
     client = ctx.clients[arm.model]
 
@@ -180,8 +180,6 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.cost += cost
         ex.replies.append(res.text)
         return res.text
-
-    web = research.Session(ctx.search, s, arm.name) if researching else None
 
     async def turn(prompt: str, purpose: str) -> Decision | research.Step:
         reply = await ask(prompt, purpose)

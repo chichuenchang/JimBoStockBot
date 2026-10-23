@@ -24,9 +24,9 @@ class Session:
         self.hits: list[Hit] = []
 
     def request(self, reply: str) -> Step | None:
-        """step_request, plus order: one search, then at most one read. Out of order = ParseError."""
+        """step_request, plus order: one search, then at most one read of its hits. Out of order = ParseError."""
         step = step_request(reply)
-        if step and (step[0] in self.done or (step[0] == "read" and "search" not in self.done)):
+        if step and (step[0] in self.done or (step[0] == "read" and not self.hits)):
             raise ParseError(f"{step[0]} not allowed now; reply with the decision JSON")
         return step
 
@@ -39,10 +39,7 @@ class Session:
                 self.hits = await self.client.search(arg, self.s.search_max_results)
             except SearchError as e:  # e.g. quota gone: logged, else the arm trades blind unnoticed
                 log.warning("%s: web search failed: %s", self.arm_name, e)
-                self.done.add("read")
                 return render_search_failed(e, arg)
-            if not self.hits:
-                self.done.add("read")
             return render_hits(self.hits, arg)
         chosen = pick(arg, len(self.hits), self.s.search_max_pages)
         texts = await asyncio.gather(*(self.client.extract(self.hits[n - 1].url) for n in chosen),

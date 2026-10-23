@@ -150,7 +150,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     @app.post("/api/interval")
     def set_interval(body: dict):
         m = body.get("minutes")
-        if m is not None and (type(m) is not int):
+        if m is not None and type(m) is not int:
             raise HTTPException(400, "minutes must be a whole number or null")
         try:
             interval.set(db, m)
