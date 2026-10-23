@@ -14,12 +14,12 @@ from stockbot.models import ClosedTrade
 @dataclass(frozen=True)
 class TradeStats:
     n: int
-    win_rate: float | None
-    avg_win: float | None
-    avg_loss: float | None
-    profit_factor: float | None
-    expectancy: float | None  # mean $ per trade: win rate alone says how often, not how much
-    pnl_ex_best: float | None  # realized P&L without the best trade; negative = one lucky trade carries it
+    win_rate: float | None = None
+    avg_win: float | None = None
+    avg_loss: float | None = None
+    profit_factor: float | None = None
+    expectancy: float | None = None  # mean $ per trade: win rate alone says how often, not how much
+    pnl_ex_best: float | None = None  # realized P&L without the best trade; negative = one lucky trade carries it
 
 
 def daily_closes(series: list[tuple[datetime, float]]) -> dict[date, float]:
@@ -117,7 +117,7 @@ def conviction_buckets(trades: list[ClosedTrade]) -> list[dict]:
 
 def trade_stats(trades: list[ClosedTrade]) -> TradeStats:
     if not trades:
-        return TradeStats(0, None, None, None, None, None, None)
+        return TradeStats(0)
     wins = [t.pnl for t in trades if t.pnl > 0]
     losses = [t.pnl for t in trades if t.pnl <= 0]
     gross_loss = -sum(losses)
