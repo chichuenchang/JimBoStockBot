@@ -117,10 +117,10 @@ class Daemon:
                if t <= now and not self._done("cycle", t)]
         if not due:
             return
-        closed = now >= session.close_utc  # after close even the latest slot is stale
-        for old in due if closed else due[:-1]:
-            self._mark("cycle", old)  # missed during downtime; only the latest slot runs
-        if closed:
+        for old in due[:-1]:
+            self._mark("cycle", old)  # missed during downtime; only the latest slot may run
+        if now >= session.close_utc:  # after close even the latest slot is stale
+            self._mark("cycle", due[-1])
             return
         slot = due[-1]
         prices: dict[str, float] = {}
