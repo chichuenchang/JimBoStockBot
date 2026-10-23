@@ -43,7 +43,7 @@ YouTube, X, TikTok, Bilibili, EN + ZH; Reddit, Zhihu missing (provider errors). 
 
 Added:
 - `expectancy`, `pnl_ex_best` leaderboard columns. Claims: "61% win rate can still lose money"; "+389%… removing its best trades puts it in the red".
-- `finished()`, why: its docstring in `src/stockbot/data/base.py`. Bugs it fixed: live report `rel_volume` read partial-day volume, replay `chg_1d_pct` compared against close 2 sessions back.
+- `finished()`, why: its docstring in `src/stockbot/data/base.py`. Bugs it fixed: live report `rel_volume` read partial-day volume (if Alpaca returns forming bar), replay `chg_1d_pct` compared against close 2 sessions back.
 
 Already covered: costs (`slippage_bps`, `costs` column), look-ahead (`RecordedData`), regime switch (`regime_gate`), parameter fishing (control arms run paper params, untuned).
 

@@ -12,8 +12,8 @@ TF_DURATION = {"1Min": timedelta(minutes=1), "1Hour": timedelta(hours=1),
 
 
 def finished(bars: list[Bar], timeframe: Timeframe, now: datetime) -> list[Bar]:
-    """Drop the bar still forming at `now`. Alpaca returns it, recorded data never does: without
-    this, live and replay compute different numbers."""
+    """Drop the bar still forming at `now`. Alpaca presumably returns it (not checked with a live
+    call), recorded data never does: without this, live and replay compute different numbers."""
     return [b for b in bars if b.ts + TF_DURATION[timeframe] <= now]
 
 
