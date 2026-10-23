@@ -102,8 +102,16 @@ class Daemon:
         replayed = end - last > REPLAY_GAP
         return await monitor_tick(self.ctx, last, end, self.sessions, replayed), replayed
 
+    def _due(self, kind: str, slots: list[datetime], now: datetime, session: Session) -> list[datetime]:
+        due = [t for t in slots if t <= now and not self._done(kind, t)]
+        if now >= session.close_utc:  # after close every missed slot is stale; next open's replace them
+            for t in due:
+                self._mark(kind, t)
+            return []
+        return due
+
     async def _reports(self, now: datetime, session: Session) -> None:
-        due = [t for t in report_slots(session, self.ctx.cfg.settings) if t <= now and not self._done("report", t)]
+        due = self._due("report", report_slots(session, self.ctx.cfg.settings), now, session)
         if not due:
             return
         model = self.ctx.cfg.settings.analyst_model
@@ -113,8 +121,7 @@ class Daemon:
             self._mark("report", t)
 
     async def _cycles(self, now: datetime, session: Session) -> None:
-        due = [t for t in interval.slots(self.ctx.db, session, self.ctx.cfg.settings)
-               if t <= now and not self._done("cycle", t)]
+        due = self._due("cycle", interval.slots(self.ctx.db, session, self.ctx.cfg.settings), now, session)
         if not due:
             return
         for old in due[:-1]:
