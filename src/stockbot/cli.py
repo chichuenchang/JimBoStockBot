@@ -164,6 +164,20 @@ def _status(cfg: AppConfig, db: DB) -> int:
     return 0
 
 
+def _daemon_lock(db_path: Path):
+    """Exclusive lock beside the DB for process life; OS frees it on exit or crash. None = held elsewhere.
+    Covers every start path (scheduled task, run_daemon.ps1, by hand): two daemons lock the DB."""
+    import msvcrt
+    f = open(db_path.with_suffix(".lock"), "a+b")  # noqa: SIM115 - must stay open while held
+    f.seek(0)
+    try:
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        f.close()
+        return None
+    return f
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="stockbot")
     p.add_argument("--config", default="config")
@@ -224,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
                 from stockbot.data.recorded import RecordedData
                 serve_forever(db, cfg, RecordedData(Path(a.data), ReplayClock(datetime.now(UTC))))
             return rc
+        lock = _daemon_lock(db_path)
+        if lock is None:
+            print(f"daemon already running on {db_path}", file=sys.stderr)
+            return 1
         clock = RealClock()
         ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals())
         asyncio.run(Daemon(ctx).run_forever())

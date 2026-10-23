@@ -181,6 +181,17 @@ def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
     assert "MOONSHOT_API_KEY" in capsys.readouterr().err
 
 
+def test_run_refuses_second_daemon(tmp_path, capsys):
+    from stockbot.cli import _daemon_lock
+    db_path = tmp_path / "x.db"
+    held = _daemon_lock(db_path)
+    assert held and _daemon_lock(db_path) is None
+    assert cli(db_path, "run") == 1
+    assert "already running" in capsys.readouterr().err
+    held.close()
+    assert _daemon_lock(db_path) is not None
+
+
 class DriftingData(RecordedData):
     """Every price call returns different numbers, like a live feed between slow LLM calls."""
     calls = 0
