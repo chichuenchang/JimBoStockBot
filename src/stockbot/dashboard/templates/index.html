@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_cells.html" import cell, kpi %}
+{% from "_cells.html" import cell, kpi with context %}
 {% block page %}index{% endblock %}
 {% block body %}
 <h2 class="section">Leaderboard <span class="muted">ranked by account value · click a bot for its trades</span></h2>
@@ -14,8 +14,8 @@
     </div>
     <div class="muted small">{{ 'buy QQQ once and hold' if bench else (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
     <div class="big" title="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
-    {{ kpi("nav", r, labels, tips) }}
-    {% if not bench %}{{ kpi("vs_benchmark_pct", r, labels, tips) }}{{ kpi("net_after_llm", r, labels, tips) }}{% endif %}
+    {{ kpi("nav", r) }}
+    {% if not bench %}{{ kpi("vs_benchmark_pct", r) }}{{ kpi("net_after_llm", r) }}{% endif %}
   </{{ 'div' if bench else 'a' }}>
   {% endfor %}
 </section>

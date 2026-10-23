@@ -201,9 +201,8 @@ async function loadArm(st) {
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
   // decisions and rejections come capped (50 / 100), so only uncapped lists get a count
-  [["positions", pos], ["trades", trades]].forEach(([k, rows]) => {
-    document.getElementById(`n-${k}`).textContent = rows.length;
-  });
+  document.getElementById("n-positions").textContent = pos.length;
+  document.getElementById("n-trades").textContent = trades.length;
   document.getElementById("decisions").innerHTML = decs.length ? decs.map((d) =>
     `<details data-id="${d.id}"><summary><span class="muted">${etTime(d.slot_ts)} · ${esc(d.reason)} · ${esc(d.status)} · $${fmt(d.cost, 3)}</span> — ${esc(d.summary)}</summary><div class="detail">loading…</div></details>`).join("")
     : `<p class="muted">No decisions yet.</p>`;

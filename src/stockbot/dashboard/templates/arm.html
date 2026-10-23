@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_cells.html" import kpi %}
+{% from "_cells.html" import kpi with context %}
 {% block title %}{{ arm }} · StockBot{% endblock %}
 {% block page %}arm{% endblock %}
 {% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
@@ -12,7 +12,7 @@
     <button id="pausebtn">Pause</button>
   </div>
   <div class="kpis">
-    {% for k in ("nav", "return_pct", "vs_benchmark_pct", "net_after_llm", "trades", "win_rate", "max_drawdown") %}{{ kpi(k, row, labels, tips) }}{% endfor %}
+    {% for k in ("nav", "return_pct", "vs_benchmark_pct", "net_after_llm", "trades", "win_rate", "max_drawdown") %}{{ kpi(k, row) }}{% endfor %}
   </div>
 </section>
 

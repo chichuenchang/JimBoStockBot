@@ -11,6 +11,6 @@
 {%- elif k == "alpha_pct" -%}<span class="{{ sign(v) }}">{{ '%+.1f' % v }}%</span>
 {%- else -%}{{ v }}{%- endif -%}
 {%- endmacro %}
-{% macro kpi(k, r, labels, tips) -%}
+{% macro kpi(k, r) -%}
 <div class="kpi" title="{{ tips.get(k, '') }}"><span>{{ labels.get(k, k) }}</span><b>{{ cell(k, r[k]) }}</b></div>
 {%- endmacro %}

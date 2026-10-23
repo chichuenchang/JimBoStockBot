@@ -38,7 +38,7 @@ def _costs(db: DB, account: str, cfg: AppConfig) -> float:
 def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
     arms = {a.name: a for a in cfg.arms}
     broker = _broker(db, cfg)
-    navs = {a: broker.nav(a, {}) for a in db.accounts()}
+    navs = {a: broker.nav(a, {}) for a in db.accounts() if not only or a in (only, BENCHMARK)}
     bench_ret = (navs[BENCHMARK] / db.start_cash(BENCHMARK) - 1) * 100 if BENCHMARK in navs else None
     bench_closes = daily_closes(db.equity_series(BENCHMARK)) if BENCHMARK in navs else {}
     rows = []
