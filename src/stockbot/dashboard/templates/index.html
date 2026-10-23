@@ -4,12 +4,12 @@
 {% block body %}
 <h2 class="section">Leaderboard <span class="muted">ranked by account value · click a bot for its trades</span></h2>
 <section class="tiles">
-  {% set bots = rows | rejectattr("variant", "equalto", "benchmark") | list %}
+  {% set rank = namespace(n=0) %}
   {% for r in rows %}
-  {% set bench = r.variant == "benchmark" %}
+  {% set bench = r.variant == "benchmark" %}{% if not bench %}{% set rank.n = rank.n + 1 %}{% endif %}
   <{{ 'div' if bench else 'a' }} class="tile{{ ' bench' if bench }}"{% if not bench %} href="/arm/{{ r.arm }}"{% endif %}>
     <div class="tile-head">
-      <span class="rank">{{ 'ref' if bench else '#%d' % (bots.index(r) + 1) }}</span>
+      <span class="rank">{{ 'ref' if bench else '#%d' % rank.n }}</span>
       <span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm }}</b>
     </div>
     <div class="muted small">{{ 'buy QQQ once and hold' if bench else (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>

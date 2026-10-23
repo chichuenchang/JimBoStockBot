@@ -153,6 +153,7 @@ def test_no_secrets_in_responses(db, monkeypatch):
 def test_index_renders(db):
     r = client(db).get("/")
     assert r.status_code == 200 and "Leaderboard" in r.text
+    assert '<span class="rank">#1</span>' in r.text
     assert client(db).get("/arm/kimi-improved").status_code == 200
     assert client(db).get("/arm/nope").status_code == 404
 
