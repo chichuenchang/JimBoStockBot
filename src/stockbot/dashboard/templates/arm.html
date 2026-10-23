@@ -1,23 +1,46 @@
 {% extends "base.html" %}
+{% from "_cells.html" import kpi with context %}
 {% block title %}{{ arm }} · StockBot{% endblock %}
 {% block page %}arm{% endblock %}
 {% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
 {% block body %}
 <script>window.ARM = {{ arm | tojson }};</script>
 <section class="card">
-  <h2>{{ arm }} <button id="pausebtn" style="margin-left:8px">Pause</button></h2>
-  <div class="strip" id="armstate"></div>
+  <div class="armhead">
+    <h1><span class="swatch" data-series="{{ arm }}"></span>{{ arm }}</h1>
+    <div class="strip" id="armstate"></div>
+    <button id="pausebtn">Pause</button>
+  </div>
+  <div class="kpis">
+    {% for k in ("nav", "return_pct", "vs_benchmark_pct", "net_after_llm", "trades", "win_rate", "max_drawdown") %}{{ kpi(k, row) }}{% endfor %}
+  </div>
 </section>
-<section class="card"><h2>Open positions</h2><div class="tablewrap"><table id="positions"></table></div></section>
-<section class="card">
-  <h2>Price chart with this bot's trades
-    <select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
-    <select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option></select></h2>
-  <div id="candles" style="height:360px"></div>
-  <p class="muted" id="candlenote"></p>
-</section>
-<section class="card"><h2>Closed trades</h2><div class="tablewrap"><table id="trades"></table></div></section>
-<section class="card" id="convcard"><h2>Does its confidence pay?</h2><div class="tablewrap"><table id="conviction"></table></div></section>
-<section class="card"><h2>Decisions</h2><div id="decisions"></div></section>
-<section class="card"><h2>Rejected orders</h2><div class="tablewrap"><table id="rejections"></table></div></section>
+
+<nav class="subtabs" role="tablist">
+  <button role="tab" data-tab="positions">Positions <span class="count" id="n-positions"></span></button>
+  <button role="tab" data-tab="trades">Closed trades <span class="count" id="n-trades"></span></button>
+  <button role="tab" data-tab="decisions">Decisions</button>
+  <button role="tab" data-tab="rejected">Rejected orders</button>
+</nav>
+
+<div class="tabpane" data-pane="positions">
+  <section class="card"><h2>Open positions</h2><div class="tablewrap"><table id="positions"></table></div></section>
+  <section class="card">
+    <h2>Price chart with this bot's trades
+      <select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
+      <select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option></select></h2>
+    <div id="candles" style="height:360px"></div>
+    <p class="muted" id="candlenote"></p>
+  </section>
+</div>
+<div class="tabpane" data-pane="trades" hidden>
+  <section class="card"><h2>Closed trades</h2><div class="tablewrap"><table id="trades"></table></div></section>
+  <section class="card" id="convcard"><h2>Does its confidence pay?</h2><div class="tablewrap"><table id="conviction"></table></div></section>
+</div>
+<div class="tabpane" data-pane="decisions" hidden>
+  <section class="card"><h2>Decisions <span class="muted">newest first · click one to see the full prompt and reply</span></h2><div id="decisions"></div></section>
+</div>
+<div class="tabpane" data-pane="rejected" hidden>
+  <section class="card"><h2>Rejected orders <span class="muted">orders the risk rules blocked</span></h2><div class="tablewrap"><table id="rejections"></table></div></section>
+</div>
 {% endblock %}

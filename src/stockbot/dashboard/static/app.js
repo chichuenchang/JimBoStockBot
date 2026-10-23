@@ -17,7 +17,18 @@ const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "Ameri
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const get = (url) => fetch(url).then((r) => r.json());
 
-document.querySelectorAll(".swatch[data-series]").forEach((el) => { el.style.background = colorOf(el.dataset.series); });
+const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").forEach((el) => {
+  el.style.background = colorOf(el.dataset.series); });
+paintSwatches(document);
+
+// server-rendered stats (tiles, stats table, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
+async function refreshRendered(selectors) {
+  const doc = new DOMParser().parseFromString(await fetch(location.pathname).then((r) => r.text()), "text/html");
+  for (const s of selectors) {
+    const el = document.querySelector(s), fresh = doc.querySelector(s);
+    if (el && fresh) { el.innerHTML = fresh.innerHTML; paintSwatches(el); }
+  }
+}
 
 // ---------- status strip ----------
 let marketOpen = false;
@@ -86,11 +97,14 @@ function draw(id, type, data, opts) {
 let equityMode = "usd";
 async function loadIndex() {
   const [eq, dd, daily, heat] = await Promise.all([
-    get(`/api/equity?mode=${equityMode}`), get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap")]);
+    get(`/api/equity?mode=${equityMode}`), get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
+    refreshRendered([".tiles", "#leaderboard"])]);
   const money = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
   const pct = (v) => signed(v, 2) + "%";
   draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? money : pct)));
-  draw("drawdown", "line", { datasets: lineDatasets(dd) }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
+  // the small charts share the account-value legend above them
+  const noLegend = (o) => { o.plugins.legend.display = false; return o; };
+  draw("drawdown", "line", { datasets: lineDatasets(dd) }, noLegend(timeLinear(baseOptions("", (v) => fmt(v, 1) + "%"))));
 
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
@@ -98,7 +112,7 @@ async function loadIndex() {
     return { label: s, data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
              borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
   });
-  draw("daily", "bar", { labels: days, datasets: ds }, baseOptions("", (v) => signed(v, 0)));
+  draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
 
   const symbols = [...new Set(Object.values(heat).flatMap((r) => Object.keys(r)))].sort();
   const maxAbs = Math.max(1, ...Object.values(heat).flatMap((r) => Object.values(r).map(Math.abs)));
@@ -161,7 +175,8 @@ async function loadArm(st) {
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
   const sized = me.variant === "improved";  // only improved arms send conviction
   const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : []]);
+    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : [],
+    refreshRendered([".kpis"])]);
   document.getElementById("armstate").innerHTML =
     `<span class="chip">model <b>${esc(me.model)}</b></span><span class="chip">setup <b>${esc(me.variant)}</b></span>` +
     `<span class="chip">last decision <b>${me.last_decision ? etTime(me.last_decision) : "–"}</b></span>` +
@@ -185,6 +200,9 @@ async function loadArm(st) {
     ["avg_r", "avg R", 0, (v) => signed(v, 2)]], conv, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
+  // decisions and rejections come capped (50 / 100), so only uncapped lists get a count
+  document.getElementById("n-positions").textContent = pos.length;
+  document.getElementById("n-trades").textContent = trades.length;
   document.getElementById("decisions").innerHTML = decs.length ? decs.map((d) =>
     `<details data-id="${d.id}"><summary><span class="muted">${etTime(d.slot_ts)} · ${esc(d.reason)} · ${esc(d.status)} · $${fmt(d.cost, 3)}</span> — ${esc(d.summary)}</summary><div class="detail">loading…</div></details>`).join("")
     : `<p class="muted">No decisions yet.</p>`;
@@ -195,7 +213,18 @@ async function loadArm(st) {
     el.dataset.loaded = "1";
   }));
 }
+// tabs on the bot page; the open tab lives in the URL hash so reload and back keep it
+function showTab(name) {
+  const tabs = [...document.querySelectorAll(".subtabs button")];
+  if (!tabs.some((b) => b.dataset.tab === name)) name = tabs[0].dataset.tab;
+  tabs.forEach((b) => { b.classList.toggle("on", b.dataset.tab === name); b.setAttribute("aria-selected", b.dataset.tab === name); });
+  document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  if (name === "positions" && candleChart) candleChart.timeScale().fitContent();
+}
 function initArm() {
+  document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
+  window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+  showTab(location.hash.slice(1));
   document.getElementById("symbol").onchange = loadCandles;
   document.getElementById("tf").onchange = loadCandles;
   loadCandles();

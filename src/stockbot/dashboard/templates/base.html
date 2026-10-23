@@ -41,11 +41,46 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface-0); color: var(--text-primary);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { display: flex; align-items: center; gap: 16px; padding: 12px 20px;
-  background: var(--surface-1); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-header h1 { font-size: 16px; margin: 0; }
-header nav a { color: var(--text-secondary); text-decoration: none; margin-right: 12px; }
-header nav a:hover { color: var(--text-primary); }
+header { background: var(--surface-1); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px 6px; flex-wrap: wrap; }
+.brand { font-size: 16px; font-weight: 700; color: var(--text-primary); text-decoration: none; margin-right: auto; }
+.tabs { display: flex; gap: 4px; padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
+.tabs a { color: var(--text-secondary); text-decoration: none; padding: 8px 10px; white-space: nowrap;
+  border-bottom: 2px solid transparent; }
+.tabs a:hover { color: var(--text-primary); }
+.tabs a.on { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+h2.section { font-size: 15px; margin: 22px 0 10px; }
+h2.section:first-child { margin-top: 4px; }
+h2 .muted, h2.section .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.small { font-size: 12px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.tile { display: block; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; color: inherit; text-decoration: none; }
+a.tile:hover { border-color: var(--text-muted); }
+.tile.bench { border-style: dashed; background: transparent; }
+.tile-head { display: flex; align-items: center; gap: 2px; }
+.tile-head b { overflow-wrap: anywhere; }
+.rank { font-size: 12px; color: var(--text-muted); min-width: 30px; }
+.big { font-size: 24px; font-weight: 650; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+.kpi { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 2px 0; cursor: help; }
+.kpi > span { color: var(--text-secondary); }
+.kpi b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 12px; }
+.kpis .kpi { flex-direction: column; justify-content: flex-start; background: var(--surface-0); border-radius: 6px; padding: 8px 10px; }
+.kpis .kpi > span { font-size: 12px; }
+.kpis .kpi b { font-size: 18px; }
+.armhead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.armhead h1 { font-size: 18px; margin: 0; }
+.armhead button { margin-left: auto; }
+.subtabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.subtabs button { padding: 6px 14px; }
+.count { color: var(--text-muted); font-size: 12px; }
+.subtabs button.on .count { color: inherit; opacity: .7; }
+table.stats tr.groups th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+  border-bottom: none; cursor: default; padding-bottom: 0; }
+table.stats .gstart { border-left: 1px solid var(--border); }
+table.stats th { white-space: normal; vertical-align: bottom; }
+table.stats td:first-child, table.stats th:first-child { position: sticky; left: 0; background: var(--surface-1); }
 main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
   padding: 14px 16px; margin-bottom: 16px; }
@@ -69,26 +104,34 @@ button { font: inherit; background: var(--surface-0); color: var(--text-primary)
 button:hover { border-color: var(--text-muted); }
 button.on { background: var(--text-primary); color: var(--surface-1); }
 .strip { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.chart { position: relative; height: 280px; }
-.heat td { text-align: center; min-width: 64px; }
+.chart { position: relative; height: 300px; }
+.chart.short { height: 240px; }
+table.heat { width: auto; min-width: 50%; }
+.heat td { text-align: center; min-width: 72px; }
 .heat td.l, .heat th.l { text-align: left; }
 details summary { cursor: pointer; }
 pre { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
   background: var(--surface-0); padding: 10px; border-radius: 6px; font-size: 12px; }
 a { color: var(--series-1); }
-@media (max-width: 600px) { main { padding: 12px 16px; } .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { main { padding: 12px 16px; } .grid2 { grid-template-columns: 1fr; } header { position: static; } }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 {% block head %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">
 <header>
-  <h1>StockBot Arena</h1>
-  <nav><a href="/">Leaderboard</a>{% for s in series %}{% if not s.startswith('benchmark') %}<a href="/arm/{{ s }}">{{ s }}</a>{% endif %}{% endfor %}</nav>
-  <div class="strip" id="status"></div>
+  <div class="topbar">
+    <a class="brand" href="/">StockBot Arena</a>
+    <div class="strip" id="status"></div>
+  </div>
+  {% set active = arm if arm is defined else "" %}
+  <nav class="tabs">
+    <a href="/" class="{{ 'on' if not active }}">Overview</a>
+    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ s }}</a>{% endfor %}
+  </nav>
 </header>
 <main>{% block body %}{% endblock %}</main>
 <script>window.SERIES = {{ series | tojson }}; window.TIPS = {{ tips | tojson }};</script>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v={{ js_version }}"></script>
 </body>
 </html>
