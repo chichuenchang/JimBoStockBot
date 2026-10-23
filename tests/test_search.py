@@ -65,6 +65,28 @@ async def test_transport_error_raises():
 
 
 @respx.mock
+@pytest.mark.parametrize("data", [["not", "a", "dict"], {"results": "x"}, {"results": {"a": 1}}])
+async def test_malformed_search_body_raises(data):
+    respx.post(SEARCH).mock(return_value=httpx.Response(200, json=envelope(data)))
+    with pytest.raises(SearchError, match="unexpected"):
+        await AnySearch("k").search("q", 3)
+
+
+@respx.mock
+async def test_non_object_results_skipped():
+    respx.post(SEARCH).mock(return_value=httpx.Response(200, json=envelope(
+        {"results": ["junk", None, {"title": "T", "url": "https://a", "snippet": "s"}]})))
+    assert await AnySearch("k").search("q", 3) == [Hit("T", "https://a", "s")]
+
+
+@respx.mock
+async def test_non_text_extract_raises():
+    respx.post(EXTRACT).mock(return_value=httpx.Response(200, json=envelope({"content": {"html": "x"}})))
+    with pytest.raises(SearchError, match="unexpected"):
+        await AnySearch("k").extract("https://a")
+
+
+@respx.mock
 async def test_extract_returns_content():
     route = respx.post(EXTRACT).mock(return_value=httpx.Response(200, json=envelope(
         {"url": "https://a.example/1", "title": "T", "content": "full page text"})))

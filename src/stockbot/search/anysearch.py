@@ -46,15 +46,23 @@ class AnySearch:
         if not isinstance(body, dict) or resp.status_code >= 400 or body.get("code", 0) != 0:
             msg = body.get("message") if isinstance(body, dict) else None
             raise SearchError(f"anysearch {path}: HTTP {resp.status_code} {msg or ''}".rstrip())
-        return body.get("data") or {}
+        data = body.get("data") or {}
+        if not isinstance(data, dict):  # callers catch only SearchError: a shape surprise must not kill a decision
+            raise SearchError(f"anysearch {path}: unexpected data {type(data).__name__}")
+        return data
 
     async def search(self, query: str, max_results: int) -> list[Hit]:
-        data = await self._post("/v1/search", {"query": query, "max_results": max_results})
+        rows = (await self._post("/v1/search", {"query": query, "max_results": max_results})).get("results") or []
+        if not isinstance(rows, list):
+            raise SearchError(f"anysearch /v1/search: unexpected results {type(rows).__name__}")
         return [Hit(r.get("title") or "(untitled)", r.get("url") or "", r.get("content") or r.get("snippet") or "")
-                for r in data.get("results") or []]
+                for r in rows if isinstance(r, dict)]
 
     async def extract(self, url: str) -> str:
-        return (await self._post("/v1/extract", {"url": url})).get("content") or ""
+        text = (await self._post("/v1/extract", {"url": url})).get("content") or ""
+        if not isinstance(text, str):
+            raise SearchError(f"anysearch /v1/extract: unexpected content {type(text).__name__}")
+        return text
 
 
 @dataclass
