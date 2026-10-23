@@ -17,7 +17,18 @@ const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "Ameri
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const get = (url) => fetch(url).then((r) => r.json());
 
-document.querySelectorAll(".swatch[data-series]").forEach((el) => { el.style.background = colorOf(el.dataset.series); });
+const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").forEach((el) => {
+  el.style.background = colorOf(el.dataset.series); });
+paintSwatches(document);
+
+// server-rendered stats (tiles, stats table, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
+async function refreshRendered(selectors) {
+  const doc = new DOMParser().parseFromString(await fetch(location.pathname).then((r) => r.text()), "text/html");
+  for (const s of selectors) {
+    const el = document.querySelector(s), fresh = doc.querySelector(s);
+    if (el && fresh) { el.innerHTML = fresh.innerHTML; paintSwatches(el); }
+  }
+}
 
 // ---------- status strip ----------
 let marketOpen = false;
@@ -86,7 +97,8 @@ function draw(id, type, data, opts) {
 let equityMode = "usd";
 async function loadIndex() {
   const [eq, dd, daily, heat] = await Promise.all([
-    get(`/api/equity?mode=${equityMode}`), get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap")]);
+    get(`/api/equity?mode=${equityMode}`), get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
+    refreshRendered([".tiles", "#leaderboard"])]);
   const money = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
   const pct = (v) => signed(v, 2) + "%";
   draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? money : pct)));
@@ -163,7 +175,8 @@ async function loadArm(st) {
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
   const sized = me.variant === "improved";  // only improved arms send conviction
   const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : []]);
+    get(`/api/arm/${arm}/decisions`), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : [],
+    refreshRendered([".kpis"])]);
   document.getElementById("armstate").innerHTML =
     `<span class="chip">model <b>${esc(me.model)}</b></span><span class="chip">setup <b>${esc(me.variant)}</b></span>` +
     `<span class="chip">last decision <b>${me.last_decision ? etTime(me.last_decision) : "–"}</b></span>` +
