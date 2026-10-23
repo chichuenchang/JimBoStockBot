@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 import pytest
 
+from stockbot import interval
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
 from stockbot.cli import fake_trader
@@ -74,6 +75,26 @@ async def test_late_start_runs_latest_slot_only(tmp_path):
     await daemon.step(t)
     rows = daemon.ctx.db._q("SELECT DISTINCT slot_ts FROM decisions")
     assert [r["slot_ts"] for r in rows] == [(session.open_utc + timedelta(minutes=105)).isoformat()]
+
+
+async def test_interval_change_takes_effect(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=16))  # 9:45 ran
+    interval.set(daemon.ctx.db, 5)
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=21))
+    slot = session.open_utc + timedelta(minutes=20)  # 9:50 ET: on the 5-min grid only
+    assert daemon.ctx.db.decision_exists("kimi-improved", slot)
+
+
+def test_cli_interval(tmp_path, capsys):
+    db_path = tmp_path / "x.db"
+    assert cli(db_path, "interval", "5") == 0
+    assert interval.get(DB.open(db_path), CFG.settings) == 5
+    assert cli(db_path, "interval") == 0
+    assert "5 min (override)" in capsys.readouterr().out
+    assert cli(db_path, "interval", "0") == 2
+    assert cli(db_path, "interval", "--reset") == 0
+    assert interval.source(DB.open(db_path)) == "default"
 
 
 class FlakyData(RecordedData):

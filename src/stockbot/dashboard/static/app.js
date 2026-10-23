@@ -50,12 +50,25 @@ async function loadStatus() {
   const why = hot.map(([name, b]) => `${name === "_total" ? "total" : esc(name)} ${b.state}`).join(", ");
   const bcol = worst === "ok" ? css("--good") : worst === "warn" ? css("--warning") : css("--critical");
   chips.push(`<span class="chip"><span class="dot" style="background:${bcol}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
+  const iv = st.interval;
+  chips.push(`<span class="chip">decide every <input id="intervalin" type="number" min="1" max="60" value="${iv.minutes}" style="width:3.5em"> min`
+    + ` <button id="intervalset">Set</button>${iv.source === "override" ? ' <button id="intervalreset" title="back to settings.yaml">Reset</button>' : ""}</span>`);
   chips.push(`<button id="pauseall">${st.paused_all ? "Resume all" : "Pause all"}</button>`);
+  if (document.activeElement?.id === "intervalin") return st;  // re-render would wipe what is being typed
   document.getElementById("status").innerHTML = chips.join("");
   document.getElementById("pauseall").onclick = async () => {
     await fetch(st.paused_all ? "/api/resume_all" : "/api/pause_all", { method: "POST" });
     loadStatus();
   };
+  const setInterval_ = async (minutes) => {
+    const r = await fetch("/api/interval", { method: "POST", headers: { "Content-Type": "application/json" },
+                                             body: JSON.stringify({ minutes }) });
+    if (!r.ok) document.getElementById("intervalin").style.borderColor = css("--critical");
+    else loadStatus();
+  };
+  document.getElementById("intervalset").onclick = () => setInterval_(Number(document.getElementById("intervalin").value));
+  const reset = document.getElementById("intervalreset");
+  if (reset) reset.onclick = () => setInterval_(null);
   return st;
 }
 

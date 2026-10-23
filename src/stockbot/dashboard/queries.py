@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 
-from stockbot import pause
+from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
@@ -173,6 +173,7 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "market_open": db.kv_get("market_open") == "1",
         "data_ok": db.kv_get("data_ok") != "0",
         "paused_all": pause.flagged(db, pause.ALL),
+        "interval": {"minutes": interval.get(db, cfg.settings), "source": interval.source(db)},
         "budget": budget.summary(),
         "arms": [{"arm": a.name, "model": a.model or "-", "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),

@@ -1,4 +1,4 @@
-"""Command line: run | record | replay | pause | resume | status."""
+"""Command line: run | record | replay | pause | resume | interval | status."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from stockbot import interval
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import RealClock, ReplayClock
@@ -163,7 +164,12 @@ def _status(cfg: AppConfig, db: DB) -> int:
             n = 0
         paused = " PAUSED" if is_paused(db, arm.name) else ""
         print(f"{arm.name:24} last decision {last or '-'}  positions {n}{paused}")
+    print(_interval_line(cfg, db))
     return 0
+
+
+def _interval_line(cfg: AppConfig, db: DB) -> str:
+    return f"decision interval {interval.get(db, cfg.settings)} min ({interval.source(db)})"
 
 
 def _daemon_lock(db_path: Path):
@@ -200,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
         sp = sub.add_parser(name)
         sp.add_argument("arm", nargs="?")
         sp.add_argument("--all", action="store_true")
+    ip = sub.add_parser("interval", help="show or set minutes between decisions (daemon picks it up live)")
+    ip.add_argument("minutes", nargs="?", type=int)
+    ip.add_argument("--reset", action="store_true", help="back to settings.yaml cycle_every_min")
     sub.add_parser("status")
     a = p.parse_args(argv)
 
@@ -223,6 +232,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"unknown arm {a.arm!r}; arms: {', '.join(names)}", file=sys.stderr)
             return 2
         set_paused(db, ALL if a.all else a.arm, a.cmd == "pause")
+        return 0
+    if a.cmd == "interval":
+        try:
+            if a.reset or a.minutes is not None:
+                interval.set(db, None if a.reset else a.minutes)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
+        print(_interval_line(cfg, db))
         return 0
     if a.cmd == "status":
         return _status(cfg, db)

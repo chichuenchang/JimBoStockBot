@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from stockbot import interval
 from stockbot import pause as pause_flags
 from stockbot.clock import RealClock
 from stockbot.config import AppConfig
@@ -145,6 +146,17 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     @app.post("/api/resume_all")
     def resume_all():
         return set_pause(pause_flags.ALL, False)
+
+    @app.post("/api/interval")
+    def set_interval(body: dict):
+        m = body.get("minutes")
+        if m is not None and (type(m) is not int):
+            raise HTTPException(400, "minutes must be a whole number or null")
+        try:
+            interval.set(db, m)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return {"ok": True}
 
     return app
 
