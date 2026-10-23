@@ -242,9 +242,10 @@ async def test_reports_use_fundamentals_source(tmp_path):
 
 def test_fundamentals_source_from_env(monkeypatch):
     from stockbot.cli import _fundamentals
-    from stockbot.data.fundamentals import AlphaVantage
+    from stockbot.data.fundamentals import AlphaVantage, Fundamentals
     monkeypatch.setattr("stockbot.cli.load_dotenv", lambda: None)
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     assert _fundamentals() is None
     monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k")
-    assert isinstance(_fundamentals(), AlphaVantage)
+    src = _fundamentals()
+    assert isinstance(src, Fundamentals) and isinstance(src.calendar, AlphaVantage)

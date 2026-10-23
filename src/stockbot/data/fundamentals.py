@@ -1,6 +1,6 @@
-"""Alpha Vantage earnings dates + company overview. Free key = 25 calls/day, so one snapshot
-(1 calendar + 1 overview per symbol) per ET day, cached in kv. Calls spaced GAP_S apart: free
-keys are also throttled on bursts."""
+"""Earnings dates from Alpha Vantage, company overview from Yahoo (yfinance). AV free key =
+25 calls/day, so one calendar call per ET day, snapshot cached in kv. AV calls spaced GAP_S apart:
+free keys are also throttled on bursts. AV OVERVIEW went premium-only 2026-10, hence Yahoo."""
 from __future__ import annotations
 
 import asyncio
@@ -21,10 +21,10 @@ from stockbot.db import DB
 AV_URL = "https://www.alphavantage.co/query"
 GAP_S = 1.2
 log = logging.getLogger("stockbot")
-# field -> (OVERVIEW key, scale). Growth comes as a fraction.
-OVERVIEW_FIELDS = {"pe_ttm": ("PERatio", 1), "fwd_pe": ("ForwardPE", 1),
-                   "rev_growth_yoy_pct": ("QuarterlyRevenueGrowthYOY", 100),
-                   "eps_growth_yoy_pct": ("QuarterlyEarningsGrowthYOY", 100)}
+# field -> (yfinance Ticker.info key, scale). Growth comes as a fraction; ETFs carry trailingPE only.
+OVERVIEW_FIELDS = {"pe_ttm": ("trailingPE", 1), "fwd_pe": ("forwardPE", 1),
+                   "rev_growth_yoy_pct": ("revenueGrowth", 100),
+                   "eps_growth_yoy_pct": ("earningsGrowth", 100)}
 
 
 class FundamentalsSource(Protocol):
@@ -97,15 +97,29 @@ class AlphaVantage:
                 out[sym] = d
         return out
 
+
+class Yahoo:
+    """Unofficial Yahoo API via yfinance: no key, may rate-limit or break without notice."""
+
     async def overview(self, symbol: str) -> dict:
-        return (await self._get({"function": "OVERVIEW", "symbol": symbol})).json()
+        import yfinance  # pulls in pandas: keep off the import path of cycle/report
+        try:
+            return await asyncio.to_thread(lambda: yfinance.Ticker(symbol).info)
+        except Exception as e:  # yfinance raises its own, requests' and curl_cffi's errors
+            raise DataError(f"yahoo {symbol}: {type(e).__name__}") from e
+
+
+class Fundamentals:
+    def __init__(self, calendar: AlphaVantage, overviews: Yahoo | None = None):
+        self.calendar = calendar
+        self.overviews = overviews or Yahoo()
 
     async def snapshot(self, symbols: list[str], today: date) -> dict[str, dict]:
-        earnings = await self.earnings(symbols, today)  # blackout depends on it: errors propagate
+        earnings = await self.calendar.earnings(symbols, today)  # blackout depends on it: errors propagate
         out, failed = {}, []
         for sym in symbols:
             try:
-                ov = await self.overview(sym)
+                ov = await self.overviews.overview(sym)
             except DataError as e:  # nice-to-have: one missing overview must not lose the calendar
                 failed.append(f"{sym} ({e})")
                 ov = {}

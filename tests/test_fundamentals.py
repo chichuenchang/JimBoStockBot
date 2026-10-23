@@ -6,7 +6,8 @@ import respx
 
 from stockbot.data import fundamentals
 from stockbot.data.base import DataError
-from stockbot.data.fundamentals import AV_URL, AlphaVantage, PartialSnapshot, business_days_until, cached_snapshot
+from stockbot.data.fundamentals import (AV_URL, AlphaVantage, Fundamentals, PartialSnapshot, Yahoo,
+                                        business_days_until, cached_snapshot)
 from stockbot.db import DB
 
 TODAY = date(2026, 10, 21)
@@ -15,20 +16,30 @@ CSV = ("symbol,name,reportDate,fiscalDateEnding,estimate,currency\r\n"
        "MSFT,Microsoft,2027-01-27,2026-12-31,3.3,USD\r\n"
        "IBM,IBM,2026-10-22,2026-09-30,2.2,USD\r\n"
        "NVDA,Nvidia,2026-10-20,2026-09-30,1.0,USD\r\n")
-OVERVIEW = {"Symbol": "MSFT", "PERatio": "35.2", "ForwardPE": "31.0",
-            "QuarterlyRevenueGrowthYOY": "0.123", "QuarterlyEarningsGrowthYOY": "None"}
+INFO = {"quoteType": "EQUITY", "trailingPE": 35.2, "forwardPE": 31.0,
+        "revenueGrowth": 0.123, "earningsGrowth": None}
 
 
 def route(function, **kw):
     return respx.get(AV_URL, params={"function": function}).mock(**kw)
 
 
+class FakeYahoo:
+    def __init__(self, infos=None, fail=()):
+        self.infos, self.fail, self.calls = infos or {}, fail, 0
+
+    async def overview(self, symbol):
+        self.calls += 1
+        if symbol in self.fail:
+            raise DataError(f"yahoo {symbol}: YFRateLimitError")
+        return self.infos.get(symbol, {})
+
+
 @respx.mock
 async def test_snapshot_parses_earnings_and_overview():
     route("EARNINGS_CALENDAR", return_value=httpx.Response(200, text=CSV))
-    route("OVERVIEW", side_effect=lambda req: httpx.Response(
-        200, json=OVERVIEW if req.url.params["symbol"] == "MSFT" else {}))
-    snap = await AlphaVantage("k", gap_s=0).snapshot(["MSFT", "NVDA", "QQQ"], TODAY)
+    src = Fundamentals(AlphaVantage("k", gap_s=0), FakeYahoo({"MSFT": INFO}))
+    snap = await src.snapshot(["MSFT", "NVDA", "QQQ"], TODAY)
     assert snap["MSFT"] == {"next_earnings": "2026-10-28", "pe_ttm": 35.2, "fwd_pe": 31.0,
                             "rev_growth_yoy_pct": pytest.approx(12.3), "eps_growth_yoy_pct": None}
     assert snap["NVDA"]["next_earnings"] is None  # past date only
@@ -41,20 +52,29 @@ async def test_rate_limit_note_is_data_error():
     route("EARNINGS_CALENDAR", return_value=httpx.Response(
         200, json={"Information": "We have detected your API key ... 25 requests per day"}))
     with pytest.raises(DataError, match="25 requests"):
-        await AlphaVantage("k", gap_s=0).snapshot(["MSFT"], TODAY)
+        await Fundamentals(AlphaVantage("k", gap_s=0), FakeYahoo()).snapshot(["MSFT"], TODAY)
 
 
 @respx.mock
 async def test_failed_overview_keeps_calendar_and_skips_cache(tmp_path):
     route("EARNINGS_CALENDAR", return_value=httpx.Response(200, text=CSV))
-    ov = route("OVERVIEW", return_value=httpx.Response(200, json={"Information": "spread out your requests"}))
-    db, src = DB.open(tmp_path / "t.db"), AlphaVantage("k", gap_s=0)
+    yahoo = FakeYahoo(fail={"MSFT"})
+    db, src = DB.open(tmp_path / "t.db"), Fundamentals(AlphaVantage("k", gap_s=0), yahoo)
     with pytest.raises(PartialSnapshot, match="MSFT"):
         await src.snapshot(["MSFT"], TODAY)
     snap = await cached_snapshot(src, db, ["MSFT"], TODAY)
     assert snap["MSFT"]["next_earnings"] == "2026-10-28" and snap["MSFT"]["pe_ttm"] is None
     await cached_snapshot(src, db, ["MSFT"], TODAY)
-    assert ov.call_count == 3  # not cached: every report retries
+    assert yahoo.calls == 3  # not cached: every report retries
+
+
+async def test_yahoo_error_is_data_error(monkeypatch):
+    class Boom:
+        def __init__(self, symbol):
+            raise ConnectionError("reset")
+    monkeypatch.setattr("yfinance.Ticker", Boom)
+    with pytest.raises(DataError, match="yahoo MSFT: ConnectionError"):
+        await Yahoo().overview("MSFT")
 
 
 @respx.mock
@@ -64,10 +84,10 @@ async def test_calls_spaced_by_gap(monkeypatch):
     async def sleep(s):
         waits.append(s)
     monkeypatch.setattr(fundamentals.asyncio, "sleep", sleep)
-    route("OVERVIEW", return_value=httpx.Response(200, json={}))
+    route("EARNINGS_CALENDAR", return_value=httpx.Response(200, text=CSV))
     src = AlphaVantage("k", gap_s=5)
-    await src.overview("MSFT")
-    await src.overview("NVDA")
+    await src.earnings(["MSFT"], TODAY)
+    await src.earnings(["MSFT"], TODAY)
     assert waits[0] == 0 and 4 < waits[1] <= 5
 
 

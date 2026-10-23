@@ -90,13 +90,13 @@ def _alpaca():
 
 
 def _fundamentals():
-    from stockbot.data.fundamentals import AlphaVantage
+    from stockbot.data.fundamentals import AlphaVantage, Fundamentals
     load_dotenv()
     key = os.environ.get("ALPHAVANTAGE_API_KEY")
     if not key:
         log.warning("ALPHAVANTAGE_API_KEY not set: no fundamentals, earnings only from events.yaml")
         return None
-    return AlphaVantage(key)
+    return Fundamentals(AlphaVantage(key))
 
 
 def _ctx(cfg, db, data, clock, clients, fundamentals=None) -> AppContext:

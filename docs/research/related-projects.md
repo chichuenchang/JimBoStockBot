@@ -38,7 +38,7 @@ Judge arms on ≥3 months + bootstrap Sharpe CI, not 2 weeks.
 ## Build notes (2026-10-21, all 8 built)
 
 - DeepSeek V4 thinks by default (effort high): `{"thinking": {"type": "disabled"}}` off. Kimi K3 always thinks; `reasoning_effort: low` = floor. Both via `extra_body` in `config/models.yaml`.
-- Finnhub field names not confirmable from docs; Alpha Vantage chosen. AV `EARNINGS_CALENDAR` CSV / `OVERVIEW` keys untested live: first run, check report `## Fundamentals` table not all `n/a`.
+- Finnhub field names not confirmable from docs; Alpha Vantage chosen. AV `OVERVIEW` premium-only since 2026-10 (free key gets `This is a premium endpoint`): overview from yfinance, AV keeps `EARNINGS_CALENDAR`.
 - Reflection uses arm's own model, not analyst model: keeps model comparison clean.
 
 ## Sources
