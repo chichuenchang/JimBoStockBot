@@ -204,7 +204,7 @@ async function loadArm(st) {
 function showTab(name) {
   const tabs = [...document.querySelectorAll(".subtabs button")];
   if (!tabs.some((b) => b.dataset.tab === name)) name = tabs[0].dataset.tab;
-  tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  tabs.forEach((b) => { b.classList.toggle("on", b.dataset.tab === name); b.setAttribute("aria-selected", b.dataset.tab === name); });
   document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   if (name === "positions" && candleChart) candleChart.timeScale().fitContent();
 }
