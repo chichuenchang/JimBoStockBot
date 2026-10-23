@@ -212,7 +212,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
             if kind == "search":
                 try:
                     hits = await ctx.search.search(arg, s.search_max_results)
-                except SearchError as e:
+                except SearchError as e:  # e.g. quota gone: logged, else the arm trades blind unnoticed
+                    log.warning("%s: web search failed: %s", arm.name, e)
                     hits, block = [], research.render_hits(e, arg)
                 else:
                     block = research.render_hits(hits, arg)

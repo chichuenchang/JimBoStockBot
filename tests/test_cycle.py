@@ -435,9 +435,10 @@ async def test_no_results_still_decides(tmp_path):
     assert r.status == "ok" and "(no results)" in llm.calls[1][1]
 
 
-async def test_search_error_still_decides(tmp_path):
+async def test_search_error_still_decides(tmp_path, caplog):
     ctx, llm = search_ctx(tmp_path, ['{"search": "q"}', buy()], NoSearch())
     r = await run_cycle(ctx, ARMS["deepseek-improved"], SLOT, "scheduled")
+    assert "deepseek-improved: web search failed: search unavailable in replay" in caplog.text
     assert r.status == "ok" and r.orders == 1
     assert "search failed: search unavailable in replay" in llm.calls[1][1]
 
