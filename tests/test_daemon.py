@@ -85,6 +85,7 @@ async def test_start_after_close_runs_no_slot(tmp_path):
     assert not daemon.ctx.db._q("SELECT id FROM decisions")
     await daemon.step(t)  # missed slots marked done: no retry either
     assert not daemon.ctx.db._q("SELECT id FROM decisions")
+    assert not daemon.ctx.db._q("SELECT id FROM reports")
 
 
 async def test_interval_change_takes_effect(tmp_path):
