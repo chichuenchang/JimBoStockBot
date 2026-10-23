@@ -29,6 +29,7 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.pause import ALL, is_paused, set_paused
 from stockbot.report.analyst import HISTORY
+from stockbot.search.anysearch import AnySearch, NoSearch
 
 log = logging.getLogger("stockbot")
 REPLAY_LEAD = timedelta(minutes=30)
@@ -102,10 +103,21 @@ def _fundamentals():
     return Fundamentals(AlphaVantage(key))
 
 
-def _ctx(cfg, db, data, clock, clients, fundamentals=None) -> AppContext:
+def _search(cfg: AppConfig):
+    """Live web search when an enabled arm has search: true. No key = anonymous, lower limits."""
+    if not any(a.enabled and a.search for a in cfg.arms):
+        return None
+    load_dotenv()
+    key = os.environ.get("ANYSEARCH_API_KEY")
+    if not key:
+        log.warning("ANYSEARCH_API_KEY not set: web search runs anonymous (lower rate limits)")
+    return AnySearch(key)
+
+
+def _ctx(cfg, db, data, clock, clients, fundamentals=None, search=None) -> AppContext:
     s = cfg.settings
     return AppContext(cfg, db, data, SimBroker(db, s.slippage_bps, s.commission_per_order),
-                      Budget(db, cfg, clock), clients, clock, fundamentals)
+                      Budget(db, cfg, clock), clients, clock, fundamentals, search)
 
 
 async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool,
@@ -118,7 +130,7 @@ async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fa
         log.error("no sessions in %s for %s..%s", data_dir, d0, d1)
         return 1
     clock.set(sessions[0].open_utc - REPLAY_LEAD)
-    daemon = Daemon(_ctx(cfg, db, data, clock, _clients(cfg, fake)), serve_dashboard=False)
+    daemon = Daemon(_ctx(cfg, db, data, clock, _clients(cfg, fake), search=NoSearch()), serve_dashboard=False)
     for s in sessions:
         t = s.open_utc - REPLAY_LEAD
         while t <= s.close_utc + REPLAY_TAIL:
@@ -263,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"daemon already running on {db_path}", file=sys.stderr)
             return 1
         clock = RealClock()
-        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals())
+        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg))
         asyncio.run(Daemon(ctx).run_forever())
         return 0
     except ConfigError as e:
