@@ -77,6 +77,16 @@ async def test_late_start_runs_latest_slot_only(tmp_path):
     assert [r["slot_ts"] for r in rows] == [(session.open_utc + timedelta(minutes=105)).isoformat()]
 
 
+async def test_start_after_close_runs_no_slot(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    t = session.close_utc + timedelta(minutes=10)
+    clock.set(t)
+    await daemon.step(t)
+    assert not daemon.ctx.db._q("SELECT id FROM decisions")
+    await daemon.step(t)  # missed slots marked done: no retry either
+    assert not daemon.ctx.db._q("SELECT id FROM decisions")
+
+
 async def test_interval_change_takes_effect(tmp_path):
     daemon, session, clock, _ = build(tmp_path)
     await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=16))  # 9:45 ran
