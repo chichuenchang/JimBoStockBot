@@ -209,3 +209,15 @@ def test_load_account_not_torn_by_writer(db, monkeypatch):
     st = db.load_account("a")
     writer.join(5)
     assert (st.cash, st.positions) == (100.0, {})
+
+
+def test_close_waits_for_open_transaction(db):
+    closer = threading.Thread(target=db.close)
+    with db.transaction():
+        db.kv_set("k", "v")
+        closer.start()
+        closer.join(0.3)
+        assert closer.is_alive()
+    closer.join(5)
+    with pytest.raises(sqlite3.ProgrammingError):
+        db.kv_get("k")

@@ -78,7 +78,8 @@ class DB:
         return cls(conn)
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()
 
     def _q(self, sql: str, *args) -> list[sqlite3.Row]:
         with self._lock:
