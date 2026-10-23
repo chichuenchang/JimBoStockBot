@@ -24,7 +24,8 @@ class DataError(Exception):
 class MarketData(Protocol):
     async def bars(self, symbol: str, timeframe: Timeframe, start: datetime,
                    end: datetime) -> list[Bar]:
-        """Bars with start <= ts < end, oldest first."""
+        """Bars with start <= ts < end, oldest first. May include the bar still forming: wrap in
+        `finished()` before computing numbers."""
         ...
 
     async def latest_prices(self, symbols: list[str]) -> dict[str, float]: ...
