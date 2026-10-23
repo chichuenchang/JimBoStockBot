@@ -60,15 +60,15 @@ async function loadStatus() {
     await fetch(st.paused_all ? "/api/resume_all" : "/api/pause_all", { method: "POST" });
     loadStatus();
   };
-  const setInterval_ = async (minutes) => {
+  const postInterval = async (minutes) => {
     const r = await fetch("/api/interval", { method: "POST", headers: { "Content-Type": "application/json" },
                                              body: JSON.stringify({ minutes }) });
     if (!r.ok) document.getElementById("intervalin").style.borderColor = css("--critical");
     else loadStatus();
   };
-  document.getElementById("intervalset").onclick = () => setInterval_(Number(document.getElementById("intervalin").value));
+  document.getElementById("intervalset").onclick = () => postInterval(Number(document.getElementById("intervalin").value));
   const reset = document.getElementById("intervalreset");
-  if (reset) reset.onclick = () => setInterval_(null);
+  if (reset) reset.onclick = () => postInterval(null);
   return st;
 }
 
