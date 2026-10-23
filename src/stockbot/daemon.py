@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from stockbot import interval
 from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
-from stockbot.clock import ET, cycle_slots, et_date, in_session, report_slots
+from stockbot.clock import ET, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
@@ -113,7 +113,8 @@ class Daemon:
             self._mark("report", t)
 
     async def _cycles(self, now: datetime, session: Session) -> None:
-        due = [t for t in cycle_slots(session, self.ctx.cfg.settings, interval.get(self.ctx.db, self.ctx.cfg.settings)) if t <= now and not self._done("cycle", t)]
+        due = [t for t in interval.slots(self.ctx.db, session, self.ctx.cfg.settings)
+               if t <= now and not self._done("cycle", t)]
         if not due:
             return
         for old in due[:-1]:

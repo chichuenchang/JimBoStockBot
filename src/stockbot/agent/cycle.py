@@ -17,7 +17,7 @@ from stockbot.agent.reflect import reflect_new_trades
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
-from stockbot.clock import ET, Clock, cycle_slots, et_date
+from stockbot.clock import ET, Clock, et_date
 from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
@@ -212,7 +212,7 @@ async def _control_decision(ctx: AppContext, arm: ArmCfg, slot_ts: datetime, sta
     if arm.variant == "momentum":
         sym = s.benchmark_symbol
         today, prior, session = await momentum_bars(ctx.data, sym, ctx.clock.now())
-        slots = cycle_slots(session, s, interval.get(ctx.db, s)) if session else []
+        slots = interval.slots(ctx.db, session, s) if session else []
         last_slot = not slots or slot_ts >= slots[-1]
         return momentum_decision(sym, s.universe, state.positions.get(sym), prices.get(sym), today, prior,
                                  state.cash, s.slippage_bps, last_slot)

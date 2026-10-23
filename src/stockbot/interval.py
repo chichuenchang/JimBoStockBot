@@ -2,10 +2,13 @@
 daemon, like pause flags) beats settings.cycle_every_min; the daemon re-reads it every pass."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
+from stockbot.clock import cycle_slots
 from stockbot.config import Settings
 from stockbot.db import DB
+from stockbot.models import Session
 
 KEY = "cycle_every_min"
 MIN, MAX = 1, 60
@@ -14,6 +17,11 @@ MIN, MAX = 1, 60
 def get(db: DB, s: Settings) -> int:
     raw = db.kv_get(KEY)
     return int(raw) if raw else s.cycle_every_min
+
+
+def slots(db: DB, session: Session, s: Settings) -> list[datetime]:
+    """Today's decision times at the current interval."""
+    return cycle_slots(session, s, get(db, s))
 
 
 def source(db: DB) -> Literal["default", "override"]:
