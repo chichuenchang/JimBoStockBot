@@ -1,7 +1,6 @@
 """One decision cycle for one arm: prompt, call, parse, validate, submit."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import random
@@ -27,8 +26,8 @@ from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 from stockbot.pause import is_paused
-from stockbot.search.anysearch import Hit, SearchClient, SearchError
 from stockbot.report.features import regime
+from stockbot.search.anysearch import SearchClient
 
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
 log = logging.getLogger("stockbot")
@@ -182,19 +181,14 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.replies.append(res.text)
         return res.text
 
-    done: set[str] = set()  # steps taken: "search", "read"
+    web = research.Session(ctx.search, s, arm.name) if researching else None
 
     async def turn(prompt: str, purpose: str) -> Decision | research.Step:
         reply = await ask(prompt, purpose)
-        req = research.step_request(reply) if researching else None
-        if req is None:
-            return parse_decision(reply, arm.variant, s.universe)
-        if req[0] in done or (req[0] == "read" and "search" not in done):
-            raise ParseError(f"{req[0]} not allowed now; reply with the decision JSON")
-        return req
+        step = web.request(reply) if web else None
+        return parse_decision(reply, arm.variant, s.universe) if step is None else step
 
     prompt, purpose, err, retried = user, "decision", None, False
-    hits: list[Hit] = []
     try:
         while True:
             try:
@@ -207,28 +201,7 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
                 continue
             if isinstance(out, Decision):
                 return out, None
-            kind, arg = out
-            done.add(kind)
-            if kind == "search":
-                try:
-                    hits = await ctx.search.search(arg, s.search_max_results)
-                except SearchError as e:  # e.g. quota gone: logged, else the arm trades blind unnoticed
-                    log.warning("%s: web search failed: %s", arm.name, e)
-                    hits, block = [], research.render_hits(e, arg)
-                else:
-                    block = research.render_hits(hits, arg)
-                if not hits:
-                    done.add("read")
-                purpose = "search_step"
-            else:
-                chosen = research.pick(arg, len(hits), s.search_max_pages)
-                texts = await asyncio.gather(*(ctx.search.extract(hits[n - 1].url) for n in chosen),
-                                             return_exceptions=True)
-                block = research.render_pages(
-                    [(n, hits[n - 1], t if isinstance(t, (str, SearchError)) else SearchError(repr(t)))
-                     for n, t in zip(chosen, texts, strict=True)], s.search_page_chars)
-                purpose = "read_step"
-            prompt, err = prompt + block, None
+            prompt, purpose, err = prompt + await web.run(out), f"{out[0]}_step", None
     except LLMError:
         return None, "llm_failed"
 

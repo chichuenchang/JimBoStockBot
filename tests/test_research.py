@@ -1,6 +1,6 @@
 import pytest
 
-from stockbot.agent.research import pick, render_hits, render_pages, step_request
+from stockbot.agent.research import pick, render_hits, render_pages, render_search_failed, step_request
 from stockbot.agent.schema import ParseError
 from stockbot.search.anysearch import Hit, SearchError
 
@@ -42,7 +42,7 @@ def test_render_hits_numbered():
 
 def test_render_hits_empty_and_error():
     assert "(no results)" in render_hits([], "q")
-    assert "search failed: quota" in render_hits(SearchError("quota"), "q")
+    assert "search failed: quota" in render_search_failed(SearchError("quota"), "q")
 
 
 def test_render_pages_truncates_and_marks_failures():
