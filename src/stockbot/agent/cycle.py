@@ -1,6 +1,7 @@
 """One decision cycle for one arm: prompt, call, parse, validate, submit."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import random
@@ -9,6 +10,7 @@ from datetime import datetime, time
 from typing import Literal
 
 from stockbot import interval
+from stockbot.agent import research
 from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.momentum import momentum_bars, momentum_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
@@ -25,6 +27,7 @@ from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
 from stockbot.pause import is_paused
+from stockbot.search.anysearch import Hit, SearchClient, SearchError
 from stockbot.report.features import regime
 
 Status = Literal["ok", "skipped_duplicate", "hold_only", "llm_failed", "parse_failed", "apply_failed"]
@@ -44,6 +47,7 @@ class AppContext:
     clients: dict[str, LLMClient]
     clock: Clock
     fundamentals: FundamentalsSource | None = None
+    search: SearchClient | None = None  # used by arms with search: true
 
 
 @dataclass(frozen=True)
@@ -147,8 +151,9 @@ def _journal(db: DB, arm: ArmCfg, decision: Decision, state: AccountState, now: 
 async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text: str, state: AccountState,
                         prices: dict[str, float], nav: float,
                         now: datetime) -> tuple[Decision | None, Status | None]:
-    """Ask the arm's model, retrying once on an unparseable reply. (decision, None) or
-    (None, failure status); ex collects the exchange either way."""
+    """Ask the arm's model, retrying once on an unparseable reply. A search arm may first take
+    a search step and a read step (agent/research.py). (decision, None) or (None, failure
+    status); ex collects the exchange either way."""
     db, s = ctx.db, ctx.cfg.settings
     journal = None
     if arm.variant == "improved":
@@ -157,7 +162,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         journal = JournalView(db.journal_recent(arm.name, "summary", 5),
                               db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
                               db.journal_recent(arm.name, "lesson", 5))
-    system = system_prompt(arm.variant, s)
+    researching = arm.search and ctx.search is not None
+    system = system_prompt(arm.variant, s, search=researching)
     user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
     client = ctx.clients[arm.model]
 
@@ -176,16 +182,52 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.replies.append(res.text)
         return res.text
 
+    done: set[str] = set()  # steps taken: "search", "read"
+
+    async def turn(prompt: str, purpose: str) -> Decision | research.Step:
+        reply = await ask(prompt, purpose)
+        req = research.step_request(reply) if researching else None
+        if req is None:
+            return parse_decision(reply, arm.variant, s.universe)
+        if req[0] in done or (req[0] == "read" and "search" not in done):
+            raise ParseError(f"{req[0]} not allowed now; reply with the decision JSON")
+        return req
+
+    prompt, purpose, err, retried = user, "decision", None, False
+    hits: list[Hit] = []
     try:
-        try:
-            return parse_decision(await ask(user, "decision"), arm.variant, s.universe), None
-        except ParseError as e:
-            reply = await ask(user + RETRY_SUFFIX.format(err=e), "retry")
-        try:
-            return parse_decision(reply, arm.variant, s.universe), None
-        except ParseError as e:
-            db.journal_append(arm.name, now, "summary", f"reply unparseable: {e}"[:SUMMARY_MAX])
-            return None, "parse_failed"
+        while True:
+            try:
+                out = await turn(prompt + (RETRY_SUFFIX.format(err=err) if err else ""), purpose)
+            except ParseError as e:
+                if retried:  # one retry per decision, across all steps
+                    db.journal_append(arm.name, now, "summary", f"reply unparseable: {e}"[:SUMMARY_MAX])
+                    return None, "parse_failed"
+                purpose, err, retried = "retry", e, True
+                continue
+            if isinstance(out, Decision):
+                return out, None
+            kind, arg = out
+            done.add(kind)
+            if kind == "search":
+                try:
+                    hits = await ctx.search.search(arg, s.search_max_results)
+                except SearchError as e:
+                    hits, block = [], research.render_hits(e, arg)
+                else:
+                    block = research.render_hits(hits, arg)
+                if not hits:
+                    done.add("read")
+                purpose = "search_step"
+            else:
+                chosen = research.pick(arg, len(hits), s.search_max_pages)
+                texts = await asyncio.gather(*(ctx.search.extract(hits[n - 1].url) for n in chosen),
+                                             return_exceptions=True)
+                block = research.render_pages(
+                    [(n, hits[n - 1], t if isinstance(t, (str, SearchError)) else SearchError(repr(t)))
+                     for n, t in zip(chosen, texts, strict=True)], s.search_page_chars)
+                purpose = "read_step"
+            prompt, err = prompt + block, None
     except LLMError:
         return None, "llm_failed"
 
