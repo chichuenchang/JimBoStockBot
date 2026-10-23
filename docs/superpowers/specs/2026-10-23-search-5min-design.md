@@ -88,7 +88,7 @@ Added to system prompt: may search once for news that could move these stocks (g
 - JSON step protocol over native tool calling: works with every adapter + `FakeLLM`, keeps cache prefix.
 - No new DB table; prompt/raw already hold transcript.
 - 15000 page chars, 20 s timeout, 1–60 range.
-- Step reply detected by sole top-level key `search` / `read` before `parse_decision` (else it reads as unknown symbol).
+- Step reply = top-level `search` / `read` key with no per-symbol object and no `decisions`, checked before `parse_decision` (else it reads as unknown symbol). Other keys (`notes_to_self`) tolerated; symbol object wins over stray `search`.
 - Journal keeps last 5 summaries: at 5 min that is 25 min of memory. Kept; revisit if bot loses thread.
 - Arms run sequentially on one price snapshot; slow search arm can push later arms past slot. Accepted: missed slot skipped.
 - `ANYSEARCH_API_KEY` added to `.env.example`.
