@@ -12,6 +12,8 @@ TIPS = {
     "avg_win": "Average dollar profit of winning trades.",
     "avg_loss": "Average dollar loss of losing trades.",
     "profit_factor": "Total won divided by total lost. Above 1 means winners outweigh losers.",
+    "expectancy": "Average dollar result per closed trade. Win rate says how often a bot wins; this says whether it makes money doing so.",
+    "pnl_ex_best": "Closed-trade profit minus the best winner; ignores open positions. Negative while closed trades net positive: one lucky trade carries the result.",
     "sharpe": "Return per unit of day-to-day bumpiness, yearly scale. Above 1 is good, below 0 is losing.",
     "sharpe_ci": "Range the true Sharpe likely sits in (90% bootstrap). Wide range = too few days to judge. Shown after 20 days.",
     "alpha_pct": "Yearly return NOT explained by just riding QQQ. The bot's real skill. Positive is good.",
