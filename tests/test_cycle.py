@@ -1,7 +1,6 @@
 import dataclasses
 import json
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -9,15 +8,15 @@ from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.agent.rules import Proposal, RuleContext, size_entry
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import ReplayClock
-from stockbot.config import Event, load_config
+from stockbot.config import Event
 from stockbot.db import DB
 from stockbot.llm.base import LLMError
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, ExitPlan, Session
 from stockbot.pause import ALL, set_paused
+from tests.snapshot import CFG
 
-CFG = load_config(Path(__file__).parent.parent / "config")
 SLOT = datetime(2026, 10, 21, 14, 15, tzinfo=UTC)
 ARMS = {a.name: a for a in CFG.arms}
 PRICES = {"MSFT": 100.0, "NVDA": 180.0, "TSLA": 450.0, "QQQ": 620.0, "AMZN": 230.0,

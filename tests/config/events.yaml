@@ -1,0 +1,4 @@
+# User maintains. Fed, CPI, jobs, earnings. time_et optional "HH:MM". symbols empty = market-wide.
+events:
+  - {day: 2026-10-28, time_et: "14:00", name: FOMC decision, symbols: []}
+  - {day: 2026-11-12, time_et: "08:30", name: CPI, symbols: []}

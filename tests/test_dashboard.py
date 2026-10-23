@@ -1,12 +1,10 @@
 import random
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
@@ -14,8 +12,8 @@ from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.models import BENCHMARK, Fill
 from stockbot.pause import is_paused
+from tests.snapshot import CFG
 
-CFG = load_config(Path(__file__).parent.parent / "config")
 T0 = datetime(2026, 10, 20, 14, tzinfo=UTC)
 
 

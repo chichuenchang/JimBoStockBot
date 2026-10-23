@@ -1,10 +1,8 @@
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
 from stockbot.data.recorded import RecordedData, write_bars, write_news
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -12,8 +10,8 @@ from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, NewsItem
 from stockbot.report.analyst import build_report
 from stockbot.report.features import regime, regime_line, render_computed_table, ticker_features
+from tests.snapshot import CFG
 
-CFG = load_config(Path(__file__).parent.parent / "config")
 NOW = datetime(2026, 10, 21, 13, 15, tzinfo=UTC)
 
 

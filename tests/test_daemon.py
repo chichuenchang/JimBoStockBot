@@ -1,14 +1,12 @@
 import logging
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
-from stockbot.cli import fake_trader, main
+from stockbot.cli import fake_trader
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
 from stockbot.daemon import Daemon
 from stockbot.data.base import DataError
 from stockbot.data.recorded import RecordedData
@@ -17,9 +15,9 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
+from tests.snapshot import CFG, cli
 from tests.synth import make_day
 
-CFG = load_config(Path(__file__).parent.parent / "config")
 DAY = date(2026, 10, 20)
 
 
@@ -106,17 +104,17 @@ async def test_step_survives_data_error(tmp_path, caplog):
 
 def test_cli_pause_resume(tmp_path):
     db_path = tmp_path / "x.db"
-    assert main(["--db", str(db_path), "pause", "kimi-improved"]) == 0
+    assert cli(db_path, "pause", "kimi-improved") == 0
     assert flagged(DB.open(db_path), "kimi-improved")
-    assert main(["--db", str(db_path), "resume", "kimi-improved"]) == 0
+    assert cli(db_path, "resume", "kimi-improved") == 0
     assert not flagged(DB.open(db_path), "kimi-improved")
-    assert main(["--db", str(db_path), "pause", "kimi-improvd"]) == 2  # typo must not look paused
-    assert main(["--db", str(db_path), "pause", "--all"]) == 0
+    assert cli(db_path, "pause", "kimi-improvd") == 2  # typo must not look paused
+    assert cli(db_path, "pause", "--all") == 0
     assert flagged(DB.open(db_path), ALL)
 
 
 def test_cli_status(tmp_path, capsys):
-    assert main(["--db", str(tmp_path / "x.db"), "status"]) == 0
+    assert cli(tmp_path / "x.db", "status") == 0
     assert "kimi-k3" in capsys.readouterr().out
 
 
@@ -132,8 +130,8 @@ def test_max_cycles(tmp_path):
     data = tmp_path / "rec"
     make_day(data, DAY)
     db_path = tmp_path / "r.db"
-    assert main(["--db", str(db_path), "replay", "--data", str(data), "--from", "2026-10-20",
-                 "--to", "2026-10-20", "--fake-llm", "--max-cycles", "1"]) == 0
+    assert cli(db_path, "replay", "--data", str(data), "--from", "2026-10-20",
+                "--to", "2026-10-20", "--fake-llm", "--max-cycles", "1") == 0
     db = DB.open(db_path)
     for arm in CFG.arms:
         assert db._q("SELECT COUNT(*) n FROM decisions WHERE arm=?", arm.name)[0]["n"] == 1
@@ -146,7 +144,7 @@ def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
-    assert main(["--db", str(tmp_path / "x.db"), "run"]) == 2
+    assert cli(tmp_path / "x.db", "run") == 2
     assert "MOONSHOT_API_KEY" in capsys.readouterr().err
 
 
