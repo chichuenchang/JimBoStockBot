@@ -187,7 +187,8 @@ async function loadArm(st) {
     ["avg_r", "avg R", 0, (v) => signed(v, 2)]], conv, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
-  [["positions", pos], ["trades", trades], ["decisions", decs], ["rejected", rej]].forEach(([k, rows]) => {
+  // decisions and rejections come capped (50 / 100), so only uncapped lists get a count
+  [["positions", pos], ["trades", trades]].forEach(([k, rows]) => {
     document.getElementById(`n-${k}`).textContent = rows.length;
   });
   document.getElementById("decisions").innerHTML = decs.length ? decs.map((d) =>
