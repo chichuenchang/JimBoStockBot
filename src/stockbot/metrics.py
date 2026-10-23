@@ -19,7 +19,7 @@ class TradeStats:
     avg_loss: float | None = None
     profit_factor: float | None = None
     expectancy: float | None = None  # mean $ per trade: win rate alone says how often, not how much
-    pnl_ex_best: float | None = None  # realized P&L without the best trade; negative = one lucky trade carries it
+    pnl_ex_best: float | None = None  # realized P&L without the best winner; negative = one lucky trade carries it
 
 
 def daily_closes(series: list[tuple[datetime, float]]) -> dict[date, float]:
@@ -128,5 +128,5 @@ def trade_stats(trades: list[ClosedTrade]) -> TradeStats:
         avg_loss=statistics.mean(losses) if losses else None,
         profit_factor=sum(wins) / gross_loss if gross_loss > 0 else None,
         expectancy=statistics.mean(t.pnl for t in trades),
-        pnl_ex_best=sum(t.pnl for t in trades) - max(t.pnl for t in trades),
+        pnl_ex_best=sum(t.pnl for t in trades) - max(max(t.pnl for t in trades), 0),
     )

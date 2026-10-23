@@ -37,6 +37,7 @@ def test_expectancy_and_pnl_without_best_trade():
     s = trade_stats([trade(p) for p in (100, 50, -30, -20)])
     assert (s.expectancy, s.pnl_ex_best) == (25, 0)
     assert trade_stats([trade(80)]).pnl_ex_best == 0
+    assert trade_stats([trade(-10), trade(-20)]).pnl_ex_best == -30  # no winner to remove
 
 
 def test_conviction_buckets():
