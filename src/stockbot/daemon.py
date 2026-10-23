@@ -52,10 +52,8 @@ class Daemon:
         d = et_date(now)
         return next((s for s in self.sessions if s.day == d), None)
 
-    def _log_market(self, now: datetime, session: Session | None) -> None:
+    def _log_market(self, now: datetime, is_open: bool, session: Session | None) -> None:
         """One line per open/close change, so an idle console still shows the daemon is alive."""
-        is_open = bool(session and in_session(now, session))
-        self.ctx.db.kv_set("market_open", "1" if is_open else "0")
         if is_open == self._market_open:
             return
         self._market_open = is_open
@@ -152,7 +150,9 @@ class Daemon:
         db.kv_set("heartbeat", now.isoformat())
         await self._guard("calendar", self._refresh_calendar(now))
         session = self._today(now)
-        self._log_market(now, session)
+        is_open = bool(session and in_session(now, session))
+        db.kv_set("market_open", "1" if is_open else "0")
+        self._log_market(now, is_open, session)
         if session is not None:
             await self._guard("benchmark", self._benchmark(now, session))
         tick, replayed = None, False
