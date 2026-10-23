@@ -55,8 +55,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     @app.get("/arm/{arm}", response_class=HTMLResponse)
     def arm_page(request: Request, arm: str):
-        known(arm)
-        row = next(r for r in q.leaderboard(db, cfg) if r["arm"] == arm)
+        [row] = q.leaderboard(db, cfg, only=known(arm))
         return page(request, "arm.html", arm=arm, row=row, universe=list(cfg.settings.universe))
 
     @app.get("/api/leaderboard")
