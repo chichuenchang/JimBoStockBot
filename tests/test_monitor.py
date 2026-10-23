@@ -14,7 +14,7 @@ from stockbot.models import Bar, ExitPlan, Session
 from stockbot.monitor import monitor_tick, wake_due
 from stockbot.pause import set_paused
 
-CFG = load_config(Path(__file__).parent.parent / "config")
+CFG = load_config(Path(__file__).parent / "config")
 ARMS = {a.name: a for a in CFG.arms}
 OPEN = datetime(2026, 10, 21, 13, 30, tzinfo=UTC)
 SESS = [Session(date(2026, 10, 21), OPEN, OPEN + timedelta(hours=6, minutes=30))]

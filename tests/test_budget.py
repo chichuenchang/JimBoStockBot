@@ -9,7 +9,7 @@ from stockbot.db import DB
 from stockbot.llm.base import Usage
 from stockbot.llm.budget import Budget
 
-CFG = load_config(Path(__file__).parent.parent / "config")
+CFG = load_config(Path(__file__).parent / "config")
 OCT = datetime(2026, 10, 15, 15, tzinfo=UTC)
 KIMI, DS = "kimi-k3", "deepseek-v4.1-flash"
 

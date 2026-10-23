@@ -13,7 +13,7 @@ from stockbot.models import Bar, NewsItem
 from stockbot.report.analyst import build_report
 from stockbot.report.features import regime, regime_line, render_computed_table, ticker_features
 
-CFG = load_config(Path(__file__).parent.parent / "config")
+CFG = load_config(Path(__file__).parent / "config")
 NOW = datetime(2026, 10, 21, 13, 15, tzinfo=UTC)
 
 

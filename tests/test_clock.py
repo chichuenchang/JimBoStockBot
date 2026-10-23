@@ -5,7 +5,7 @@ from stockbot.clock import ET, ReplayClock, cycle_slots, in_session, month_key, 
 from stockbot.config import load_config
 from stockbot.models import Session
 
-S = load_config(Path(__file__).parent.parent / "config").settings
+S = load_config(Path(__file__).parent / "config").settings
 
 
 def sess(day: date, open_h: int, open_m: int, close_h: int) -> Session:

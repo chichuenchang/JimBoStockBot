@@ -17,7 +17,7 @@ from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, ExitPlan, Session
 from stockbot.pause import ALL, set_paused
 
-CFG = load_config(Path(__file__).parent.parent / "config")
+CFG = load_config(Path(__file__).parent / "config")
 SLOT = datetime(2026, 10, 21, 14, 15, tzinfo=UTC)
 ARMS = {a.name: a for a in CFG.arms}
 PRICES = {"MSFT": 100.0, "NVDA": 180.0, "TSLA": 450.0, "QQQ": 620.0, "AMZN": 230.0,

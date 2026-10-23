@@ -8,7 +8,7 @@ from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_
 from stockbot.config import load_config
 from stockbot.models import ExitPlan, Position
 
-S = load_config(Path(__file__).parent.parent / "config").settings
+S = load_config(Path(__file__).parent / "config").settings
 T = datetime(2026, 10, 21, 15, tzinfo=UTC)
 
 

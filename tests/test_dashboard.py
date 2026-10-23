@@ -15,7 +15,7 @@ from stockbot.llm.budget import Budget
 from stockbot.models import BENCHMARK, Fill
 from stockbot.pause import is_paused
 
-CFG = load_config(Path(__file__).parent.parent / "config")
+CFG = load_config(Path(__file__).parent / "config")
 T0 = datetime(2026, 10, 20, 14, tzinfo=UTC)
 
 

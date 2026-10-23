@@ -6,16 +6,22 @@ import pytest
 from stockbot.config import ConfigError, api_key, load_config
 
 REPO_CONFIG = Path(__file__).parent.parent / "config"
+# tests run on a fixed snapshot so enabling/disabling models in config/ never breaks them
+TEST_CONFIG = Path(__file__).parent / "config"
 
 
 def copy_config(tmp_path: Path) -> Path:
     dst = tmp_path / "config"
-    shutil.copytree(REPO_CONFIG, dst)
+    shutil.copytree(TEST_CONFIG, dst)
     return dst
 
 
-def test_loads_repo_config():
-    cfg = load_config(REPO_CONFIG)
+def test_repo_config_loads():
+    load_config(REPO_CONFIG)
+
+
+def test_loads_test_config():
+    cfg = load_config(TEST_CONFIG)
     assert [a.name for a in cfg.arms] == [
         "kimi-baseline", "kimi-improved", "deepseek-baseline", "deepseek-improved", "rules-trend",
         "random-control", "rules-momentum"]
@@ -63,12 +69,12 @@ def test_enabled_caps_exceed_global_rejected(tmp_path):
 def test_api_key_missing_env(monkeypatch):
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.setattr("stockbot.config.load_dotenv", lambda *a, **k: None)
-    cfg = load_config(REPO_CONFIG)
+    cfg = load_config(TEST_CONFIG)
     with pytest.raises(ConfigError, match="MOONSHOT_API_KEY"):
         api_key(cfg.models["kimi-k3"])
 
 
 def test_api_key_reads_env(monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-test")
-    cfg = load_config(REPO_CONFIG)
+    cfg = load_config(TEST_CONFIG)
     assert api_key(cfg.models["kimi-k3"]) == "sk-test"
