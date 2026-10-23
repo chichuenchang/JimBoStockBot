@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from stockbot.clock import ET, et_date
 from stockbot.config import AppConfig
-from stockbot.data.base import MarketData
+from stockbot.data.base import MarketData, finished
 from stockbot.data.fundamentals import FundamentalsSource, cached_snapshot, with_earnings
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
@@ -42,7 +42,7 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
     universe = list(cfg.settings.universe)
     features = {}
     for s in universe:
-        b = {tf: await data.bars(s, tf, now - back, now) for tf, back in HISTORY.items()}
+        b = {tf: finished(await data.bars(s, tf, now - back, now), tf, now) for tf, back in HISTORY.items()}
         features[s] = ticker_features(s, b["1Hour"], b["4Hour"], b["1Day"])
     fund = await cached_snapshot(fundamentals, db, universe, et_date(now))
     for s, row in fund.items():

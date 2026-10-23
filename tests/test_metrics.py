@@ -33,6 +33,12 @@ def test_trade_stats():
     assert (s.n, s.win_rate, s.avg_win, s.avg_loss, s.profit_factor) == (4, 0.5, 75, -25, 3.0)
 
 
+def test_expectancy_and_pnl_without_best_trade():
+    s = trade_stats([trade(p) for p in (100, 50, -30, -20)])
+    assert (s.expectancy, s.pnl_ex_best) == (25, 0)
+    assert trade_stats([trade(80)]).pnl_ex_best == 0
+
+
 def test_conviction_buckets():
     def t(conv, r):
         return ClosedTrade("a", "X", T, T, 100, 100, 1, r or 1.0, r, "close", "", conviction=conv)
@@ -61,7 +67,7 @@ def test_profit_factor_no_losses():
 
 def test_trade_stats_empty():
     s = trade_stats([])
-    assert s.n == 0 and s.win_rate is None
+    assert s.n == 0 and s.win_rate is None and s.expectancy is None and s.pnl_ex_best is None
 
 
 def test_daily_returns_uses_last_nav_per_et_day():

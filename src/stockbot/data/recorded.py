@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from stockbot.clock import Clock
-from stockbot.data.base import TF_DURATION, Timeframe
+from stockbot.data.base import TF_DURATION, Timeframe, finished
 from stockbot.models import Bar, NewsItem, Session
 
 
@@ -46,9 +46,8 @@ class RecordedData:
 
     async def bars(self, symbol: str, timeframe: Timeframe, start: datetime,
                    end: datetime) -> list[Bar]:
-        now, dur = self.clock.now(), TF_DURATION[timeframe]
-        return [b for b in self._load(symbol, timeframe)
-                if start <= b.ts < end and b.ts + dur <= now]
+        return finished([b for b in self._load(symbol, timeframe) if start <= b.ts < end],
+                        timeframe, self.clock.now())
 
     async def latest_prices(self, symbols: list[str]) -> dict[str, float]:
         now, dur = self.clock.now(), TF_DURATION["1Min"]

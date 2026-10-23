@@ -37,6 +37,22 @@ Extends `related-projects.md`; no repeats. Question: best bot strategy, what fit
 - Prompt optimisation (ATLAS): many arm-days per iteration, self-reported gain.
 - Leakage guard in code: model cutoffs for Kimi K3 / DeepSeek V4.1 unverified. Rule instead: replay with real LLM on dates before model cutoff = smoke test only, never evidence.
 
+## Social sweep (KnowKing, 2026-10-22)
+
+YouTube, X, TikTok, Bilibili, EN + ZH; Reddit, Zhihu missing (provider errors). Low trust: used only as checklist of pitfalls practitioners name.
+
+Added:
+- `expectancy`, `pnl_ex_best` leaderboard columns. Claims: "61% win rate can still lose money"; "+389%… removing its best trades puts it in the red".
+- `finished()` in `src/stockbot/data/base.py`. Alpaca returns bar still forming, recorded data never: live report `rel_volume` read partial-day volume, replay `chg_1d_pct` compared against close 2 sessions back.
+
+Already covered: costs (`slippage_bps`, `costs` column), look-ahead (`RecordedData`), regime switch (`regime_gate`), parameter fishing (control arms run paper params, untuned).
+
+Not built:
+- Mean-reversion / grid arm: only evidence one unverified Bilibili sweep (131,441 backtests, 65 survivors); top comment: high win rate = martingale bag-holding. Chen reversal above is cross-sectional, needs more than 7 names.
+- 2x-cost stress column: equals `pnl - costs`, both shown.
+
+Removed: nothing; sweep contradicts no component.
+
 ## Sources
 
 ssrn.com/abstract=4824172, quantmacro.substack.com/p/paper-review-an-effective-intraday, sciencedirect.com/science/article/abs/pii/S0304405X18301351, arxiv.org/abs/2510.07920, arxiv.org/abs/2605.16895, arxiv.org/abs/2601.11958, arxiv.org/abs/2512.10971, arxiv.org/abs/2510.15949, aeaweb.org/conference/2026/program/paper/zNrQ4Yn6, github.com/Barrelet/agent-alpha-bench, traderank.ai/blog/alpha-arena-alternatives-2026, ssrn.com/abstract=3111607, personal.lse.ac.uk/polk/research/TugOfWar.pdf, sciencedirect.com/science/article/abs/pii/S0304405X2030132X
