@@ -4,8 +4,7 @@ from pathlib import Path
 import pytest
 
 from stockbot.config import ConfigError, api_key, load_config
-from tests.snapshot import CFG
-from tests.snapshot import CONFIG as TEST_CONFIG
+from tests.snapshot import CFG, CONFIG as TEST_CONFIG
 
 REPO_CONFIG = Path(__file__).parent.parent / "config"
 
