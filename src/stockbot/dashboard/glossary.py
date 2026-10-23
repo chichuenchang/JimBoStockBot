@@ -27,3 +27,18 @@ TIPS = {
     "conviction": "How sure the model said it was at entry, 0 to 1. Bigger conviction = bigger position.",
     "avg_r": "Average R of these trades. If the model's confidence means anything, this rises from low to high.",
 }
+
+# Stats table columns, grouped money / trading / risk. Model and setup sit on the leaderboard cards instead.
+COLUMN_GROUPS = [
+    ("", ["arm"]),
+    ("Money", ["nav", "return_pct", "vs_benchmark_pct", "pnl", "costs", "llm_spend", "net_after_llm"]),
+    ("Trading", ["trades", "win_rate", "avg_win", "avg_loss", "profit_factor", "invested_pct"]),
+    ("Risk", ["sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown"]),
+]
+LABELS = {
+    "arm": "bot", "nav": "value", "return_pct": "return", "vs_benchmark_pct": "vs QQQ",
+    "pnl": "P&L", "costs": "costs", "llm_spend": "AI cost", "net_after_llm": "net after AI",
+    "win_rate": "win rate", "avg_win": "avg win", "avg_loss": "avg loss", "profit_factor": "profit factor",
+    "invested_pct": "invested", "sharpe": "Sharpe", "sharpe_ci": "Sharpe range", "alpha_pct": "alpha",
+    "max_drawdown": "worst drop",
+}

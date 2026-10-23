@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from stockbot.clock import ReplayClock
 from stockbot.dashboard.app import create_app
-from stockbot.dashboard.glossary import TIPS
+from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -121,6 +121,7 @@ def test_cross_site_post_refused(db):
 def test_glossary_covers_all_columns():
     assert set(LEADERBOARD_KEYS) - {"arm", "model", "variant"} <= set(TIPS)
     assert all(len(v.split()) <= 25 for v in TIPS.values())
+    assert sorted(k for _, keys in COLUMN_GROUPS for k in keys) == sorted(set(LEADERBOARD_KEYS) - {"model", "variant"})
 
 
 def test_api_shapes(db):
