@@ -90,7 +90,9 @@ async function loadIndex() {
   const money = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
   const pct = (v) => signed(v, 2) + "%";
   draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? money : pct)));
-  draw("drawdown", "line", { datasets: lineDatasets(dd) }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
+  // the small charts share the account-value legend above them
+  const noLegend = (o) => { o.plugins.legend.display = false; return o; };
+  draw("drawdown", "line", { datasets: lineDatasets(dd) }, noLegend(timeLinear(baseOptions("", (v) => fmt(v, 1) + "%"))));
 
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
@@ -98,7 +100,7 @@ async function loadIndex() {
     return { label: s, data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
              borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
   });
-  draw("daily", "bar", { labels: days, datasets: ds }, baseOptions("", (v) => signed(v, 0)));
+  draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
 
   const symbols = [...new Set(Object.values(heat).flatMap((r) => Object.keys(r)))].sort();
   const maxAbs = Math.max(1, ...Object.values(heat).flatMap((r) => Object.values(r).map(Math.abs)));
@@ -185,6 +187,9 @@ async function loadArm(st) {
     ["avg_r", "avg R", 0, (v) => signed(v, 2)]], conv, "No closed trades yet.");
   table("rejections", [["ts", "time", 1, etTime], ["symbol", "stock", 1], ["rule", "rule broken", 1], ["detail", "detail", "wrap"]],
     rej, "Nothing rejected.");
+  [["positions", pos], ["trades", trades], ["decisions", decs], ["rejected", rej]].forEach(([k, rows]) => {
+    document.getElementById(`n-${k}`).textContent = rows.length;
+  });
   document.getElementById("decisions").innerHTML = decs.length ? decs.map((d) =>
     `<details data-id="${d.id}"><summary><span class="muted">${etTime(d.slot_ts)} · ${esc(d.reason)} · ${esc(d.status)} · $${fmt(d.cost, 3)}</span> — ${esc(d.summary)}</summary><div class="detail">loading…</div></details>`).join("")
     : `<p class="muted">No decisions yet.</p>`;
@@ -195,7 +200,18 @@ async function loadArm(st) {
     el.dataset.loaded = "1";
   }));
 }
+// tabs on the bot page; the open tab lives in the URL hash so reload and back keep it
+function showTab(name) {
+  const tabs = [...document.querySelectorAll(".subtabs button")];
+  if (!tabs.some((b) => b.dataset.tab === name)) name = tabs[0].dataset.tab;
+  tabs.forEach((b) => b.classList.toggle("on", b.dataset.tab === name));
+  document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
+  if (name === "positions" && candleChart) candleChart.timeScale().fitContent();
+}
 function initArm() {
+  document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
+  window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+  showTab(location.hash.slice(1));
   document.getElementById("symbol").onchange = loadCandles;
   document.getElementById("tf").onchange = loadCandles;
   loadCandles();

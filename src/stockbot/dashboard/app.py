@@ -14,7 +14,7 @@ from stockbot import pause as pause_flags
 from stockbot.clock import RealClock
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
-from stockbot.dashboard.glossary import TIPS
+from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
 from stockbot.data.base import DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -31,6 +31,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
+    js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
 
     @app.middleware("http")
     async def same_origin_writes(request: Request, call_next):
@@ -45,16 +46,18 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return arm
 
     def page(request, name, **ctx):
-        return tpl.TemplateResponse(request, name, {"tips": TIPS, "series": series_order, **ctx})
+        return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
+                                                 "js_version": js_version, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
-        return page(request, "index.html", rows=q.leaderboard(db, cfg), keys=q.LEADERBOARD_KEYS)
+        return page(request, "index.html", rows=q.leaderboard(db, cfg), groups=COLUMN_GROUPS)
 
     @app.get("/arm/{arm}", response_class=HTMLResponse)
     def arm_page(request: Request, arm: str):
         known(arm)
-        return page(request, "arm.html", arm=arm, universe=list(cfg.settings.universe))
+        row = next(r for r in q.leaderboard(db, cfg) if r["arm"] == arm)
+        return page(request, "arm.html", arm=arm, row=row, universe=list(cfg.settings.universe))
 
     @app.get("/api/leaderboard")
     def api_leaderboard():
