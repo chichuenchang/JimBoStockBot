@@ -1,11 +1,10 @@
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 from stockbot.clock import ET, ReplayClock, cycle_slots, in_session, month_key, report_slots
-from stockbot.config import load_config
 from stockbot.models import Session
+from tests.snapshot import CFG
 
-S = load_config(Path(__file__).parent / "config").settings
+S = CFG.settings
 
 
 def sess(day: date, open_h: int, open_m: int, close_h: int) -> Session:

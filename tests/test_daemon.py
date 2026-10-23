@@ -1,6 +1,5 @@
 import logging
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 
@@ -8,7 +7,6 @@ from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
 from stockbot.cli import fake_trader, main
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
 from stockbot.daemon import Daemon
 from stockbot.data.base import DataError
 from stockbot.data.recorded import RecordedData
@@ -17,10 +15,9 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
+from tests.snapshot import CFG, CONFIG
 from tests.synth import make_day
 
-CONFIG = Path(__file__).parent / "config"
-CFG = load_config(CONFIG)
 DAY = date(2026, 10, 20)
 
 

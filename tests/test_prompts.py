@@ -1,11 +1,10 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
-from stockbot.config import load_config
 from stockbot.models import AccountState, ClosedTrade, ExitPlan, Position
+from tests.snapshot import CFG
 
-S = load_config(Path(__file__).parent / "config").settings
+S = CFG.settings
 NOW = datetime(2026, 10, 21, 14, 0, tzinfo=UTC)
 STATE = AccountState("a", 5000.0, {"MSFT": Position("MSFT", 10, 480.0, NOW, ExitPlan(470, 500, "4h < 470"), 10)})
 PRICES = {"MSFT": 483.0, "NVDA": 182.0}

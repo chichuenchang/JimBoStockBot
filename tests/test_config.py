@@ -4,10 +4,9 @@ from pathlib import Path
 import pytest
 
 from stockbot.config import ConfigError, api_key, load_config
+from tests.snapshot import CONFIG as TEST_CONFIG
 
 REPO_CONFIG = Path(__file__).parent.parent / "config"
-# tests run on a fixed snapshot so enabling/disabling models in config/ never breaks them
-TEST_CONFIG = Path(__file__).parent / "config"
 
 
 def copy_config(tmp_path: Path) -> Path:

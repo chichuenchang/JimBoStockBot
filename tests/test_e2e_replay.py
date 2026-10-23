@@ -1,13 +1,9 @@
 from datetime import date
-from pathlib import Path
 
 from stockbot.cli import main
-from stockbot.config import load_config
 from stockbot.db import DB
+from tests.snapshot import CFG, CONFIG
 from tests.synth import make_day
-
-CONFIG = Path(__file__).parent / "config"
-CFG = load_config(CONFIG)
 
 
 def test_e2e_replay_one_day(tmp_path):
