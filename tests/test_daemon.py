@@ -126,6 +126,17 @@ async def test_market_open_flag(tmp_path):
         assert daemon.ctx.db.kv_get("market_open") == want
 
 
+async def test_logs_market_state_on_change(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    with caplog.at_level(logging.INFO):
+        for m in (-10, -9, 1, 2):
+            t = session.open_utc + timedelta(minutes=m)
+            clock.set(t)
+            await daemon.step(t)
+    lines = [r.message for r in caplog.records if r.message.startswith("market")]
+    assert lines == ["market closed; next open 2026-10-20 09:30 ET", "market open until 16:00 ET"]
+
+
 def test_max_cycles(tmp_path):
     data = tmp_path / "rec"
     make_day(data, DAY)

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
-from stockbot.clock import cycle_slots, et_date, in_session, report_slots
+from stockbot.clock import ET, cycle_slots, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
@@ -28,6 +28,7 @@ class Daemon:
         self.sessions: list[Session] = []
         self._calendar_day = None
         self._data_failed = False
+        self._market_open: bool | None = None  # last logged state; None = nothing logged yet
         self.cycles_run = 0  # scheduled slots completed by this daemon instance
         s = ctx.cfg.settings
         for arm in ctx.cfg.arms:
@@ -50,6 +51,20 @@ class Daemon:
     def _today(self, now: datetime) -> Session | None:
         d = et_date(now)
         return next((s for s in self.sessions if s.day == d), None)
+
+    def _log_market(self, now: datetime, session: Session | None) -> None:
+        """One line per open/close change, so an idle console still shows the daemon is alive."""
+        is_open = bool(session and in_session(now, session))
+        self.ctx.db.kv_set("market_open", "1" if is_open else "0")
+        if is_open == self._market_open:
+            return
+        self._market_open = is_open
+        if is_open:
+            log.info("market open until %s ET", f"{session.close_utc.astimezone(ET):%H:%M}")
+            return
+        nxt = next((s for s in self.sessions if s.open_utc > now), None)
+        log.info("market closed; next open %s",
+                 f"{nxt.open_utc.astimezone(ET):%Y-%m-%d %H:%M} ET" if nxt else "unknown (no calendar)")
 
     def _done(self, kind: str, slot: datetime) -> bool:
         return self.ctx.db.kv_get(f"{kind}:{slot.isoformat()}") is not None
@@ -137,7 +152,7 @@ class Daemon:
         db.kv_set("heartbeat", now.isoformat())
         await self._guard("calendar", self._refresh_calendar(now))
         session = self._today(now)
-        db.kv_set("market_open", "1" if session and in_session(now, session) else "0")
+        self._log_market(now, session)
         if session is not None:
             await self._guard("benchmark", self._benchmark(now, session))
         tick, replayed = None, False
