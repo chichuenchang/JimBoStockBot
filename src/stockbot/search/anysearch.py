@@ -1,5 +1,4 @@
-"""AnySearch REST client (api.anysearch.com). Measured 2026-10-23: no freshness filter (dates only
-inside result text), extract fails on wsj/reuters/apnews/nytimes (HTTP 422). Spec:
+"""AnySearch REST client (api.anysearch.com). Measured API behaviour:
 docs/superpowers/specs/2026-10-23-search-5min-design.md"""
 from __future__ import annotations
 

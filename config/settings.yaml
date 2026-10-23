@@ -5,7 +5,7 @@ slippage_bps: 5
 commission_per_order: 0
 cycle_start: "09:45"
 cycle_end: "15:45"
-cycle_every_min: 5         # default; change live: stockbot interval N, or dashboard
+cycle_every_min: 5         # default; live override beats it (README)
 report_times: ["09:15", "12:30"]
 analyst_model: deepseek-v4.1-flash
 global_cap_usd: 100
