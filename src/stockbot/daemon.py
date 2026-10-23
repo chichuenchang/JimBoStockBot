@@ -28,7 +28,7 @@ class Daemon:
         self.sessions: list[Session] = []
         self._calendar_day = None
         self._data_failed = False
-        self._market_open: bool | None = None  # last logged state; None = nothing logged yet
+        self._market_logged: tuple[bool, datetime | None] | None = None  # (open, next open); None = nothing logged
         self.cycles_run = 0  # scheduled slots completed by this daemon instance
         s = ctx.cfg.settings
         for arm in ctx.cfg.arms:
@@ -53,16 +53,16 @@ class Daemon:
         return next((s for s in self.sessions if s.day == d), None)
 
     def _log_market(self, now: datetime, is_open: bool, session: Session | None) -> None:
-        """One line per open/close change: last console line tells state and next open. Liveness = heartbeat."""
-        if is_open == self._market_open:
+        """One line per open/close or next-open change: last console line tells state. Liveness = heartbeat."""
+        nxt = None if is_open else next((s.open_utc for s in self.sessions if s.open_utc > now), None)
+        if (is_open, nxt) == self._market_logged:
             return
-        self._market_open = is_open
+        self._market_logged = (is_open, nxt)  # nxt in key: late calendar replaces "unknown"
         if is_open:
             log.info("market open until %s ET", f"{session.close_utc.astimezone(ET):%H:%M}")
             return
-        nxt = next((s for s in self.sessions if s.open_utc > now), None)
         log.info("market closed; next open %s",
-                 f"{nxt.open_utc.astimezone(ET):%Y-%m-%d %H:%M} ET" if nxt else "unknown (no calendar)")
+                 f"{nxt.astimezone(ET):%Y-%m-%d %H:%M} ET" if nxt else "unknown (no calendar)")
 
     def _done(self, kind: str, slot: datetime) -> bool:
         return self.ctx.db.kv_get(f"{kind}:{slot.isoformat()}") is not None
