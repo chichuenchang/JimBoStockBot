@@ -37,6 +37,13 @@ def test_market_buy_fills_next_bar_open_with_slippage(broker):
     assert broker.db.load_account("a").cash == pytest.approx(8999.5)
 
 
+def test_conviction_passes_from_order_to_fill(broker):
+    broker.submit_market("a", "MSFT", "buy", 10, ExitPlan(98, 103, "x"), "entry", T0, 2.0, "why", 0.7)
+    broker.on_bar(bar("MSFT", 1, 100), ALWAYS)
+    [row] = broker.db._q("SELECT conviction FROM fills")
+    assert row["conviction"] == 0.7
+
+
 def test_order_not_filled_by_bar_at_or_before_submit(broker):
     broker.submit_market("a", "MSFT", "buy", 10, None, "entry", T0)
     assert broker.on_bar(bar("MSFT", 0, 100), ALWAYS) == []

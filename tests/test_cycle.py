@@ -14,7 +14,7 @@ from stockbot.db import DB
 from stockbot.llm.base import LLMError
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
-from stockbot.models import Bar, ExitPlan
+from stockbot.models import Bar, ExitPlan, Session
 from stockbot.pause import ALL, set_paused
 
 CFG = load_config(Path(__file__).parent.parent / "config")
@@ -134,6 +134,14 @@ async def test_improved_sized_order(tmp_path):
     expected = size_entry(Proposal("MSFT", 100.0, 95, 110, "x", 1.0), rc, CFG.settings)
     assert o["qty"] == pytest.approx(expected)
     assert o["stop_loss"] == 95 and o["risk_per_share"] == pytest.approx(100.05 - 95)
+    assert o["conviction"] == 1
+
+
+async def test_omitted_conviction_stored_as_none(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [buy(conviction=None)])
+    await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")
+    [o] = ctx.db.pending_orders("MSFT")
+    assert o["qty"] > 0 and o["conviction"] is None
 
 
 async def test_baseline_uses_llm_quantity(tmp_path):
@@ -263,6 +271,52 @@ async def test_stop_exit_today_blocks_reentry(tmp_path):
     assert r.orders == 0
     [row] = ctx.db._q("SELECT rule FROM rejections")
     assert row["rule"] == "cooldown"
+
+
+class SessionData(StaticData):
+    """15 sessions to 2026-10-21. Prior days: QQQ 600 open, 606 all day. Today: 600 rising to 620."""
+    DAYS = (1, 2, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 19, 20, 21)
+
+    def __init__(self, prices):
+        super().__init__(prices)
+        self.sessions = [Session(date(2026, 10, d), datetime(2026, 10, d, 13, 30, tzinfo=UTC),
+                                 datetime(2026, 10, d, 20, tzinfo=UTC)) for d in self.DAYS]
+        self._bars = []
+        for s in self.sessions:
+            today = s.day == date(2026, 10, 21)
+            for i in range(390):
+                c = 600 + min(i, 40) * 0.5 if today else 606.0
+                self._bars.append(Bar("QQQ", s.open_utc + timedelta(minutes=i), 600 if i == 0 else c, c, c, c, 1000))
+
+    async def calendar(self, start, end):
+        return [s for s in self.sessions if start <= s.day <= end]
+
+    async def bars(self, symbol, timeframe, start, end):
+        return [b for b in self._bars if b.symbol == symbol and start <= b.ts < end]
+
+
+async def test_momentum_arm_buys_breakout_with_all_cash(tmp_path):
+    ctx, _ = make_ctx(tmp_path, [])
+    ctx.data = SessionData(PRICES)  # band top 606 x 1.01 = 612.06, QQQ 620
+    r = await run_cycle(ctx, ARMS["rules-momentum"], SLOT, "scheduled")
+    [o] = ctx.db.pending_orders("QQQ")
+    assert r.status == "ok" and o["side"] == "buy"
+    assert o["qty"] * 620 == pytest.approx(10000, rel=0.002)
+    assert o["stop_loss"] == pytest.approx(612.06)
+
+
+async def test_momentum_arm_flat_at_last_slot(tmp_path):
+    last = datetime(2026, 10, 21, 19, 45, tzinfo=UTC)  # 15:45 ET = cycle_end
+    ctx, _ = make_ctx(tmp_path, [])
+    ctx.data = SessionData(PRICES)
+    ctx.clock = ReplayClock(last)
+    ctx.broker.submit_market("rules-momentum", "QQQ", "buy", 10, ExitPlan(612.0, None, "x"), "entry",
+                             last - timedelta(hours=2))
+    ctx.broker.on_bar(Bar("QQQ", last - timedelta(hours=2) + timedelta(minutes=1), 615, 615, 615, 615, 1),
+                      lambda a: False)
+    await run_cycle(ctx, ARMS["rules-momentum"], last, "scheduled")
+    [o] = ctx.db.pending_orders("QQQ")
+    assert o["side"] == "sell" and o["reason"] == "close"
 
 
 def set_features(ctx, feats):

@@ -21,12 +21,13 @@ CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, account TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL, qty REAL,
   stop_loss REAL, profit_target REAL, invalidation TEXT NOT NULL DEFAULT '', risk_per_share REAL,
   reason TEXT NOT NULL, justification TEXT NOT NULL DEFAULT '', created_ts TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending', fill_id INTEGER, note TEXT);
+  status TEXT NOT NULL DEFAULT 'pending', fill_id INTEGER, note TEXT, conviction REAL);
 CREATE INDEX IF NOT EXISTS orders_pending ON orders(symbol, status);
 CREATE TABLE IF NOT EXISTS fills (
   id INTEGER PRIMARY KEY, account TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
   qty REAL NOT NULL, price REAL NOT NULL, ts TEXT NOT NULL, reason TEXT NOT NULL,
-  replayed INTEGER NOT NULL DEFAULT 0, justification TEXT NOT NULL DEFAULT '', risk_per_share REAL);
+  replayed INTEGER NOT NULL DEFAULT 0, justification TEXT NOT NULL DEFAULT '', risk_per_share REAL,
+  conviction REAL);
 CREATE TABLE IF NOT EXISTS equity_snapshots (
   account TEXT NOT NULL, ts TEXT NOT NULL, nav REAL NOT NULL, PRIMARY KEY (account, ts));
 CREATE TABLE IF NOT EXISTS reports (id INTEGER PRIMARY KEY, ts TEXT NOT NULL, text TEXT NOT NULL, features_json TEXT NOT NULL);
@@ -67,9 +68,10 @@ class DB:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
-        cols = {r["name"] for r in conn.execute("PRAGMA table_info(positions)")}
-        if "peak" not in cols:  # DBs created before trailing stops
-            conn.execute("ALTER TABLE positions ADD COLUMN peak REAL")
+        # columns added after first release; old DBs gain them here
+        for table, col in [("positions", "peak"), ("orders", "conviction"), ("fills", "conviction")]:
+            if col not in {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} REAL")
         return cls(conn)
 
     def close(self) -> None:
@@ -149,13 +151,14 @@ class DB:
     # orders
     def insert_order(self, account: str, symbol: str, side: str, qty: float | None,
                      exit_plan: ExitPlan | None, reason: str, created_ts: datetime,
-                     risk_per_share: float | None = None, justification: str = "") -> int:
+                     risk_per_share: float | None = None, justification: str = "",
+                     conviction: float | None = None) -> int:
         plan = exit_plan or ExitPlan(None, None, "")
         return self._x(
             "INSERT INTO orders(account,symbol,side,qty,stop_loss,profit_target,invalidation,"
-            "risk_per_share,reason,justification,created_ts) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "risk_per_share,reason,justification,created_ts,conviction) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             account, symbol, side, qty, plan.stop_loss, plan.profit_target, plan.invalidation,
-            risk_per_share, reason, justification, iso(created_ts))
+            risk_per_share, reason, justification, iso(created_ts), conviction)
 
     def pending_orders(self, symbol: str) -> list[dict]:
         return [dict(r) for r in self._q(
@@ -174,12 +177,12 @@ class DB:
 
     # fills
     def insert_fill(self, fill: Fill, justification: str = "",
-                    risk_per_share: float | None = None) -> int:
+                    risk_per_share: float | None = None, conviction: float | None = None) -> int:
         return self._x(
             "INSERT INTO fills(account,symbol,side,qty,price,ts,reason,replayed,justification,"
-            "risk_per_share) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "risk_per_share,conviction) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             fill.account, fill.symbol, fill.side, fill.qty, fill.price, iso(fill.ts), fill.reason,
-            int(fill.replayed), justification, risk_per_share)
+            int(fill.replayed), justification, risk_per_share, conviction)
 
     def sold_since(self, account: str, ts: datetime) -> set[str]:
         """Symbols with any sell fill at or after ts: closes, stops and targets alike."""
@@ -203,7 +206,7 @@ class DB:
             if r["side"] == "buy":
                 t = open_.setdefault(sym, {"qty": 0.0, "cost": 0.0, "entry_ts": r["ts"],
                                            "risk": r["risk_per_share"], "why": r["justification"],
-                                           "sold": 0.0, "proceeds": 0.0})
+                                           "conviction": r["conviction"], "sold": 0.0, "proceeds": 0.0})
                 t["qty"] += r["qty"]
                 t["cost"] += r["qty"] * r["price"]
                 continue
@@ -220,7 +223,7 @@ class DB:
                 r_mult = pnl / (t["risk"] * qty) if t["risk"] else None
                 out.append(ClosedTrade(account, sym, parse_ts(t["entry_ts"]), parse_ts(r["ts"]),
                                        entry, exit_, qty, pnl, r_mult, r["reason"], t["why"],
-                                       bool(r["replayed"]), r["justification"]))
+                                       bool(r["replayed"]), r["justification"], t["conviction"]))
                 del open_[sym]
         return out
 

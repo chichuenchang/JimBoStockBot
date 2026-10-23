@@ -24,4 +24,6 @@ TIPS = {
     "stop_loss": "Price at which the position is sold to cap the loss.",
     "profit_target": "Price at which the position is sold to take profit.",
     "invalidation": "The model's own condition that would prove its idea wrong.",
+    "conviction": "How sure the model said it was at entry, 0 to 1. Bigger conviction = bigger position.",
+    "avg_r": "Average R of these trades. If the model's confidence means anything, this rises from low to high.",
 }

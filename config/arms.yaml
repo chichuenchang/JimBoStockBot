@@ -6,3 +6,5 @@ arms:
   # controls, no LLM: src/stockbot/agent/control.py
   - {name: rules-trend, variant: rules, enabled: true}
   - {name: random-control, variant: random, enabled: true}
+  # noise-band intraday momentum on benchmark_symbol: src/stockbot/agent/momentum.py
+  - {name: rules-momentum, variant: momentum, enabled: true}

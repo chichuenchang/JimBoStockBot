@@ -71,6 +71,14 @@ def test_closed_trades_pairs_fills(db):
     assert t.justification == "breakout"
 
 
+def test_closed_trade_keeps_first_entry_conviction(db):
+    db.insert_fill(Fill("a", "MSFT", "buy", 10, 100.0, T0, "entry", False), conviction=0.8)
+    db.insert_fill(Fill("a", "MSFT", "buy", 5, 101.0, T0.replace(hour=15), "add", False), conviction=0.2)
+    db.insert_fill(Fill("a", "MSFT", "sell", 15, 104.0, T0.replace(hour=16), "target", False))
+    [t] = db.closed_trades("a")
+    assert t.conviction == 0.8
+
+
 def test_open_trade_not_closed(db):
     db.insert_fill(Fill("a", "MSFT", "buy", 10, 100.0, T0, "entry", False))
     assert db.closed_trades("a") == []
@@ -131,3 +139,22 @@ def test_old_db_gains_peak_column(tmp_path):
     st.positions["MSFT"] = Position("MSFT", 1, 100, T0, ExitPlan(98, 110), None)
     db.save_account(st)
     assert db.load_account("a").positions["MSFT"].peak is None
+
+
+def test_old_db_gains_conviction_columns(tmp_path):
+    p = tmp_path / "old.db"
+    conn = sqlite3.connect(p)
+    conn.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, account TEXT NOT NULL, symbol TEXT NOT NULL, "
+                 "side TEXT NOT NULL, qty REAL, stop_loss REAL, profit_target REAL, invalidation TEXT NOT NULL "
+                 "DEFAULT '', risk_per_share REAL, reason TEXT NOT NULL, justification TEXT NOT NULL DEFAULT '', "
+                 "created_ts TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', fill_id INTEGER, note TEXT)")
+    conn.execute("CREATE TABLE fills (id INTEGER PRIMARY KEY, account TEXT NOT NULL, symbol TEXT NOT NULL, "
+                 "side TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, ts TEXT NOT NULL, reason TEXT NOT NULL, "
+                 "replayed INTEGER NOT NULL DEFAULT 0, justification TEXT NOT NULL DEFAULT '', risk_per_share REAL)")
+    conn.commit()
+    conn.close()
+    db = DB.open(p)
+    db.insert_order("a", "MSFT", "buy", 5, None, "entry", T0, conviction=0.4)
+    db.insert_fill(Fill("a", "MSFT", "buy", 5, 100.0, T0, "entry", False), conviction=0.4)
+    assert db.pending_orders("MSFT")[0]["conviction"] == 0.4
+    assert db._q("SELECT conviction FROM fills")[0]["conviction"] == 0.4

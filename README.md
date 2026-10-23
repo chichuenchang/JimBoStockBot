@@ -2,7 +2,7 @@
 
 Local LLM paper-trading arena. Alpha Arena replica vs improved harness, several models side by side. Paper money only.
 Design: `docs/superpowers/specs/2026-10-21-llm-trading-arena-design.md`. AA teardown: `docs/research/alpha-arena-teardown.md`. Related work + why the improved-arm extras exist: `docs/research/related-projects.md`.
-Control arms `rules-trend`, `random-control`: `src/stockbot/agent/control.py`.
+Control arms `rules-trend`, `random-control`: `src/stockbot/agent/control.py`. `rules-momentum` (noise-band intraday momentum on QQQ, why: `docs/research/trading-strategy-evidence.md`): `src/stockbot/agent/momentum.py`; trades only after 5 prior sessions of 1-min bars, so replay needs `record --days` ≥ 6.
 
 ## Setup
 

@@ -9,12 +9,13 @@ from datetime import datetime, time
 from typing import Literal
 
 from stockbot.agent.control import random_decision, rules_decision
+from stockbot.agent.momentum import momentum_bars, momentum_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
 from stockbot.agent.reflect import reflect_new_trades
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
-from stockbot.clock import ET, Clock, et_date
+from stockbot.clock import ET, Clock, cycle_slots, et_date
 from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
@@ -114,7 +115,7 @@ async def run_cycle(ctx: AppContext, arm: ArmCfg, slot_ts: datetime,
             did = _record(ctx, arm, slot_ts, reason, report_id, ex, None, failed)
             return CycleResult(arm.name, slot_ts, failed, did, orders, 0)
     else:
-        decision = _control_decision(arm, slot_ts, state, prices, db.latest_report_features(), s.universe)
+        decision = await _control_decision(ctx, arm, slot_ts, state, prices)
 
     rejections: list[tuple[str, str, str]] = []
     status: Status = "ok"
@@ -188,8 +189,17 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         return None, "llm_failed"
 
 
-def _control_decision(arm: ArmCfg, slot_ts: datetime, state: AccountState, prices: dict[str, float],
-                      feats: dict, universe: tuple[str, ...]) -> Decision:
+async def _control_decision(ctx: AppContext, arm: ArmCfg, slot_ts: datetime, state: AccountState,
+                            prices: dict[str, float]) -> Decision:
+    s = ctx.cfg.settings
+    if arm.variant == "momentum":
+        sym = s.benchmark_symbol
+        today, prior, session = await momentum_bars(ctx.data, sym, ctx.clock.now())
+        slots = cycle_slots(session, s) if session else []
+        last_slot = not slots or slot_ts >= slots[-1]
+        return momentum_decision(sym, s.universe, state.positions.get(sym), prices.get(sym), today, prior,
+                                 state.cash, s.slippage_bps, last_slot)
+    feats, universe = ctx.db.latest_report_features(), s.universe
     if arm.variant == "rules":
         return rules_decision(state.positions, prices, feats, universe)
     rng = random.Random(f"{arm.name}|{slot_ts.isoformat()}")  # same slot, same draws on rerun
@@ -301,5 +311,5 @@ def _enter(ctx, arm, d: SymbolDecision, held, prices, now, rc, rejections) -> fl
         return 0.0
     qty = size_entry(p, rc, s)
     ctx.broker.submit_market(arm.name, d.symbol, "buy", qty, plan, reason, now, e - d.stop_loss,
-                             d.justification)
+                             d.justification, d.conviction)
     return qty
