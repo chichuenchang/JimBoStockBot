@@ -126,6 +126,39 @@ async def test_market_open_flag(tmp_path):
         assert daemon.ctx.db.kv_get("market_open") == want
 
 
+async def test_logs_market_state_on_change(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    with caplog.at_level(logging.INFO):
+        for m in (-10, -9, 1, 2):
+            t = session.open_utc + timedelta(minutes=m)
+            clock.set(t)
+            await daemon.step(t)
+    lines = [r.message for r in caplog.records if r.message.startswith("market")]
+    assert lines == ["market closed; next open 2026-10-20 09:30 ET", "market open until 16:00 ET"]
+
+
+class LateCalendar(RecordedData):
+    fail = True
+
+    async def calendar(self, start, end):
+        if self.fail:
+            raise DataError("calendar down")
+        return await super().calendar(start, end)
+
+
+async def test_relogs_next_open_once_calendar_loads(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    late = daemon.ctx.data = LateCalendar(tmp_path / "rec", clock)
+    with caplog.at_level(logging.INFO):
+        for m in (-10, -9, -8):
+            t = session.open_utc + timedelta(minutes=m)
+            clock.set(t)
+            await daemon.step(t)
+            late.fail = False
+    lines = [r.message for r in caplog.records if r.message.startswith("market")]
+    assert lines == ["market closed; next open unknown (no calendar)", "market closed; next open 2026-10-20 09:30 ET"]
+
+
 def test_max_cycles(tmp_path):
     data = tmp_path / "rec"
     make_day(data, DAY)
@@ -146,6 +179,17 @@ def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
     assert cli(tmp_path / "x.db", "run") == 2
     assert "MOONSHOT_API_KEY" in capsys.readouterr().err
+
+
+def test_run_refuses_second_daemon(tmp_path, capsys):
+    from stockbot.cli import _daemon_lock
+    db_path = tmp_path / "x.db"
+    held = _daemon_lock(db_path)
+    assert held and _daemon_lock(db_path) is None
+    assert cli(db_path, "run") == 1
+    assert "already running" in capsys.readouterr().err
+    held.close()
+    assert _daemon_lock(db_path) is not None
 
 
 class DriftingData(RecordedData):
