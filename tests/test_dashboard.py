@@ -177,6 +177,10 @@ def test_arm_label_shown_id_kept(db):
     r = client(db).get("/")
     assert '<a href="/arm/deepseek-improved"' in r.text and "Jimbo StockBot</a>" in r.text
     assert "deepseek-improved</a>" not in r.text
+    db.ensure_account("deepseek-improved", 10000)
+    r = client(db).get("/arm/deepseek-improved")
+    assert "<title>Jimbo StockBot · JBSB</title>" in r.text and "Jimbo StockBot</h1>" in r.text
+    assert 'window.ARM = "deepseek-improved"' in r.text
 
 
 def test_replayed_fills_marked(tmp_path):
