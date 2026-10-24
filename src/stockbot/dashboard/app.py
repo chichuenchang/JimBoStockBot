@@ -33,6 +33,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
     names = {a.name: a.label or a.name for a in cfg.arms}
+    tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
     js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
 
     @app.middleware("http")

@@ -127,7 +127,7 @@ a { color: var(--series-1); }
   {% set active = arm if arm is defined else "" %}
   <nav class="tabs">
     <a href="/" class="{{ 'on' if not active }}">Overview</a>
-    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ names[s] }}</a>{% endfor %}
+    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
 </header>
 <main>{% block body %}{% endblock %}</main>

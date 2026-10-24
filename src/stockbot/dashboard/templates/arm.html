@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "_cells.html" import kpi with context %}
-{% block title %}{{ names.get(arm, arm) }} · JBSB{% endblock %}
+{% block title %}{{ arm | arm_label }} · JBSB{% endblock %}
 {% block page %}arm{% endblock %}
 {% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
 {% block body %}
 <script>window.ARM = {{ arm | tojson }};</script>
 <section class="card">
   <div class="armhead">
-    <h1><span class="swatch" data-series="{{ arm }}"></span>{{ names.get(arm, arm) }}</h1>
+    <h1><span class="swatch" data-series="{{ arm }}"></span>{{ arm | arm_label }}</h1>
     <div class="strip" id="armstate"></div>
     <button id="pausebtn">Pause</button>
   </div>
