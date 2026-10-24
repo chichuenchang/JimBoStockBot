@@ -10,7 +10,7 @@
   <{{ 'div' if bench else 'a' }} class="tile{{ ' bench' if bench }}"{% if not bench %} href="/arm/{{ r.arm }}"{% endif %}>
     <div class="tile-head">
       <span class="rank">{{ 'ref' if bench else '#%d' % rank.n }}</span>
-      <span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm }}</b>
+      <span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b>
     </div>
     <div class="muted small">{{ 'buy QQQ once and hold' if bench else (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
     <div class="big" title="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
@@ -41,7 +41,7 @@
     <tbody>
     {% for r in rows %}<tr>
       {% for g, keys in groups %}{% for k in keys %}<td class="{{ 'l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}">
-        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="/arm/{{ r.arm }}">{{ r.arm }}</a>{% else %}{{ r.arm }}{% endif %}
+        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a>{% else %}{{ r.arm | arm_label }}{% endif %}
         {%- else -%}{{ cell(k, r[k]) }}{%- endif -%}</td>{% endfor %}{% endfor %}
     </tr>{% endfor %}
     </tbody>

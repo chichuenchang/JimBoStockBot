@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}StockBot Arena{% endblock %}</title>
+<title>{% block title %}JBSB Dashboard{% endblock %}</title>
 <style>
 :root {
   color-scheme: light;
@@ -121,17 +121,17 @@ a { color: var(--series-1); }
 <body data-page="{% block page %}{% endblock %}">
 <header>
   <div class="topbar">
-    <a class="brand" href="/">StockBot Arena</a>
+    <a class="brand" href="/">JBSB Dashboard</a>
     <div class="strip" id="status"></div>
   </div>
   {% set active = arm if arm is defined else "" %}
   <nav class="tabs">
     <a href="/" class="{{ 'on' if not active }}">Overview</a>
-    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ s }}</a>{% endfor %}
+    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
 </header>
 <main>{% block body %}{% endblock %}</main>
-<script>window.SERIES = {{ series | tojson }}; window.TIPS = {{ tips | tojson }};</script>
+<script>window.SERIES = {{ series | tojson }}; window.NAMES = {{ names | tojson }}; window.TIPS = {{ tips | tojson }};</script>
 <script src="/static/app.js?v={{ js_version }}"></script>
 </body>
 </html>
