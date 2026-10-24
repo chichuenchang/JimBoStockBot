@@ -37,6 +37,7 @@ class ArmCfg:
     variant: Literal["baseline", "improved", "rules", "random", "momentum"]
     enabled: bool
     search: bool = False  # may web-search before deciding: agent/research.py
+    label: str | None = None  # dashboard display name; `name` stays the DB/URL id
 
     @property
     def uses_llm(self) -> bool:

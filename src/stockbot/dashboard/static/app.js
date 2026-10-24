@@ -9,6 +9,7 @@ function colorOf(series) {
   const i = window.SERIES.filter((s) => !isBench(s)).indexOf(series);
   return css(`--series-${(i % 8) + 1}`);
 }
+const nameOf = (s) => window.NAMES[s] || s;
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
@@ -90,7 +91,7 @@ function baseOptions(yLabel, yFmt) {
 }
 function lineDatasets(data) {
   return window.SERIES.filter((s) => data[s] && data[s].length).map((s) => ({
-    label: s, data: data[s].map(([x, y]) => ({ x, y })), borderColor: colorOf(s), backgroundColor: colorOf(s),
+    label: nameOf(s), data: data[s].map(([x, y]) => ({ x, y })), borderColor: colorOf(s), backgroundColor: colorOf(s),
     borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, borderDash: isBench(s) ? [6, 4] : [], tension: 0,
   }));
 }
@@ -122,7 +123,7 @@ async function loadIndex() {
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
     const m = Object.fromEntries(daily[s]);
-    return { label: s, data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
+    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
              borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
   });
   draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
@@ -135,10 +136,10 @@ async function loadIndex() {
     return `color-mix(in oklab, ${pole} ${Math.round(t * 85)}%, ${css("--div-mid")})`;
   };
   const rows = window.SERIES.filter((s) => heat[s]).map((s) =>
-    `<tr><td class="l">${esc(s)}</td>${symbols.map((sym) => {
+    `<tr><td class="l">${esc(nameOf(s))}</td>${symbols.map((sym) => {
       const v = heat[s][sym];
       return v === undefined ? `<td class="muted">–</td>`
-        : `<td style="background:${shade(v)}" title="${esc(s)} ${sym}: ${signed(v)}">${signed(v, 0)}</td>`;
+        : `<td style="background:${shade(v)}" title="${esc(nameOf(s))} ${sym}: ${signed(v)}">${signed(v, 0)}</td>`;
     }).join("")}</tr>`);
   document.getElementById("heatmap").innerHTML = symbols.length
     ? `<thead><tr><th class="l">bot</th>${symbols.map((s) => `<th>${s}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody>`

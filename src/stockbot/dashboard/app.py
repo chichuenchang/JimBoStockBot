@@ -32,6 +32,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
+    names = {a.name: a.label or a.name for a in cfg.arms}
     js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
 
     @app.middleware("http")
@@ -48,7 +49,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
-                                                 "arms": arm_names, "js_version": js_version, **ctx})
+                                                 "arms": arm_names, "names": names, "js_version": js_version, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

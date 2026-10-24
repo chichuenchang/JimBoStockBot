@@ -173,6 +173,12 @@ def test_index_renders(db):
     assert client(db).get("/arm/nope").status_code == 404
 
 
+def test_arm_label_shown_id_kept(db):
+    r = client(db).get("/")
+    assert '<a href="/arm/deepseek-improved"' in r.text and "Jimbo StockBot</a>" in r.text
+    assert "deepseek-improved</a>" not in r.text
+
+
 def test_replayed_fills_marked(tmp_path):
     db = DB.open(tmp_path / "r.db")
     db.ensure_account("kimi-improved", 10000)
