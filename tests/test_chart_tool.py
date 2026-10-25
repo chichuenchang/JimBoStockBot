@@ -64,8 +64,10 @@ async def test_run_skips_bad_and_caps(session):
 
 async def test_run_bad_dates(session):
     text, pngs = await session.run([{"symbol": "MSFT", "tf": "1Day", "start": "2026-01-20", "end": "2026-01-10"},
-                                    {"symbol": "MSFT", "tf": "1Day", "start": "soon"}])
+                                    {"symbol": "MSFT", "tf": "1Day", "start": "soon"},
+                                    {"symbol": "MSFT", "tf": "1Day", "log": "false"}])
     assert pngs == () and "# CHART 1 skipped: start after end" in text and "# CHART 2 skipped:" in text
+    assert '# CHART 3 skipped: "log" must be true or false' in text
 
 
 async def test_seen_reads_back_run(session):

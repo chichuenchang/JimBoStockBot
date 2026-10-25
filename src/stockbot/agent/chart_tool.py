@@ -72,7 +72,10 @@ class Session:
         start = max(start, self.s.history_start)
         if start > end:
             raise ValueError("start after end")
-        return ChartSpec(sym, tf, start, end, bool(item.get("log", False)))
+        log_scale = item.get("log", False)
+        if not isinstance(log_scale, bool):  # bool("false") is True
+            raise ValueError('"log" must be true or false')
+        return ChartSpec(sym, tf, start, end, log_scale)
 
     async def run(self, raw: list) -> tuple[str, tuple[bytes, ...]]:
         """Text block to append (one line per chart) + the PNGs, in image order."""
