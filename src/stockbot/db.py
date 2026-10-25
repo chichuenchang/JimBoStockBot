@@ -332,9 +332,8 @@ class DB:
     # daily history: one row per ET trading day; Bar.ts = that day's ET midnight
     def upsert_daily(self, bars: list[Bar]) -> None:
         with self.transaction():
-            for b in bars:
-                self.conn.execute("INSERT OR REPLACE INTO daily_bars VALUES(?,?,?,?,?,?,?)", (
-                    b.symbol, et_date(b.ts).isoformat(), b.open, b.high, b.low, b.close, b.volume))
+            self.conn.executemany("INSERT OR REPLACE INTO daily_bars VALUES(?,?,?,?,?,?,?)", [
+                (b.symbol, et_date(b.ts).isoformat(), b.open, b.high, b.low, b.close, b.volume) for b in bars])
 
     @staticmethod
     def _daily(rows: list[sqlite3.Row]) -> list[Bar]:
