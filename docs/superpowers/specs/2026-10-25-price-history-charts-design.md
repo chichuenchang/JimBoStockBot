@@ -57,7 +57,7 @@ Bots see only indicator snapshots (report features) and recent bars. No sense of
 - Settings: `chart_max_per_decision: 3`.
 - Step (same stateless protocol as search; independent of search/read order, once per decision):
   `{"chart": [{"symbol": "NVDA", "tf": "1Week", "start": "2019-01-01", "end": "2026-10-24", "log": false}, ...]}`
-  - `tf` ∈ `1Day/1Week/1Month`. `end` omitted = now. `end` clamped to decision time (no lookahead). `start` clamped to `history_start`. `log` optional, default false.
+  - `tf` ∈ `1Day/1Week/1Month`. `end` omitted or later = yesterday (no lookahead). `start` omitted = `end` − 1 year; clamped to `history_start`. `log` optional, default false.
   - Symbol outside universe / bad dates = that chart skipped with text note. Extra charts beyond cap ignored.
 - Harness appends text block (spec of each chart, "image N") + PNG(s) as image parts on the user message. Prior prompt prefix unchanged so cache holds.
 - Renderer `stockbot/charts.py`: matplotlib Agg, close-price line, labelled price y axis + date x axis, title `SYMBOL tf start–end`, ~1024×512. New dep `matplotlib`.
