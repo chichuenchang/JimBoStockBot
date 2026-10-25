@@ -27,7 +27,7 @@ def ticker_features(symbol: str, bars_1h: list[Bar], bars_4h: list[Bar],
         trend = "down"
     else:
         trend = "sideways"
-    prev_close = bars_1d[-2].close if len(bars_1d) >= 2 else None
+    prev_close = bars_1d[-1].close if bars_1d else None  # finished sessions only: last = previous close
     chg = (last / prev_close - 1) * 100 if last is not None and prev_close else None
     highs, lows = swing_levels(bars_4h, 3)
     return {

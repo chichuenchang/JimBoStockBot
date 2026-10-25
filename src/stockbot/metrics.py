@@ -14,10 +14,12 @@ from stockbot.models import ClosedTrade
 @dataclass(frozen=True)
 class TradeStats:
     n: int
-    win_rate: float | None
-    avg_win: float | None
-    avg_loss: float | None
-    profit_factor: float | None
+    win_rate: float | None = None
+    avg_win: float | None = None
+    avg_loss: float | None = None
+    profit_factor: float | None = None
+    expectancy: float | None = None
+    pnl_ex_best: float | None = None
 
 
 def daily_closes(series: list[tuple[datetime, float]]) -> dict[date, float]:
@@ -115,14 +117,17 @@ def conviction_buckets(trades: list[ClosedTrade]) -> list[dict]:
 
 def trade_stats(trades: list[ClosedTrade]) -> TradeStats:
     if not trades:
-        return TradeStats(0, None, None, None, None)
+        return TradeStats(0)
     wins = [t.pnl for t in trades if t.pnl > 0]
     losses = [t.pnl for t in trades if t.pnl <= 0]
     gross_loss = -sum(losses)
+    total = sum(wins) - gross_loss
     return TradeStats(
         n=len(trades),
         win_rate=len(wins) / len(trades),
         avg_win=statistics.mean(wins) if wins else None,
         avg_loss=statistics.mean(losses) if losses else None,
         profit_factor=sum(wins) / gross_loss if gross_loss > 0 else None,
+        expectancy=total / len(trades),
+        pnl_ex_best=total - max(wins, default=0),
     )

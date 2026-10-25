@@ -14,6 +14,7 @@ from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
                     "llm_spend", "net_after_llm", "win_rate", "avg_win", "avg_loss", "profit_factor",
+                    "expectancy", "pnl_ex_best",
                     "sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown", "trades", "invested_pct"]
 MAX_POINTS = 2000
 
@@ -64,7 +65,8 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
             None if bench_ret is None or account == BENCHMARK else ret - bench_ret,
             pnl, _costs(db, account, cfg), spend, pnl - spend,
             None if stats.win_rate is None else stats.win_rate * 100,
-            stats.avg_win, stats.avg_loss, stats.profit_factor, sharpe(daily), sharpe_ci(daily),
+            stats.avg_win, stats.avg_loss, stats.profit_factor, stats.expectancy, stats.pnl_ex_best,
+            sharpe(daily), sharpe_ci(daily),
             None if alpha is None else alpha * 100, beta,
             max_drawdown([v for _, v in series] + [nav]) * 100,
             stats.n,

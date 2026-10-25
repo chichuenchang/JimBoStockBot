@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from stockbot.agent.schema import Decision, SymbolDecision
 from stockbot.broker.sim import buy_price, floor3
 from stockbot.clock import et_date
-from stockbot.data.base import MarketData
+from stockbot.data.base import MarketData, finished
 from stockbot.models import Bar, Position, Session
 
 NOISE_DAYS = 14
@@ -84,7 +84,7 @@ async def momentum_bars(data: MarketData, symbol: str,
         return [], [], None
     prior_s = sessions[:-1][-NOISE_DAYS:]
     first = prior_s[0].open_utc if prior_s else sessions[-1].open_utc
-    bars = await data.bars(symbol, "1Min", first, now)
+    bars = finished(await data.bars(symbol, "1Min", first, now), "1Min", now)
 
     def split(s: Session) -> list[Bar]:
         return [b for b in bars if s.open_utc <= b.ts < s.close_utc]

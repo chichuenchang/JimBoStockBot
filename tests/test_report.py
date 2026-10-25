@@ -31,6 +31,12 @@ def test_features_trend_up():
                       "atr14_1h", "swing_highs", "swing_lows", "rel_volume", "trend_4h", "sma50_1d"}
 
 
+def test_chg_1d_against_last_daily_bar():
+    # daily bars are finished sessions only, so the last one holds the previous close
+    f = ticker_features("MSFT", rising("MSFT", 1, 60, NOW), [], rising("MSFT", 24, 30, NOW))
+    assert f["chg_1d_pct"] == 0.0
+
+
 def test_features_empty_bars():
     f = ticker_features("MSFT", [], [], [])
     assert f["last"] is None and f["trend_4h"] == "unknown"
@@ -122,6 +128,26 @@ async def test_report_timeout_billed_estimate(env):
     _, text = await build_report(data, Slow(), budget, CFG, db, NOW)
     assert "Analyst unavailable: x: timeout" in text
     assert db.spent(CFG.settings.analyst_model, "2026-10") > 0
+
+
+class FormingBar:
+    """Like Alpaca live: also returns the bar still forming at `end`."""
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def bars(self, symbol, tf, start, end):
+        out = await self.inner.bars(symbol, tf, start, end)
+        return out + [Bar(symbol, end - timedelta(minutes=1), 300, 300, 300, 300, 1)]
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+async def test_report_ignores_forming_bars(env):
+    data, db, budget = env
+    await build_report(FormingBar(data), None, budget, CFG, db, NOW)
+    f = db.latest_report_features()["MSFT"]
+    assert f["last"] == pytest.approx(200) and f["rel_volume"] > 0.5
 
 
 class StaticFundamentals:

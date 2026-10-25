@@ -11,6 +11,12 @@ TF_DURATION = {"1Min": timedelta(minutes=1), "1Hour": timedelta(hours=1),
                "4Hour": timedelta(hours=4), "1Day": timedelta(days=1)}
 
 
+def finished(bars: list[Bar], timeframe: Timeframe, now: datetime) -> list[Bar]:
+    """Drop the bar still forming at `now`. Alpaca presumably returns it (not checked with a live
+    call), recorded data never does: without this, live and replay compute different numbers."""
+    return [b for b in bars if b.ts + TF_DURATION[timeframe] <= now]
+
+
 class DataError(Exception):
     pass
 
@@ -18,7 +24,8 @@ class DataError(Exception):
 class MarketData(Protocol):
     async def bars(self, symbol: str, timeframe: Timeframe, start: datetime,
                    end: datetime) -> list[Bar]:
-        """Bars with start <= ts < end, oldest first."""
+        """Bars with start <= ts < end, oldest first. May include the bar still forming: wrap in
+        `finished()` before computing numbers."""
         ...
 
     async def latest_prices(self, symbols: list[str]) -> dict[str, float]: ...
