@@ -9,7 +9,7 @@ from datetime import datetime, time
 from typing import Literal
 
 from stockbot import interval
-from stockbot.agent import research
+from stockbot.agent import chart_tool, research
 from stockbot.agent.control import random_decision, rules_decision
 from stockbot.agent.momentum import momentum_bars, momentum_decision
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
@@ -22,6 +22,7 @@ from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
 from stockbot.db import DB
+from stockbot.history import HistorySource
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
@@ -47,6 +48,7 @@ class AppContext:
     clock: Clock
     fundamentals: FundamentalsSource | None = None
     search: SearchClient | None = None  # used by arms with search: true
+    history: HistorySource | None = None  # daily_bars sync source; None in replay
 
 
 @dataclass(frozen=True)
@@ -151,8 +153,9 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
                         prices: dict[str, float], nav: float,
                         now: datetime) -> tuple[Decision | None, Status | None]:
     """Ask the arm's model, retrying once on an unparseable reply. A search arm may first take
-    a search step and a read step (agent/research.py). (decision, None) or (None, failure
-    status); ex collects the exchange either way."""
+    a search step and a read step (agent/research.py), a chart arm one chart step
+    (agent/chart_tool.py). (decision, None) or (None, failure status); ex collects the
+    exchange either way."""
     db, s = ctx.db, ctx.cfg.settings
     journal = None
     if arm.variant == "improved":
@@ -162,14 +165,17 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
                               db.closed_trades(arm.name)[-10:], notes[0] if notes else None,
                               db.journal_recent(arm.name, "lesson", 5))
     web = research.Session(ctx.search, s, arm.name) if arm.search and ctx.search is not None else None
-    system = system_prompt(arm.variant, s, search=web is not None)
+    pics = chart_tool.Session(db, s, now) if arm.charts else None
+    images: tuple[bytes, ...] = ()  # chart PNGs, re-sent with every later step (stateless calls)
+    system = system_prompt(arm.variant, s, search=web is not None, charts=pics is not None)
     user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
     client = ctx.clients[arm.model]
 
     async def ask(prompt: str, purpose: str) -> str:
         ex.prompt = prompt
         try:
-            res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt)
+            res, cost = await ctx.budget.complete(client, arm.model, arm.name, purpose, system, prompt,
+                                                  images=images)
         except LLMError as e:
             ex.cost += e.cost
             ex.replies.append(str(e))
@@ -181,8 +187,10 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.replies.append(res.text)
         return res.text
 
-    async def turn(prompt: str, purpose: str) -> Decision | research.Step:
+    async def turn(prompt: str, purpose: str) -> Decision | research.Step | tuple[Literal["chart"], list]:
         reply = await ask(prompt, purpose)
+        if pics and (charts := pics.request(reply)) is not None:
+            return "chart", charts
         step = web.request(reply) if web else None
         return parse_decision(reply, arm.variant, s.universe) if step is None else step
 
@@ -199,7 +207,12 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
                 continue
             if isinstance(out, Decision):
                 return out, None
-            prompt, purpose, err = prompt + await web.run(out), f"{out[0]}_step", None
+            if out[0] == "chart":
+                block, pngs = await pics.run(out[1])
+                images += pngs
+            else:
+                block = await web.run(out)
+            prompt, purpose, err = prompt + block, f"{out[0]}_step", None
     except LLMError:
         return None, "llm_failed"
 

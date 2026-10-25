@@ -476,3 +476,50 @@ async def test_search_arm_without_client_decides_plainly(tmp_path):
     ctx, llm = make_ctx(tmp_path, [buy()])  # ctx.search None
     r = await run_cycle(ctx, ARMS["deepseek-improved"], SLOT, "scheduled")
     assert r.status == "ok" and '{"search"' not in llm.calls[0][0]
+
+
+# ---------- chart steps (deepseek-improved has charts: true) ----------
+def chart_ctx(tmp_path, replies):
+    from tests.test_history import days
+    ctx, llm = make_ctx(tmp_path, replies)
+    ctx.search = FakeSearch(HITS, {})
+    ctx.db.upsert_daily(days("NVDA", date(2026, 9, 1), [float(i) for i in range(1, 30)]))
+    return ctx, llm
+
+
+CHART = '{"chart": [{"symbol": "NVDA", "tf": "1Week", "start": "2026-09-01"}]}'
+
+
+async def test_chart_then_decide(tmp_path):
+    ctx, llm = chart_ctx(tmp_path, [CHART, buy()])
+    r = await run_cycle(ctx, ARMS["deepseek-improved"], SLOT, "scheduled")
+    assert r.status == "ok" and r.orders == 1
+    assert '{"chart": [' in llm.calls[0][0]
+    first, second = llm.calls[0][1], llm.calls[1][1]
+    assert second.startswith(first) and "# CHART image 1: NVDA 1Week 2026-09-01..2026-10-20 linear" in second
+    assert llm.images[0] == () and len(llm.images[1]) == 1 and llm.images[1][0][:4] == b"\x89PNG"
+    assert purposes(ctx) == ["decision", "chart_step"]
+    d = ctx.db.recent_decisions("deepseek-improved", 1)[0]
+    assert "# CHART image 1" in ctx.db.decision(d["id"])["prompt"]
+
+
+async def test_chart_then_search_then_decide_keeps_images(tmp_path):
+    ctx, llm = chart_ctx(tmp_path, [CHART, '{"search": "nvda"}', buy()])
+    r = await run_cycle(ctx, ARMS["deepseek-improved"], SLOT, "scheduled")
+    assert r.status == "ok" and ctx.search.queries == ["nvda"]
+    assert [len(i) for i in llm.images] == [0, 1, 1]  # stateless steps: images re-sent every later call
+    assert purposes(ctx) == ["decision", "chart_step", "search_step"]
+
+
+async def test_second_chart_step_retried(tmp_path):
+    ctx, llm = chart_ctx(tmp_path, [CHART, CHART, buy()])
+    r = await run_cycle(ctx, ARMS["deepseek-improved"], SLOT, "scheduled")
+    assert r.status == "ok" and "chart not allowed now" in llm.calls[2][1]
+    assert purposes(ctx) == ["decision", "chart_step", "retry"]
+
+
+async def test_baseline_ignores_chart_reply(tmp_path):
+    ctx, llm = chart_ctx(tmp_path, [CHART])
+    r = await run_cycle(ctx, ARMS["deepseek-baseline"], SLOT, "scheduled")
+    assert "chart" not in llm.calls[0][0].lower() and llm.images == [()]  # no tool: reply holds no orders
+    assert r.orders == 0

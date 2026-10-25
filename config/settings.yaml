@@ -32,3 +32,6 @@ max_wakes_per_day: 3
 search_max_results: 10
 search_max_pages: 3        # pages the bot may open per decision
 search_page_chars: 15000   # each page cut to this; caps token cost
+# price history (daily_bars, Alpaca SIP feed): dashboard + chart tool
+history_start: 2016-01-01
+chart_max_per_decision: 3  # charts: true arms: pictures per decision (one chart step)

@@ -1,6 +1,7 @@
 """OpenAI-compatible chat completions: Moonshot, DeepSeek, OpenRouter, Ollama, OpenAI."""
 from __future__ import annotations
 
+import base64
 import time
 
 import httpx
@@ -15,10 +16,14 @@ class OpenAICompatClient:
         self.timeout = timeout_s
         self.http = http or httpx.AsyncClient()
 
-    async def complete(self, system: str, user: str, json_mode: bool = True) -> LLMResult:
+    async def complete(self, system: str, user: str, json_mode: bool = True,
+                       images: tuple[bytes, ...] = ()) -> LLMResult:
+        content = [{"type": "text", "text": user}, *(
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}
+            for png in images)] if images else user
         body = {"model": self.cfg.model,
                 "messages": [{"role": "system", "content": system},
-                             {"role": "user", "content": user}]}
+                             {"role": "user", "content": content}]}
         if json_mode:
             body["response_format"] = {"type": "json_object"}
         body.update(self.cfg.extra_body or {})

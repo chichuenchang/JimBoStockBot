@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
-from stockbot import interval
+from stockbot import history, interval
 from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
-from stockbot.clock import ET, et_date, in_session, report_slots
+from stockbot.clock import ET, et_at, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
@@ -16,6 +16,8 @@ from stockbot.report.analyst import build_report
 
 log = logging.getLogger("stockbot")
 REPLAY_GAP = timedelta(minutes=2)
+HISTORY_LAG = timedelta(minutes=16)  # free plan: SIP feed blocked for the last 15 min
+HISTORY_RETRY = timedelta(minutes=30)
 
 
 def floor_minute(ts: datetime) -> datetime:
@@ -31,6 +33,8 @@ class Daemon:
         self._data_failed = False
         self._market_logged: str | None = None  # last market line logged
         self.cycles_run = 0  # scheduled slots completed by this daemon instance
+        self._history_retry = datetime.min.replace(tzinfo=UTC)
+        self._history_done: date | None = None  # per instance: a restart syncs, catching new universe symbols
         s = ctx.cfg.settings
         for arm in ctx.cfg.arms:
             if arm.enabled:
@@ -153,6 +157,26 @@ class Daemon:
                     await self._guard(f"wake {arm.name}", run_cycle(self.ctx, arm, bar.ts, "wake"))
                     break
 
+    async def _history(self, now: datetime, session: Session | None) -> None:
+        """Daily bars through the last complete day: today once closed + SIP lag, else yesterday."""
+        source, s = self.ctx.history, self.ctx.cfg.settings
+        if source is None or now < self._history_retry:
+            return
+        today = et_date(now)
+        done = today if session and now >= session.close_utc + HISTORY_LAG else today - timedelta(days=1)
+        if self._history_done == done:
+            return
+        end = min(et_at(done + timedelta(days=1), "00:00"), now - HISTORY_LAG)
+        try:
+            n = await history.sync(self.ctx.db, source, list(s.universe), s.history_start, end)
+        except Exception as e:  # a down feed must not retry 22 fetches every 20 s pass
+            self._history_retry = now + HISTORY_RETRY
+            log.error("history sync failed (retry in 30 min): %s", e)
+            return
+        self._history_done = done
+        if n:
+            log.info("price history: %d daily bars written through %s", n, done)
+
     async def step(self, now: datetime) -> None:
         db = self.ctx.db
         self._data_failed = False
@@ -177,6 +201,7 @@ class Daemon:
             await self._cycles(now, session)
             if not replayed:  # never wake the LLM on stale catch-up bars
                 await self._wakes(tick)
+        await self._history(now, session)  # after cycles: first backfill must not delay a decision
         db.kv_set("data_ok", "0" if self._data_failed else "1")
 
     async def run_forever(self, poll_s: float = 20) -> None:

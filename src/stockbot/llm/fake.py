@@ -12,9 +12,12 @@ class FakeLLM:
         self.replies = replies
         self.usage = usage
         self.calls: list[tuple[str, str]] = []
+        self.images: list[tuple[bytes, ...]] = []  # per call, parallel to calls
 
-    async def complete(self, system: str, user: str, json_mode: bool = True) -> LLMResult:
+    async def complete(self, system: str, user: str, json_mode: bool = True,
+                       images: tuple[bytes, ...] = ()) -> LLMResult:
         self.calls.append((system, user))
+        self.images.append(images)
         if callable(self.replies):
             text = self.replies(system, user)
         else:

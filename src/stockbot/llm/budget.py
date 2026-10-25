@@ -43,11 +43,12 @@ class Budget:
         return cost
 
     async def complete(self, client: LLMClient, model: str, arm: str | None, purpose: str,
-                       system: str, user: str, json_mode: bool = True) -> tuple[LLMResult, float]:
+                       system: str, user: str, json_mode: bool = True,
+                       images: tuple[bytes, ...] = ()) -> tuple[LLMResult, float]:
         """Call the model and bill it. A billable failure bills an estimate, so the cap still
         binds, and carries that cost on the raised LLMError."""
         try:
-            res = await client.complete(system, user, json_mode)
+            res = await client.complete(system, user, json_mode, images=images)
         except LLMError as e:
             if e.billable:
                 e.cost = self.record(model, arm, "timeout_estimate",

@@ -169,13 +169,17 @@ async function loadCandles() {
   if (!candleChart) {
     candleChart = LightweightCharts.createChart(el, { autoSize: true,
       layout: { background: { color: css("--surface-1") }, textColor: css("--text-secondary") },
-      grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } },
-      localization: { timeFormatter: (s) => etTime(s * 1000) },
-      timeScale: { timeVisible: true, tickMarkFormatter: (s) => new Date(s * 1000).toLocaleString("en-US",
-        { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
+      grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } } });
     candleSeries = candleChart.addCandlestickSeries({ upColor: css("--good"), downColor: css("--critical"),
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
   }
+  // day+ bars sit at ET midnight: show dates, not 00:00
+  const long = ["1Day", "1Week", "1Month"].includes(tf);
+  const etDay = (s) => new Date(s * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", year: "numeric", month: "short", day: "numeric" });
+  candleChart.applyOptions({ localization: { timeFormatter: (s) => long ? etDay(s) : etTime(s * 1000) },
+    timeScale: { timeVisible: !long, tickMarkFormatter: (s) => new Date(s * 1000).toLocaleString("en-US",
+      long ? { timeZone: "America/New_York", year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
+           : { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
   candleSeries.setData(res.bars);
   candleSeries.setMarkers(res.markers.map((m) => ({ time: m.time, position: m.side === "buy" ? "belowBar" : "aboveBar",
     color: m.side === "buy" ? css("--series-1") : css("--series-2"), shape: m.side === "buy" ? "arrowUp" : "arrowDown",
@@ -223,7 +227,10 @@ async function loadArm(st) {
   document.querySelectorAll("#decisions details").forEach((el) => el.addEventListener("toggle", async () => {
     if (!el.open || el.dataset.loaded) return;
     const d = await get(`/api/decision/${el.dataset.id}`);
-    el.querySelector(".detail").innerHTML = `<h2>Prompt</h2><pre>${esc(d.prompt)}</pre><h2>Reply</h2><pre>${esc(d.raw)}</pre>`;
+    // chart-tool pictures the bot saw, re-drawn (agent/chart_tool.py seen)
+    const pics = d.charts.map((c) =>
+      `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
+    el.querySelector(".detail").innerHTML = `<h2>Prompt</h2>${pics.join("")}<pre>${esc(d.prompt)}</pre><h2>Reply</h2><pre>${esc(d.raw)}</pre>`;
     el.dataset.loaded = "1";
   }));
 }

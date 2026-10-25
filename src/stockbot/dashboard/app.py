@@ -1,18 +1,20 @@
 """Localhost dashboard (FastAPI). Binds 127.0.0.1 only."""
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import asdict
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from stockbot import interval
+from stockbot import charts, history, interval
 from stockbot import pause as pause_flags
-from stockbot.clock import RealClock
+from stockbot.agent import chart_tool
+from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
@@ -110,22 +112,40 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         d = db.decision(decision_id)
         if d is None:
             raise HTTPException(404)
-        return d
+        return {**d, "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
 
     @app.get("/api/candles")
     async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
-        bars, err = [], None
-        if data is not None:
-            end = datetime.now(UTC)
-            tf = tf if tf in CANDLE_WINDOW else "1Min"
+        tf = tf if tf in CANDLE_WINDOW or tf in history.HISTORY_TFS else "1Min"
+        end = datetime.now(UTC)
+        long = tf in history.HISTORY_TFS
+        bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
+        err = None
+        start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
+                 else end - CANDLE_WINDOW["1Day" if long else tf])
+        if data is not None and start < end:  # history holds today once the close is synced
             try:
-                bars = [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
-                         "close": b.close} for b in await data.bars(symbol, tf, end - CANDLE_WINDOW[tf], end)]
+                bars += await data.bars(symbol, "1Day" if long else tf, start, end)
             except DataError as e:
                 err = str(e)
-        return {"bars": bars, "markers": q.fill_markers(db, known(arm), symbol), "error": err}
+        if long:
+            bars = history.aggregate(bars, tf)
+        return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
+                          "close": b.close} for b in bars],
+                "markers": q.fill_markers(db, known(arm), symbol), "error": err}
+
+    @app.get("/api/chart")
+    def api_chart(symbol: str, tf: str, start: date, end: date, log: bool = False):
+        """The chart-tool picture a bot saw, re-drawn from stored history."""
+        if symbol not in cfg.settings.universe or tf not in history.HISTORY_TFS:
+            raise HTTPException(404)
+        try:
+            png = charts.history_chart(db, charts.ChartSpec(symbol, tf, start, end, log))
+        except ValueError as e:
+            raise HTTPException(404, str(e)) from e
+        return Response(png, media_type="image/png")
 
     def set_pause(arm: str, on: bool):
         if arm != pause_flags.ALL and arm not in arm_names:

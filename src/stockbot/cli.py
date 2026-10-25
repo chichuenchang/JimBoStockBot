@@ -114,10 +114,10 @@ def _search(cfg: AppConfig):
     return AnySearch(key)
 
 
-def _ctx(cfg, db, data, clock, clients, fundamentals=None, search=None) -> AppContext:
+def _ctx(cfg, db, data, clock, clients, fundamentals=None, search=None, history=None) -> AppContext:
     s = cfg.settings
     return AppContext(cfg, db, data, SimBroker(db, s.slippage_bps, s.commission_per_order),
-                      Budget(db, cfg, clock), clients, clock, fundamentals, search)
+                      Budget(db, cfg, clock), clients, clock, fundamentals, search, history)
 
 
 async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool,
@@ -275,7 +275,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"daemon already running on {db_path}", file=sys.stderr)
             return 1
         clock = RealClock()
-        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg))
+        data = _alpaca()
+        ctx = _ctx(cfg, db, data, clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg), data)
         asyncio.run(Daemon(ctx).run_forever())
         return 0
     except ConfigError as e:
