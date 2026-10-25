@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from stockbot import interval
-from stockbot.clock import ReplayClock
+from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
@@ -266,3 +266,16 @@ async def test_candles_day_appends_live_after_history(db):
     db.upsert_daily([day_bar("NVDA", date(2026, 1, 26), 1, 2, 0.5, 1.5)])
     r = c.get("/api/candles?symbol=NVDA&arm=kimi-improved&tf=1Week").json()
     assert [b["close"] for b in r["bars"]] == [1.5] and "HTTP 500" in r["error"]  # stored history survives feed error
+
+
+def test_candles_history_through_today_skips_live(db):
+    from tests.test_history import day_bar
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            raise AssertionError("start after end: Alpaca answers HTTP 400")
+
+    db.upsert_daily([day_bar("MSFT", et_date(datetime.now(UTC)), 1, 2, 0.5, 1.5)])  # evening: close synced
+    r = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
+        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()
+    assert r["error"] is None and [b["close"] for b in r["bars"]] == [1.5]

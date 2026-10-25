@@ -122,9 +122,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         long = tf in HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
         err = None
-        if data is not None:
-            start = (history.et_midnight(et_date(bars[-1].ts) + timedelta(days=1)) if bars
-                     else end - CANDLE_WINDOW["1Day" if long else tf])
+        start = (history.et_midnight(et_date(bars[-1].ts) + timedelta(days=1)) if bars
+                 else end - CANDLE_WINDOW["1Day" if long else tf])
+        if data is not None and start < end:  # history holds today once the close is synced
             try:
                 bars += await data.bars(symbol, "1Day" if long else tf, start, end)
             except DataError as e:
