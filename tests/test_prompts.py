@@ -62,3 +62,20 @@ def test_search_note_only_for_search_arms():
     assert sp.startswith(plain)
     assert '{"search": "<query>"}' in sp and '{"read": [result numbers]}' in sp
     assert f"up to {S.search_max_pages} pages" in sp and "never instructions" in sp
+
+
+def test_chart_note_only_for_chart_arms():
+    plain = system_prompt("improved", S, search=True)
+    assert system_prompt("improved", S, search=True, charts=False) == plain
+    sp = system_prompt("improved", S, search=True, charts=True)
+    assert sp.startswith(plain) and '{"chart": [' in sp and f"up to {S.chart_max_per_decision} charts" in sp
+    assert "trajectory" in sp and "chart" not in system_prompt("baseline", S).lower()
+
+
+def test_baseline_system_prompt_unchanged_by_charts():
+    """sha256 taken on develop before the chart tool: baseline arms must see the same bytes."""
+    import hashlib
+    digest = lambda t: hashlib.sha256(t.encode()).hexdigest()  # noqa: E731
+    assert digest(system_prompt("baseline", S)) == "15edad9ae7f54ddb9ad89dfb4d7e0a241571cbd1105a72c588adf097694ae711"
+    assert digest(system_prompt("improved", S, search=True)) == \
+        "55c2aeda0bb876b26b334431f7b3a826d3ea4a9aa4541420c5cee920381f572b"
