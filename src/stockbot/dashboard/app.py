@@ -26,7 +26,6 @@ from stockbot.models import BENCHMARK
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
-HISTORY_TFS = history.HISTORY_TFS  # daily_bars since history_start + live bars after them
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
@@ -119,9 +118,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
-        tf = tf if tf in CANDLE_WINDOW or tf in HISTORY_TFS else "1Min"
+        tf = tf if tf in CANDLE_WINDOW or tf in history.HISTORY_TFS else "1Min"
         end = datetime.now(UTC)
-        long = tf in HISTORY_TFS
+        long = tf in history.HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
         err = None
         start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
@@ -140,7 +139,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     @app.get("/api/chart")
     def api_chart(symbol: str, tf: str, start: date, end: date, log: bool = False):
         """The chart-tool picture a bot saw, re-drawn from stored history."""
-        if symbol not in cfg.settings.universe or tf not in HISTORY_TFS:
+        if symbol not in cfg.settings.universe or tf not in history.HISTORY_TFS:
             raise HTTPException(404)
         try:
             png = charts.history_chart(db, charts.ChartSpec(symbol, tf, start, end, log))
