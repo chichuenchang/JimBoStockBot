@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
 from matplotlib.figure import Figure  # no pyplot: no global state, safe off the main thread
+from matplotlib.ticker import StrMethodFormatter
 
 from stockbot.clock import ET
 from stockbot.db import DB
@@ -22,6 +23,12 @@ def history_chart(db: DB, symbol: str, tf: HistoryTf, start: date, end: date, lo
 
 
 def render(bars: list[Bar], title: str, log: bool = False) -> bytes:
+    buf = io.BytesIO()
+    figure(bars, title, log).savefig(buf, format="png")
+    return buf.getvalue()
+
+
+def figure(bars: list[Bar], title: str, log: bool = False) -> Figure:
     if not bars:
         raise ValueError("no bars to draw")
     fig = Figure(figsize=SIZE_IN, dpi=DPI)
@@ -29,6 +36,7 @@ def render(bars: list[Bar], title: str, log: bool = False) -> bytes:
     ax.plot([b.ts.astimezone(ET).replace(tzinfo=None) for b in bars], [b.close for b in bars], linewidth=1.5)
     if log:
         ax.set_yscale("log")
+        ax.yaxis.set_major_formatter(StrMethodFormatter("{x:g}"))  # "100", not "10^2": the model reads prices
     loc = AutoDateLocator()
     ax.xaxis.set_major_locator(loc)
     ax.xaxis.set_major_formatter(ConciseDateFormatter(loc))
@@ -36,6 +44,4 @@ def render(bars: list[Bar], title: str, log: bool = False) -> bytes:
     ax.set_title(title)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png")
-    return buf.getvalue()
+    return fig

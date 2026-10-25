@@ -22,3 +22,8 @@ def test_render_log_differs():
 def test_render_empty_raises():
     with pytest.raises(ValueError):
         charts.render([], "t")
+
+
+def test_log_axis_labels_plain_prices():
+    ax = charts.figure(BARS, "t", log=True).axes[0]
+    assert ax.get_yscale() == "log" and ax.yaxis.get_major_formatter()(100, 0) == "100"
