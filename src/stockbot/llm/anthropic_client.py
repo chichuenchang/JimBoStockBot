@@ -1,6 +1,7 @@
 """Claude via the official anthropic SDK (beta messages for server-side refusal fallbacks)."""
 from __future__ import annotations
 
+import base64
 import time
 
 import anthropic
@@ -19,14 +20,19 @@ class AnthropicClient:
             api_key=api_key(cfg), timeout=timeout_s, max_retries=0,
             **({"base_url": cfg.base_url} if cfg.base_url else {}))
 
-    async def complete(self, system: str, user: str, json_mode: bool = True) -> LLMResult:
+    async def complete(self, system: str, user: str, json_mode: bool = True,
+                       images: tuple[bytes, ...] = ()) -> LLMResult:
+        text = user + (JSON_HINT if json_mode else "")
+        content = [{"type": "text", "text": text}, *(
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                         "data": base64.b64encode(png).decode()}} for png in images)] if images else text
         t0 = time.monotonic()
         try:
             resp = await self.sdk.beta.messages.create(
                 model=self.cfg.model,
                 max_tokens=16000,
                 system=system,
-                messages=[{"role": "user", "content": user + (JSON_HINT if json_mode else "")}],
+                messages=[{"role": "user", "content": content}],
                 output_config={"effort": self.effort},
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
