@@ -38,13 +38,13 @@ def aggregate(bars: list[Bar], tf: HistoryTf) -> list[Bar]:
 
 async def sync(db: DB, source: HistorySource, symbols: list[str], start: date, end: datetime) -> int:
     """Fetch each symbol's missing days up to end; returns bars written."""
-    n = 0
+    n, origin = 0, et_at(start, "00:00")
     for sym in symbols:
         last = db.last_daily(sym)
-        bars = await source.daily_history(sym, last.ts if last else et_at(start, "00:00"), end)
+        bars = await source.daily_history(sym, last.ts if last else origin, end)
         if last and bars and bars[0].ts == last.ts and abs(bars[0].close / last.close - 1) > SPLIT_TOLERANCE:
             db.delete_daily(sym)
-            bars = await source.daily_history(sym, et_at(start, "00:00"), end)
+            bars = await source.daily_history(sym, origin, end)
         db.upsert_daily(bars)
         n += len(bars)
     return n
