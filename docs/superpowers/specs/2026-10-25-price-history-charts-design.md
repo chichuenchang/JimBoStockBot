@@ -30,6 +30,9 @@ Bots see only indicator snapshots (report features) and recent bars. No sense of
 - Alpaca `feed=iex` daily NVDA earliest bar 2020-07-27. No 2016.
 - `feed=sip`, `adjustment=split`: 2016-01-04 onward, `1Day/1Week/1Month` all HTTP 200 on our free key.
 - DeepSeek `deepseek-flash` (`/models`: `input_modalities: ["text","image"]`): OpenAI-style `{"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}` part works. 64×64 PNG + short text = 197 prompt tokens.
+- Built (2026-10-25): full backfill 22 symbols = 58,602 bars, 3.3 s. PLTR starts 2020-09-30 (IPO). 1024×512 chart ≈ 330 prompt tokens each (87 text-only, 407 one image, 748 two). DeepSeek described NVDA log-weekly + PLTR daily trajectories correctly (trend, 2022 drawdown, range position).
+- SIP split-day junk: NVDA 2024-06-10 high 195.95 vs close 121.79; TSLA 2021-03-04 high 291.31 vs close 207.15. Only 2 of 58,602 bars; shows as dashboard candle wick only, bot chart uses closes.
+- Chart `end` inclusive everywhere (bot, spec line, `/api/chart`); bot charts stop at yesterday (today's daily bar holds the close = lookahead).
 
 ## Design
 
