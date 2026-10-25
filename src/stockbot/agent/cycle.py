@@ -187,7 +187,7 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
         ex.replies.append(res.text)
         return res.text
 
-    async def turn(prompt: str, purpose: str) -> Decision | research.Step | tuple[str, list]:
+    async def turn(prompt: str, purpose: str) -> Decision | research.Step | tuple[Literal["chart"], list]:
         reply = await ask(prompt, purpose)
         if pics and (charts := pics.request(reply)) is not None:
             return "chart", charts
