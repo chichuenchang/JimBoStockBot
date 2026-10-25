@@ -96,3 +96,16 @@ def test_api_key_missing_env(monkeypatch):
 def test_api_key_reads_env(monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-test")
     assert api_key(CFG.models["kimi-k3"]) == "sk-test"
+
+
+def test_charts_flag_only_on_jimbo():
+    for cfg in (CFG, load_config(REPO_CONFIG)):
+        assert [a.name for a in cfg.arms if a.charts] == ["deepseek-improved"]
+    assert CFG.settings.chart_max_per_decision == 3
+
+
+def test_charts_on_control_arm_rejected(tmp_path):
+    d = copy_config(tmp_path)
+    (d / "arms.yaml").write_text("arms:\n  - {name: r, variant: rules, enabled: true, charts: true}\n")
+    with pytest.raises(ConfigError, match="charts needs an LLM arm"):
+        load_config(d)
