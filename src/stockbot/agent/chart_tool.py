@@ -4,6 +4,7 @@ daily_bars and sends the PNGs as images with the next call (protocol as agent/re
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from datetime import date, datetime, timedelta
 
@@ -15,6 +16,7 @@ from stockbot.config import Settings
 from stockbot.db import DB
 from stockbot.history import HISTORY_TFS
 
+log = logging.getLogger("stockbot")
 DEFAULT_SPAN = timedelta(days=365)
 _SEEN = re.compile(r"^# CHART image \d+: (\S+) (\S+) (\S+)\.\.(\S+) (linear|log)$", re.M)  # parses _line
 
@@ -87,6 +89,10 @@ class Session:
                 pngs.append(await asyncio.to_thread(charts.history_chart, self.db, c))
             except ValueError:
                 lines.append(f"# CHART {n} skipped: no price history for {c.symbol} in {c.start}..{c.end}")
+                continue
+            except Exception:  # a chart is optional: never lose the decision over it
+                log.exception("chart %s failed", c)
+                lines.append(f"# CHART {n} skipped: chart failed")
                 continue
             lines.append(_line(len(pngs), c))
         if len(raw) > cap:

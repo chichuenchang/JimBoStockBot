@@ -75,6 +75,14 @@ async def test_seen_reads_back_run(session):
                                                 ChartSpec("MSFT", "1Day", date(2025, 1, 20), date(2026, 1, 20))]
 
 
+async def test_render_crash_is_a_note(session, monkeypatch, caplog):
+    def boom(*a):
+        raise RuntimeError("matplotlib exploded")
+    monkeypatch.setattr(chart_tool.charts, "history_chart", boom)
+    text, pngs = await session.run([{"symbol": "MSFT", "tf": "1Day"}])
+    assert pngs == () and "# CHART 1 skipped: chart failed" in text and "matplotlib exploded" in caplog.text
+
+
 async def test_default_start_one_year(session):
     text, _ = await session.run([{"symbol": "MSFT", "tf": "1Day"}])
     assert "# CHART image 1: MSFT 1Day 2025-01-29..2026-01-29 linear" in text
