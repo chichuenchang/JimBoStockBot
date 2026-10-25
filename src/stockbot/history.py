@@ -9,6 +9,7 @@ from stockbot.db import DB
 from stockbot.models import Bar
 
 HistoryTf = Literal["1Day", "1Week", "1Month"]
+HISTORY_TFS: tuple[HistoryTf, ...] = ("1Day", "1Week", "1Month")
 SPLIT_TOLERANCE = 0.01  # refetched last day off by more = prices were re-adjusted (split)
 
 

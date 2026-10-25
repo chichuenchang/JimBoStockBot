@@ -24,7 +24,7 @@ from stockbot.models import BENCHMARK
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
-HISTORY_TFS = ("1Day", "1Week", "1Month")  # daily_bars since history_start + live bars after them
+HISTORY_TFS = history.HISTORY_TFS  # daily_bars since history_start + live bars after them
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
