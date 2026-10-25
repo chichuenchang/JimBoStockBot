@@ -6,10 +6,10 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-from stockbot.clock import ET, et_date, month_key
+from stockbot.clock import et_at, et_date, month_key
 from stockbot.models import AccountState, Bar, ClosedTrade, ExitPlan, Fill, Position
 
 SCHEMA = """
@@ -338,7 +338,7 @@ class DB:
 
     @staticmethod
     def _daily(rows: list[sqlite3.Row]) -> list[Bar]:
-        return [Bar(r["symbol"], datetime.combine(date.fromisoformat(r["day"]), time(), ET).astimezone(UTC),
+        return [Bar(r["symbol"], et_at(date.fromisoformat(r["day"]), "00:00"),
                     r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows]
 
     def daily_bars(self, symbol: str, start: date, end: date) -> list[Bar]:

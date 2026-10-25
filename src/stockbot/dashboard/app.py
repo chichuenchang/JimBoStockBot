@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from stockbot import charts, history, interval
 from stockbot import pause as pause_flags
 from stockbot.agent import chart_tool
-from stockbot.clock import RealClock, et_date
+from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
@@ -124,7 +124,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         long = tf in HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
         err = None
-        start = (history.et_midnight(et_date(bars[-1].ts) + timedelta(days=1)) if bars
+        start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
                  else end - CANDLE_WINDOW["1Day" if long else tf])
         if data is not None and start < end:  # history holds today once the close is synced
             try:

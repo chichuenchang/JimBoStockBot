@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime, timedelta
 from stockbot import history, interval
 from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
-from stockbot.clock import ET, et_date, in_session, report_slots
+from stockbot.clock import ET, et_at, et_date, in_session, report_slots
 from stockbot.data.base import DataError
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
@@ -166,7 +166,7 @@ class Daemon:
         done = today if session and now >= session.close_utc + HISTORY_LAG else today - timedelta(days=1)
         if self._history_done == done:
             return
-        end = min(history.et_midnight(done + timedelta(days=1)), now - HISTORY_LAG)
+        end = min(et_at(done + timedelta(days=1), "00:00"), now - HISTORY_LAG)
         try:
             n = await history.sync(self.ctx.db, source, list(s.universe), s.history_start, end)
         except Exception as e:  # a down feed must not retry 22 fetches every 20 s pass
