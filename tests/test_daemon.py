@@ -299,12 +299,21 @@ async def test_history_sync_once_per_day(tmp_path):
     daemon.ctx.history = CountingHistory()
     await run_day(daemon, session, clock)  # ends close + 10 min: today not complete yet
     assert len(daemon.ctx.history.calls) == len(CFG.settings.universe)
-    assert daemon.ctx.db.kv_get("history_synced") == (DAY - timedelta(days=1)).isoformat()
+    assert daemon._history_done == DAY - timedelta(days=1)
     assert all(end <= session.open_utc for _, _, end in daemon.ctx.history.calls)  # yesterday's bars only
     t = session.close_utc + timedelta(minutes=17)
     clock.set(t)
     await daemon.step(t)
-    assert daemon.ctx.db.kv_get("history_synced") == DAY.isoformat()
+    assert daemon._history_done == DAY
+    assert len(daemon.ctx.history.calls) == 2 * len(CFG.settings.universe)
+
+
+async def test_history_restart_syncs_again(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory()
+    await daemon.step(clock.now())
+    restarted = Daemon(daemon.ctx, serve_dashboard=False)  # e.g. universe grew: new symbols need backfill
+    await restarted.step(clock.now())
     assert len(daemon.ctx.history.calls) == 2 * len(CFG.settings.universe)
 
 

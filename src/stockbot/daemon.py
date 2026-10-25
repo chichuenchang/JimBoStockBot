@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from stockbot import history, interval
 from stockbot.agent.cycle import AppContext, run_cycle
@@ -34,6 +34,7 @@ class Daemon:
         self._market_logged: str | None = None  # last market line logged
         self.cycles_run = 0  # scheduled slots completed by this daemon instance
         self._history_retry = datetime.min.replace(tzinfo=UTC)
+        self._history_done: date | None = None  # per instance: a restart syncs, catching new universe symbols
         s = ctx.cfg.settings
         for arm in ctx.cfg.arms:
             if arm.enabled:
@@ -163,7 +164,7 @@ class Daemon:
             return
         today = et_date(now)
         done = today if session and now >= session.close_utc + HISTORY_LAG else today - timedelta(days=1)
-        if self.ctx.db.kv_get("history_synced") == done.isoformat():
+        if self._history_done == done:
             return
         end = min(history.et_midnight(done + timedelta(days=1)), now - HISTORY_LAG)
         try:
@@ -172,7 +173,7 @@ class Daemon:
             self._history_retry = now + HISTORY_RETRY
             log.error("history sync failed (retry in 30 min): %s", e)
             return
-        self.ctx.db.kv_set("history_synced", done.isoformat())
+        self._history_done = done
         if n:
             log.info("price history: %d daily bars written through %s", n, done)
 
