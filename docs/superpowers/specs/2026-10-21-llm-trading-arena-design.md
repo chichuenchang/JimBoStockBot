@@ -36,7 +36,7 @@ Experiment: AA Season 1.5 replica harness vs our improved harness, same models. 
 - Windows 11, Python 3.12. Runs as user process, not admin.
 - Alpaca paper account (email only, works from Canada) used for **data only**: 1-min bars, daily/4h bars, latest quotes, news, market calendar. Free IEX feed. Order execution simulated by harness.
 - Market hours 09:30–16:00 ET, Alpaca calendar for holidays / half days. All timestamps stored UTC, shown ET.
-- Universe: `universe` in `config/settings.yaml`. Started as AA list (QQQ replaces NDX); 15 large caps added 2026-10-24 (PR #12), so no longer AA-identical.
+- Universe: `universe` in `config/settings.yaml`. Superset of AA list, so no longer AA-identical.
 - Start NAV $10,000 per arm. Long only, cash only (1x).
 - Keys in `.env` (gitignored): `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `MOONSHOT_API_KEY`, `DEEPSEEK_API_KEY`, placeholders for others.
 
