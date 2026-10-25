@@ -1,11 +1,10 @@
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 
 from stockbot.clock import ET, ReplayClock, cycle_slots, in_session, month_key, report_slots
-from stockbot.config import load_config
 from stockbot.models import Session
+from tests.snapshot import CFG
 
-S = load_config(Path(__file__).parent.parent / "config").settings
+S = CFG.settings
 
 
 def sess(day: date, open_h: int, open_m: int, close_h: int) -> Session:
@@ -18,20 +17,26 @@ def et_hm(ts: datetime) -> str:
 
 
 def test_full_day_has_9_slots():
-    slots = cycle_slots(sess(date(2026, 10, 21), 13, 30, 20), S)
+    slots = cycle_slots(sess(date(2026, 10, 21), 13, 30, 20), S, S.cycle_every_min)
     assert [et_hm(s) for s in slots] == [
         "09:45", "10:30", "11:15", "12:00", "12:45", "13:30", "14:15", "15:00", "15:45"]
     assert all(s.tzinfo is not None for s in slots)
 
 
+def test_five_min_grid():
+    slots = cycle_slots(sess(date(2026, 10, 21), 13, 30, 20), S, 5)
+    assert len(slots) == 73
+    assert (et_hm(slots[0]), et_hm(slots[1]), et_hm(slots[-1])) == ("09:45", "09:50", "15:45")
+
+
 def test_half_day_drops_slots_after_close():
-    slots = cycle_slots(sess(date(2026, 11, 27), 14, 30, 18), S)
+    slots = cycle_slots(sess(date(2026, 11, 27), 14, 30, 18), S, S.cycle_every_min)
     assert len(slots) == 5
     assert et_hm(slots[-1]) == "12:45"
 
 
 def test_dst_switch():
-    slots = cycle_slots(sess(date(2026, 11, 2), 14, 30, 21), S)
+    slots = cycle_slots(sess(date(2026, 11, 2), 14, 30, 21), S, S.cycle_every_min)
     assert slots[0] == datetime(2026, 11, 2, 14, 45, tzinfo=UTC)
 
 

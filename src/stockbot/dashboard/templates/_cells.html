@@ -1,0 +1,16 @@
+{% macro sign(v) -%}{{ 'pos' if v > 0 else 'neg' if v < 0 else '' }}{%- endmacro %}
+{% macro cell(k, v) -%}
+{%- if v is none -%}<span class="muted">–</span>
+{%- elif k in ("return_pct", "vs_benchmark_pct") -%}<span class="{{ sign(v) }}">{{ '%+.2f' % v }}%</span>
+{%- elif k in ("pnl", "net_after_llm", "expectancy", "pnl_ex_best") -%}<span class="{{ sign(v) }}">{{ '%+.2f' % v }}</span>
+{%- elif k == "nav" -%}{{ '{:,.2f}'.format(v) }}
+{%- elif k in ("costs", "llm_spend", "avg_win", "avg_loss") -%}{{ '%.2f' % v }}
+{%- elif k in ("win_rate", "max_drawdown", "invested_pct") -%}{{ '%.1f' % v }}%
+{%- elif k in ("profit_factor", "sharpe", "beta") -%}{{ '%.2f' % v }}
+{%- elif k == "sharpe_ci" -%}{{ '%.2f to %.2f' % (v[0], v[1]) }}
+{%- elif k == "alpha_pct" -%}<span class="{{ sign(v) }}">{{ '%+.1f' % v }}%</span>
+{%- else -%}{{ v }}{%- endif -%}
+{%- endmacro %}
+{% macro kpi(k, r) -%}
+<div class="kpi" title="{{ tips.get(k, '') }}"><span>{{ labels.get(k, k) }}</span><b>{{ cell(k, r[k]) }}</b></div>
+{%- endmacro %}

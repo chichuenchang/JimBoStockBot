@@ -50,7 +50,15 @@ class AlpacaData:
 
     async def bars(self, symbol: str, timeframe: Timeframe, start: datetime,
                    end: datetime) -> list[Bar]:
-        params = {"timeframe": timeframe, "start": _iso(start), "end": _iso(end), "feed": "iex",
+        return await self._bars(symbol, timeframe, start, end, "iex")
+
+    async def daily_history(self, symbol: str, start: datetime, end: datetime) -> list[Bar]:
+        """SIP feed: history back to 2016 (IEX starts 2020-07). Free plan blocks its last 15 min."""
+        return await self._bars(symbol, "1Day", start, end, "sip")
+
+    async def _bars(self, symbol: str, timeframe: Timeframe, start: datetime, end: datetime,
+                    feed: str) -> list[Bar]:
+        params = {"timeframe": timeframe, "start": _iso(start), "end": _iso(end), "feed": feed,
                   "adjustment": "split", "limit": 10000}
         out: list[Bar] = []
         while True:

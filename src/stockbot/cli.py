@@ -1,4 +1,4 @@
-"""Command line: run | record | replay | pause | resume | status."""
+"""Command line: run | record | replay | pause | resume | interval | status."""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from stockbot import interval
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import RealClock, ReplayClock
@@ -28,6 +29,7 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.pause import ALL, is_paused, set_paused
 from stockbot.report.analyst import HISTORY
+from stockbot.search.anysearch import AnySearch, NoSearch
 
 log = logging.getLogger("stockbot")
 REPLAY_LEAD = timedelta(minutes=30)
@@ -43,6 +45,8 @@ def setup_logging(log_dir: Path) -> None:
     sh.setFormatter(fmt)
     root = logging.getLogger("stockbot")
     root.setLevel(logging.INFO)
+    for h in root.handlers:  # a repeat call must not leak the old file handle
+        h.close()
     root.handlers = [fh, sh]
 
 
@@ -90,19 +94,30 @@ def _alpaca():
 
 
 def _fundamentals():
-    from stockbot.data.fundamentals import AlphaVantage
+    from stockbot.data.fundamentals import AlphaVantage, Fundamentals
     load_dotenv()
     key = os.environ.get("ALPHAVANTAGE_API_KEY")
     if not key:
         log.warning("ALPHAVANTAGE_API_KEY not set: no fundamentals, earnings only from events.yaml")
         return None
-    return AlphaVantage(key)
+    return Fundamentals(AlphaVantage(key))
 
 
-def _ctx(cfg, db, data, clock, clients, fundamentals=None) -> AppContext:
+def _search(cfg: AppConfig):
+    """Live web search when an enabled arm has search: true. No key = anonymous, lower limits."""
+    if not any(a.enabled and a.search for a in cfg.arms):
+        return None
+    load_dotenv()
+    key = os.environ.get("ANYSEARCH_API_KEY")
+    if not key:
+        log.warning("ANYSEARCH_API_KEY not set: web search runs anonymous (lower rate limits)")
+    return AnySearch(key)
+
+
+def _ctx(cfg, db, data, clock, clients, fundamentals=None, search=None, history=None) -> AppContext:
     s = cfg.settings
     return AppContext(cfg, db, data, SimBroker(db, s.slippage_bps, s.commission_per_order),
-                      Budget(db, cfg, clock), clients, clock, fundamentals)
+                      Budget(db, cfg, clock), clients, clock, fundamentals, search, history)
 
 
 async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fake: bool,
@@ -115,7 +130,7 @@ async def _replay(cfg: AppConfig, db: DB, data_dir: Path, d0: date, d1: date, fa
         log.error("no sessions in %s for %s..%s", data_dir, d0, d1)
         return 1
     clock.set(sessions[0].open_utc - REPLAY_LEAD)
-    daemon = Daemon(_ctx(cfg, db, data, clock, _clients(cfg, fake)), serve_dashboard=False)
+    daemon = Daemon(_ctx(cfg, db, data, clock, _clients(cfg, fake), search=NoSearch()), serve_dashboard=False)
     for s in sessions:
         t = s.open_utc - REPLAY_LEAD
         while t <= s.close_utc + REPLAY_TAIL:
@@ -161,7 +176,26 @@ def _status(cfg: AppConfig, db: DB) -> int:
             n = 0
         paused = " PAUSED" if is_paused(db, arm.name) else ""
         print(f"{arm.name:24} last decision {last or '-'}  positions {n}{paused}")
+    print(_interval_line(cfg, db))
     return 0
+
+
+def _interval_line(cfg: AppConfig, db: DB) -> str:
+    return f"decision interval {interval.get(db, cfg.settings)} min ({interval.source(db)})"
+
+
+def _daemon_lock(db_path: Path):
+    """Exclusive lock beside the DB for process life; OS frees it on exit or crash. None = held elsewhere.
+    Covers every start path (scheduled task, run_daemon.ps1, by hand): two daemons lock the DB."""
+    import msvcrt
+    f = open(db_path.with_suffix(".lock"), "a+b")  # noqa: SIM115 - must stay open while held
+    f.seek(0)
+    try:
+        msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+    except OSError:
+        f.close()
+        return None
+    return f
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -184,6 +218,9 @@ def main(argv: list[str] | None = None) -> int:
         sp = sub.add_parser(name)
         sp.add_argument("arm", nargs="?")
         sp.add_argument("--all", action="store_true")
+    ip = sub.add_parser("interval", help="show or set minutes between decisions (daemon picks it up live)")
+    ip.add_argument("minutes", nargs="?", type=int)
+    ip.add_argument("--reset", action="store_true", help="back to settings.yaml cycle_every_min")
     sub.add_parser("status")
     a = p.parse_args(argv)
 
@@ -208,6 +245,15 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         set_paused(db, ALL if a.all else a.arm, a.cmd == "pause")
         return 0
+    if a.cmd == "interval":
+        try:
+            if a.reset or a.minutes is not None:
+                interval.set(db, None if a.reset else a.minutes)
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 2
+        print(_interval_line(cfg, db))
+        return 0
     if a.cmd == "status":
         return _status(cfg, db)
 
@@ -224,8 +270,13 @@ def main(argv: list[str] | None = None) -> int:
                 from stockbot.data.recorded import RecordedData
                 serve_forever(db, cfg, RecordedData(Path(a.data), ReplayClock(datetime.now(UTC))))
             return rc
+        lock = _daemon_lock(db_path)
+        if lock is None:
+            print(f"daemon already running on {db_path}", file=sys.stderr)
+            return 1
         clock = RealClock()
-        ctx = _ctx(cfg, db, _alpaca(), clock, _clients(cfg, fake=False), _fundamentals())
+        data = _alpaca()
+        ctx = _ctx(cfg, db, data, clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg), data)
         asyncio.run(Daemon(ctx).run_forever())
         return 0
     except ConfigError as e:

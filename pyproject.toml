@@ -12,6 +12,8 @@ dependencies = [
     "jinja2>=3.1",
     "tzdata>=2026.5",
     "anthropic>=2.0.0",
+    "yfinance>=1.7.0",
+    "matplotlib>=3.9",
 ]
 
 [project.scripts]

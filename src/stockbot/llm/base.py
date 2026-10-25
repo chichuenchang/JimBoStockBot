@@ -42,7 +42,10 @@ class LLMResult:
 
 
 class LLMClient(Protocol):
-    async def complete(self, system: str, user: str, json_mode: bool = True) -> LLMResult: ...
+    async def complete(self, system: str, user: str, json_mode: bool = True,
+                       images: tuple[bytes, ...] = ()) -> LLMResult:
+        """images: PNGs sent after the user text."""
+        ...
 
 
 def cost_usd(cfg: ModelCfg, usage: Usage) -> float:

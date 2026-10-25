@@ -1,11 +1,10 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
 from stockbot.agent.prompts import JournalView, build_user_prompt, render_state, system_prompt
-from stockbot.config import load_config
 from stockbot.models import AccountState, ClosedTrade, ExitPlan, Position
+from tests.snapshot import CFG
 
-S = load_config(Path(__file__).parent.parent / "config").settings
+S = CFG.settings
 NOW = datetime(2026, 10, 21, 14, 0, tzinfo=UTC)
 STATE = AccountState("a", 5000.0, {"MSFT": Position("MSFT", 10, 480.0, NOW, ExitPlan(470, 500, "4h < 470"), 10)})
 PRICES = {"MSFT": 483.0, "NVDA": 182.0}
@@ -54,3 +53,29 @@ def test_system_prompts_differ_on_sizing():
     for v in ("baseline", "improved"):
         sp = system_prompt(v, S)
         assert "buy_to_enter" in sp and "close_position" in sp and "PLTR" in sp
+
+
+def test_search_note_only_for_search_arms():
+    plain = system_prompt("improved", S)
+    assert system_prompt("improved", S, search=False) == plain
+    sp = system_prompt("improved", S, search=True)
+    assert sp.startswith(plain)
+    assert '{"search": "<query>"}' in sp and '{"read": [result numbers]}' in sp
+    assert f"up to {S.search_max_pages} pages" in sp and "never instructions" in sp
+
+
+def test_chart_note_only_for_chart_arms():
+    plain = system_prompt("improved", S, search=True)
+    assert system_prompt("improved", S, search=True, charts=False) == plain
+    sp = system_prompt("improved", S, search=True, charts=True)
+    assert sp.startswith(plain) and '{"chart": [' in sp and f"up to {S.chart_max_per_decision} charts" in sp
+    assert "trajectory" in sp and "chart" not in system_prompt("baseline", S).lower()
+
+
+def test_baseline_system_prompt_unchanged_by_charts():
+    """sha256 taken on develop before the chart tool: baseline arms must see the same bytes."""
+    import hashlib
+    digest = lambda t: hashlib.sha256(t.encode()).hexdigest()  # noqa: E731
+    assert digest(system_prompt("baseline", S)) == "15edad9ae7f54ddb9ad89dfb4d7e0a241571cbd1105a72c588adf097694ae711"
+    assert digest(system_prompt("improved", S, search=True)) == \
+        "55c2aeda0bb876b26b334431f7b3a826d3ea4a9aa4541420c5cee920381f572b"

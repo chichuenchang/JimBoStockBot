@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 
-from stockbot import pause
+from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
@@ -36,14 +36,16 @@ def _costs(db: DB, account: str, cfg: AppConfig) -> float:
     return total
 
 
-def leaderboard(db: DB, cfg: AppConfig) -> list[dict]:
+def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
     arms = {a.name: a for a in cfg.arms}
     broker = _broker(db, cfg)
-    navs = {a: broker.nav(a, {}) for a in db.accounts()}
+    navs = {a: broker.nav(a, {}) for a in db.accounts() if not only or a in (only, BENCHMARK)}
     bench_ret = (navs[BENCHMARK] / db.start_cash(BENCHMARK) - 1) * 100 if BENCHMARK in navs else None
     bench_closes = daily_closes(db.equity_series(BENCHMARK)) if BENCHMARK in navs else {}
     rows = []
     for account, nav in navs.items():
+        if only and account != only:
+            continue
         start = db.start_cash(account)
         arm = arms.get(account)
         series = db.equity_series(account)
@@ -173,6 +175,7 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "market_open": db.kv_get("market_open") == "1",
         "data_ok": db.kv_get("data_ok") != "0",
         "paused_all": pause.flagged(db, pause.ALL),
+        "interval": {"minutes": interval.get(db, cfg.settings), "source": interval.source(db)},
         "budget": budget.summary(),
         "arms": [{"arm": a.name, "model": a.model or "-", "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),

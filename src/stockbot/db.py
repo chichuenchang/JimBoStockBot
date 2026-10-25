@@ -3,13 +3,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
-from stockbot.clock import month_key
-from stockbot.models import AccountState, ClosedTrade, ExitPlan, Fill, Position
+from stockbot.clock import et_at, et_date, month_key
+from stockbot.models import AccountState, Bar, ClosedTrade, ExitPlan, Fill, Position
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (account TEXT PRIMARY KEY, cash REAL NOT NULL, start_cash REAL NOT NULL);
@@ -45,6 +46,9 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   output_tokens INTEGER NOT NULL, cost REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS journal (id INTEGER PRIMARY KEY, arm TEXT NOT NULL, ts TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS daily_bars (
+  symbol TEXT NOT NULL, day TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
+  close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY (symbol, day));
 """
 
 
@@ -59,6 +63,8 @@ def parse_ts(s: str) -> datetime:
 class DB:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        # one connection shared with dashboard threads; held per statement and across transactions
+        self._lock = threading.RLock()
 
     @classmethod
     def open(cls, path: Path) -> DB:
@@ -75,13 +81,16 @@ class DB:
         return cls(conn)
 
     def close(self) -> None:
-        self.conn.close()
+        with self._lock:
+            self.conn.close()
 
     def _q(self, sql: str, *args) -> list[sqlite3.Row]:
-        return self.conn.execute(sql, args).fetchall()
+        with self._lock:
+            return self.conn.execute(sql, args).fetchall()
 
     def _x(self, sql: str, *args) -> int:
-        return self.conn.execute(sql, args).lastrowid
+        with self._lock:
+            return self.conn.execute(sql, args).lastrowid
 
     # kv
     def kv_get(self, key: str) -> str | None:
@@ -107,15 +116,17 @@ class DB:
         return self._q("SELECT start_cash FROM accounts WHERE account=?", account)[0]["start_cash"]
 
     def load_account(self, account: str) -> AccountState:
-        rows = self._q("SELECT cash FROM accounts WHERE account=?", account)
-        if not rows:
-            raise KeyError(account)
+        with self._lock:  # cash and positions from one moment, not either side of a fill
+            rows = self._q("SELECT cash FROM accounts WHERE account=?", account)
+            if not rows:
+                raise KeyError(account)
+            position_rows = self._q("SELECT * FROM positions WHERE account=?", account)
         positions = {
             r["symbol"]: Position(
                 r["symbol"], r["qty"], r["entry_price"], parse_ts(r["entry_ts"]),
                 ExitPlan(r["stop_loss"], r["profit_target"], r["invalidation"]), r["risk_per_share"],
                 r["peak"])
-            for r in self._q("SELECT * FROM positions WHERE account=?", account)}
+            for r in position_rows}
         return AccountState(account, rows[0]["cash"], positions)
 
     def holders(self, symbol: str) -> list[str]:
@@ -125,16 +136,17 @@ class DB:
     @contextmanager
     def transaction(self) -> Iterator[None]:
         """All writes inside commit together or not at all. Nested use joins the outer one."""
-        if self.conn.in_transaction:
-            yield
-            return
-        self.conn.execute("BEGIN")
-        try:
-            yield
-        except BaseException:
-            self.conn.execute("ROLLBACK")
-            raise
-        self.conn.execute("COMMIT")
+        with self._lock:
+            if self.conn.in_transaction:
+                yield
+                return
+            self.conn.execute("BEGIN")
+            try:
+                yield
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+            self.conn.execute("COMMIT")
 
     def save_account(self, state: AccountState) -> None:
         with self.transaction():
@@ -316,3 +328,26 @@ class DB:
         rows = self._q("SELECT text FROM journal WHERE arm=? AND kind=? ORDER BY id DESC LIMIT ?",
                        arm, kind, n)
         return [r["text"] for r in reversed(rows)]
+
+    # daily history: one row per ET trading day; Bar.ts = that day's ET midnight
+    def upsert_daily(self, bars: list[Bar]) -> None:
+        with self.transaction():
+            self.conn.executemany("INSERT OR REPLACE INTO daily_bars VALUES(?,?,?,?,?,?,?)", [
+                (b.symbol, et_date(b.ts).isoformat(), b.open, b.high, b.low, b.close, b.volume) for b in bars])
+
+    @staticmethod
+    def _daily(rows: list[sqlite3.Row]) -> list[Bar]:
+        return [Bar(r["symbol"], et_at(date.fromisoformat(r["day"]), "00:00"),
+                    r["open"], r["high"], r["low"], r["close"], r["volume"]) for r in rows]
+
+    def daily_bars(self, symbol: str, start: date, end: date) -> list[Bar]:
+        """start <= day < end, oldest first."""
+        return self._daily(self._q("SELECT * FROM daily_bars WHERE symbol=? AND day>=? AND day<? ORDER BY day",
+                                   symbol, start.isoformat(), end.isoformat()))
+
+    def last_daily(self, symbol: str) -> Bar | None:
+        rows = self._daily(self._q("SELECT * FROM daily_bars WHERE symbol=? ORDER BY day DESC LIMIT 1", symbol))
+        return rows[0] if rows else None
+
+    def delete_daily(self, symbol: str) -> None:
+        self._x("DELETE FROM daily_bars WHERE symbol=?", symbol)

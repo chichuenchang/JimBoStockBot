@@ -1,14 +1,13 @@
 import logging
 from datetime import date, timedelta
-from pathlib import Path
 
 import pytest
 
+from stockbot import interval
 from stockbot.agent.cycle import AppContext
 from stockbot.broker.sim import SimBroker
-from stockbot.cli import fake_trader, main
+from stockbot.cli import fake_trader
 from stockbot.clock import ReplayClock
-from stockbot.config import load_config
 from stockbot.daemon import Daemon
 from stockbot.data.base import DataError
 from stockbot.data.recorded import RecordedData
@@ -17,9 +16,9 @@ from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
+from tests.snapshot import CFG, cli
 from tests.synth import make_day
 
-CFG = load_config(Path(__file__).parent.parent / "config")
 DAY = date(2026, 10, 20)
 
 
@@ -78,6 +77,37 @@ async def test_late_start_runs_latest_slot_only(tmp_path):
     assert [r["slot_ts"] for r in rows] == [(session.open_utc + timedelta(minutes=105)).isoformat()]
 
 
+async def test_start_after_close_runs_no_slot(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    t = session.close_utc + timedelta(minutes=10)
+    clock.set(t)
+    await daemon.step(t)
+    assert not daemon.ctx.db._q("SELECT id FROM decisions")
+    await daemon.step(t)  # missed slots marked done: no retry either
+    assert not daemon.ctx.db._q("SELECT id FROM decisions")
+    assert not daemon.ctx.db._q("SELECT id FROM reports")
+
+
+async def test_interval_change_takes_effect(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=16))  # 9:45 ran
+    interval.set(daemon.ctx.db, 5)
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=21))
+    slot = session.open_utc + timedelta(minutes=20)  # 9:50 ET: on the 5-min grid only
+    assert daemon.ctx.db.decision_exists("kimi-improved", slot)
+
+
+def test_cli_interval(tmp_path, capsys):
+    db_path = tmp_path / "x.db"
+    assert cli(db_path, "interval", "5") == 0
+    assert interval.get(DB.open(db_path), CFG.settings) == 5
+    assert cli(db_path, "interval") == 0
+    assert "5 min (override)" in capsys.readouterr().out
+    assert cli(db_path, "interval", "0") == 2
+    assert cli(db_path, "interval", "--reset") == 0
+    assert interval.source(DB.open(db_path)) == "default"
+
+
 class FlakyData(RecordedData):
     fail = True
 
@@ -106,17 +136,17 @@ async def test_step_survives_data_error(tmp_path, caplog):
 
 def test_cli_pause_resume(tmp_path):
     db_path = tmp_path / "x.db"
-    assert main(["--db", str(db_path), "pause", "kimi-improved"]) == 0
+    assert cli(db_path, "pause", "kimi-improved") == 0
     assert flagged(DB.open(db_path), "kimi-improved")
-    assert main(["--db", str(db_path), "resume", "kimi-improved"]) == 0
+    assert cli(db_path, "resume", "kimi-improved") == 0
     assert not flagged(DB.open(db_path), "kimi-improved")
-    assert main(["--db", str(db_path), "pause", "kimi-improvd"]) == 2  # typo must not look paused
-    assert main(["--db", str(db_path), "pause", "--all"]) == 0
+    assert cli(db_path, "pause", "kimi-improvd") == 2  # typo must not look paused
+    assert cli(db_path, "pause", "--all") == 0
     assert flagged(DB.open(db_path), ALL)
 
 
 def test_cli_status(tmp_path, capsys):
-    assert main(["--db", str(tmp_path / "x.db"), "status"]) == 0
+    assert cli(tmp_path / "x.db", "status") == 0
     assert "kimi-k3" in capsys.readouterr().out
 
 
@@ -128,12 +158,45 @@ async def test_market_open_flag(tmp_path):
         assert daemon.ctx.db.kv_get("market_open") == want
 
 
+async def test_logs_market_state_on_change(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    with caplog.at_level(logging.INFO):
+        for m in (-10, -9, 1, 2):
+            t = session.open_utc + timedelta(minutes=m)
+            clock.set(t)
+            await daemon.step(t)
+    lines = [r.message for r in caplog.records if r.message.startswith("market")]
+    assert lines == ["market closed; next open 2026-10-20 09:30 ET", "market open until 16:00 ET"]
+
+
+class LateCalendar(RecordedData):
+    fail = True
+
+    async def calendar(self, start, end):
+        if self.fail:
+            raise DataError("calendar down")
+        return await super().calendar(start, end)
+
+
+async def test_relogs_next_open_once_calendar_loads(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    late = daemon.ctx.data = LateCalendar(tmp_path / "rec", clock)
+    with caplog.at_level(logging.INFO):
+        for m in (-10, -9, -8):
+            t = session.open_utc + timedelta(minutes=m)
+            clock.set(t)
+            await daemon.step(t)
+            late.fail = False
+    lines = [r.message for r in caplog.records if r.message.startswith("market")]
+    assert lines == ["market closed; next open unknown (no calendar)", "market closed; next open 2026-10-20 09:30 ET"]
+
+
 def test_max_cycles(tmp_path):
     data = tmp_path / "rec"
     make_day(data, DAY)
     db_path = tmp_path / "r.db"
-    assert main(["--db", str(db_path), "replay", "--data", str(data), "--from", "2026-10-20",
-                 "--to", "2026-10-20", "--fake-llm", "--max-cycles", "1"]) == 0
+    assert cli(db_path, "replay", "--data", str(data), "--from", "2026-10-20",
+                "--to", "2026-10-20", "--fake-llm", "--max-cycles", "1") == 0
     db = DB.open(db_path)
     for arm in CFG.arms:
         assert db._q("SELECT COUNT(*) n FROM decisions WHERE arm=?", arm.name)[0]["n"] == 1
@@ -146,8 +209,19 @@ def test_run_fails_fast_without_model_keys(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
     monkeypatch.delenv("MOONSHOT_API_KEY", raising=False)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "d")
-    assert main(["--db", str(tmp_path / "x.db"), "run"]) == 2
+    assert cli(tmp_path / "x.db", "run") == 2
     assert "MOONSHOT_API_KEY" in capsys.readouterr().err
+
+
+def test_run_refuses_second_daemon(tmp_path, capsys):
+    from stockbot.cli import _daemon_lock
+    db_path = tmp_path / "x.db"
+    held = _daemon_lock(db_path)
+    assert held and _daemon_lock(db_path) is None
+    assert cli(db_path, "run") == 1
+    assert "already running" in capsys.readouterr().err
+    held.close()
+    assert _daemon_lock(db_path) is not None
 
 
 class DriftingData(RecordedData):
@@ -200,9 +274,55 @@ async def test_reports_use_fundamentals_source(tmp_path):
 
 def test_fundamentals_source_from_env(monkeypatch):
     from stockbot.cli import _fundamentals
-    from stockbot.data.fundamentals import AlphaVantage
+    from stockbot.data.fundamentals import AlphaVantage, Fundamentals
     monkeypatch.setattr("stockbot.cli.load_dotenv", lambda: None)
     monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
     assert _fundamentals() is None
     monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k")
-    assert isinstance(_fundamentals(), AlphaVantage)
+    src = _fundamentals()
+    assert isinstance(src, Fundamentals) and isinstance(src.calendar, AlphaVantage)
+
+
+class CountingHistory:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    async def daily_history(self, symbol, start, end):
+        self.calls.append((symbol, start, end))
+        if self.fail:
+            raise DataError("HTTP 500")
+        return []
+
+
+async def test_history_sync_once_per_day(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory()
+    await run_day(daemon, session, clock)  # ends close + 10 min: today not complete yet
+    assert len(daemon.ctx.history.calls) == len(CFG.settings.universe)
+    assert daemon._history_done == DAY - timedelta(days=1)
+    assert all(end <= session.open_utc for _, _, end in daemon.ctx.history.calls)  # yesterday's bars only
+    t = session.close_utc + timedelta(minutes=17)
+    clock.set(t)
+    await daemon.step(t)
+    assert daemon._history_done == DAY
+    assert len(daemon.ctx.history.calls) == 2 * len(CFG.settings.universe)
+
+
+async def test_history_restart_syncs_again(tmp_path):
+    daemon, _, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory()
+    await daemon.step(clock.now())
+    restarted = Daemon(daemon.ctx, serve_dashboard=False)  # e.g. universe grew: new symbols need backfill
+    await restarted.step(clock.now())
+    assert len(daemon.ctx.history.calls) == 2 * len(CFG.settings.universe)
+
+
+async def test_history_failure_backoff(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory(fail=True)
+    await run_day(daemon, session, clock, until=session.open_utc - timedelta(minutes=1))  # 29 passes
+    assert len(daemon.ctx.history.calls) == 1  # failed once; no retry for 30 min
+    assert "history sync failed" in caplog.text
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=20))
+    assert len(daemon.ctx.history.calls) == 2  # one retry at open
+    assert daemon.ctx.db._q("SELECT COUNT(*) n FROM decisions")[0]["n"] > 0  # cycles still ran

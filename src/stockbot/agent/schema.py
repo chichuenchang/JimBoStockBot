@@ -34,7 +34,7 @@ class Decision:
     ignored_keys: list[str] = field(default_factory=list)
 
 
-def _first_json_object(text: str) -> dict:
+def first_json_object(text: str) -> dict:
     dec = json.JSONDecoder()
     for m in re.finditer(r"\{", text):
         try:
@@ -88,7 +88,7 @@ def _entries(obj: dict) -> tuple[dict[str, dict], list[str], str | None]:
 
 def parse_decision(text: str, variant: Literal["baseline", "improved"],
                    universe: tuple[str, ...]) -> Decision:
-    obj = _first_json_object(text)
+    obj = first_json_object(text)
     items, ignored, notes = _entries(obj)
     out: dict[str, SymbolDecision] = {}
     for sym, d in items.items():

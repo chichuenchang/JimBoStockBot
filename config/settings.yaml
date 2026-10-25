@@ -1,11 +1,13 @@
-universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR]
+universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR,  # Alpha Arena list (QQQ for NDX)
+           AAPL, META, AVGO, NFLX, JPM, V, WMT, COST, LLY, XOM,  # added: large caps across sectors
+           AMD, TSM, MU, ORCL, CRM]
 benchmark_symbol: QQQ
 start_nav: 10000
 slippage_bps: 5
 commission_per_order: 0
 cycle_start: "09:45"
 cycle_end: "15:45"
-cycle_every_min: 45
+cycle_every_min: 5         # default; live override beats it (README)
 report_times: ["09:15", "12:30"]
 analyst_model: deepseek-v4.1-flash
 global_cap_usd: 100
@@ -26,3 +28,10 @@ trail_breakeven_r: 1.0     # stop to entry once peak >= entry + 1R; 0 = off
 trail_atr_mult: 3.0        # from breakeven on: stop >= peak - 3 x ATR14(1h); 0 = off
 earnings_blackout_days: 1  # no entries from 1 session before earnings (or a symbol event) through the day; -1 = off
 max_wakes_per_day: 3
+# web search (arms with search: true in arms.yaml)
+search_max_results: 10
+search_max_pages: 3        # pages the bot may open per decision
+search_page_chars: 15000   # each page cut to this; caps token cost
+# price history (daily_bars, Alpaca SIP feed): dashboard + chart tool
+history_start: 2016-01-01
+chart_max_per_decision: 3  # charts: true arms: pictures per decision (one chart step)

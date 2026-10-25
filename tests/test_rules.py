@@ -1,14 +1,13 @@
 from dataclasses import replace
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
 from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_update, size_entry, trail_stop
-from stockbot.config import load_config
 from stockbot.models import ExitPlan, Position
+from tests.snapshot import CFG
 
-S = load_config(Path(__file__).parent.parent / "config").settings
+S = CFG.settings
 T = datetime(2026, 10, 21, 15, tzinfo=UTC)
 
 

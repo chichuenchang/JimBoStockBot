@@ -170,3 +170,46 @@ async def test_http_error_not_billable():
     with pytest.raises(LLMError) as e:
         await make_client(KIMI, timeout_s=5).complete("s", "u")
     assert not e.value.billable
+
+
+PNG = b"\x89PNG fake"
+
+
+@respx.mock
+async def test_openai_compat_sends_images_as_parts():
+    import base64
+    route = respx.post(URL).mock(return_value=httpx.Response(200, json=ok_body()))
+    await make_client(KIMI, timeout_s=5).complete("sys", "user", images=(PNG, PNG))
+    user = json.loads(route.calls.last.request.content)["messages"][1]["content"]
+    assert user[0] == {"type": "text", "text": "user"}
+    url = "data:image/png;base64," + base64.b64encode(PNG).decode()
+    assert user[1:] == [{"type": "image_url", "image_url": {"url": url}}] * 2
+    await make_client(KIMI, timeout_s=5).complete("sys", "user")
+    assert json.loads(route.calls.last.request.content)["messages"][1]["content"] == "user"  # no images: unchanged
+
+
+async def test_anthropic_sends_image_blocks():
+    stub = StubMessages(anthropic_resp())
+    c = AnthropicClient(CLAUDE, timeout_s=5, sdk=SimpleNamespace(beta=SimpleNamespace(messages=stub)))
+    await c.complete("sys", "user", images=(PNG,))
+    content = stub.kwargs["messages"][0]["content"]
+    assert content[0]["type"] == "text" and content[0]["text"].startswith("user")
+    assert content[1]["type"] == "image" and content[1]["source"]["media_type"] == "image/png"
+
+
+async def test_fake_llm_records_images_and_budget_passes_them(tmp_path):
+    from stockbot.clock import ReplayClock
+    from stockbot.db import DB
+    from stockbot.llm.budget import Budget
+    from tests.snapshot import CFG
+    db = DB.open(tmp_path / "t.db")
+    llm = FakeLLM(["{}"])
+    await Budget(db, CFG, ReplayClock(datetime_now())).complete(llm, "kimi-k3", None, "decision", "s", "u",
+                                                                images=(PNG,))
+    await llm.complete("s", "u")
+    assert llm.images == [(PNG,), ()]
+
+
+def datetime_now():
+    from datetime import UTC, datetime
+    return datetime(2026, 10, 21, tzinfo=UTC)

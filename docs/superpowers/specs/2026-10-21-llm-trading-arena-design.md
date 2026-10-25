@@ -36,7 +36,7 @@ Experiment: AA Season 1.5 replica harness vs our improved harness, same models. 
 - Windows 11, Python 3.12. Runs as user process, not admin.
 - Alpaca paper account (email only, works from Canada) used for **data only**: 1-min bars, daily/4h bars, latest quotes, news, market calendar. Free IEX feed. Order execution simulated by harness.
 - Market hours 09:30–16:00 ET, Alpaca calendar for holidays / half days. All timestamps stored UTC, shown ET.
-- Universe: TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR (AA list; QQQ replaces NDX). Config list.
+- Universe: `universe` in `config/settings.yaml`. Superset of AA list, so no longer AA-identical.
 - Start NAV $10,000 per arm. Long only, cash only (1x).
 - Keys in `.env` (gitignored): `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `MOONSHOT_API_KEY`, `DEEPSEEK_API_KEY`, placeholders for others.
 
@@ -113,6 +113,7 @@ Improved rule set, reject entry + log reason when:
 
 - Global cap $100/calendar month; per-model caps in config (start: Kimi $80, DeepSeek $20, includes analyst).
 - Estimate: Kimi ~$0.15/decision × 2 arms × 9 × 21 ≈ $57 before caching; DeepSeek arms + reports ≈ $7.
+- That estimate assumed 7 symbols. Decision input grows ≈ 500–1000 tokens per universe symbol (report rows + analyst per-ticker sections; measured 2026-10-23 DeepSeek decisions, 2.4 chars/token), so 22 symbols ≈ 3× input. Per-model caps still bind.
 - 90%: dashboard warning. 100%: model calls stop; affected arms switch to hold-only and harness enforces their stated stops/targets every minute.
 
 ### Dashboard
