@@ -81,6 +81,7 @@ class Settings:
     search_max_results: int = 10
     search_max_pages: int = 3
     search_page_chars: int = 15000
+    history_start: date = date(2016, 1, 1)  # daily_bars reach back to here: history.py
 
 
 @dataclass(frozen=True)
