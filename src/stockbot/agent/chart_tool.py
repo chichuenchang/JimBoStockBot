@@ -4,16 +4,29 @@ daily_bars and sends the PNGs as images with the next call (protocol as agent/re
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import date, datetime, timedelta
 
 from stockbot import charts
 from stockbot.agent.schema import ParseError, first_json_object
+from stockbot.charts import ChartSpec
 from stockbot.clock import et_date
 from stockbot.config import Settings
 from stockbot.db import DB
 from stockbot.history import HISTORY_TFS
 
 DEFAULT_SPAN = timedelta(days=365)
+_SEEN = re.compile(r"^# CHART image \d+: (\S+) (\S+) (\S+)\.\.(\S+) (linear|log)$", re.M)  # parses _line
+
+
+def _line(n: int, c: ChartSpec) -> str:
+    return f"# CHART image {n}: {c.symbol} {c.tf} {c.start}..{c.end} {'log' if c.log else 'linear'}"
+
+
+def seen(prompt: str) -> list[ChartSpec]:
+    """Charts a stored decision prompt showed the bot, in image order."""
+    return [ChartSpec(sym, tf, date.fromisoformat(a), date.fromisoformat(b), scale == "log")
+            for sym, tf, a, b, scale in _SEEN.findall(prompt)]
 
 
 def request(reply: str) -> list | None:
@@ -43,7 +56,7 @@ class Session:
             raise ParseError("chart not allowed now; reply with the decision JSON")
         return raw
 
-    def _spec(self, item) -> tuple[str, str, date, date, bool]:
+    def _spec(self, item) -> ChartSpec:
         if not isinstance(item, dict):
             raise ValueError("not a chart object")
         sym = str(item.get("symbol", "")).upper()
@@ -57,7 +70,7 @@ class Session:
         start = max(start, self.s.history_start)
         if start > end:
             raise ValueError("start after end")
-        return sym, tf, start, end, bool(item.get("log", False))
+        return ChartSpec(sym, tf, start, end, bool(item.get("log", False)))
 
     async def run(self, raw: list) -> tuple[str, tuple[bytes, ...]]:
         """Text block to append (one line per chart) + the PNGs, in image order."""
@@ -66,16 +79,16 @@ class Session:
         lines, pngs = [], []
         for n, item in enumerate(raw[:cap], 1):
             try:
-                sym, tf, start, end, log = self._spec(item)
+                c = self._spec(item)
             except (ValueError, TypeError) as e:  # bad date strings raise ValueError too
                 lines.append(f"# CHART {n} skipped: {e}")
                 continue
             try:
-                pngs.append(await asyncio.to_thread(charts.history_chart, self.db, sym, tf, start, end, log))
+                pngs.append(await asyncio.to_thread(charts.history_chart, self.db, c))
             except ValueError:
-                lines.append(f"# CHART {n} skipped: no price history for {sym} in {start}..{end}")
+                lines.append(f"# CHART {n} skipped: no price history for {c.symbol} in {c.start}..{c.end}")
                 continue
-            lines.append(f"# CHART image {len(pngs)}: {sym} {tf} {start}..{end} {'log' if log else 'linear'}")
+            lines.append(_line(len(pngs), c))
         if len(raw) > cap:
             lines.append(f"(only the first {cap} charts drawn)")
         if not raw:

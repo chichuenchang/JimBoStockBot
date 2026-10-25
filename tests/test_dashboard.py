@@ -152,7 +152,7 @@ def test_api_shapes(db):
     assert trades[0]["symbol"] == "MSFT"
     [d] = c.get("/api/arm/kimi-improved/decisions").json()
     full = c.get(f"/api/decision/{d['id']}").json()
-    assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY"
+    assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
     assert len(candles["markers"]) == 2 and candles["bars"] == []
 
@@ -234,6 +234,17 @@ def test_chart_png(db):
     seed_daily(db)
     r = client(db).get("/api/chart?symbol=MSFT&tf=1Day&start=2026-01-01&end=2026-03-01&log=true")
     assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.content[:4] == b"\x89PNG"
+
+
+def test_decision_charts_redraw(db):
+    seed_daily(db)
+    prompt = "x\n# CHART image 1: MSFT 1Week 2026-01-01..2026-01-30 log\n# CHART 2 skipped: ZZZZ not in universe"
+    i = db.insert_decision("kimi-improved", T0 + timedelta(days=1), "scheduled", None, prompt, "{}", "{}", "ok", 0, 0, 0, 0.0)
+    c = client(db)
+    [chart] = c.get(f"/api/decision/{i}").json()["charts"]
+    assert chart == {"symbol": "MSFT", "tf": "1Week", "start": "2026-01-01", "end": "2026-01-30", "log": True}
+    r = c.get("/api/chart", params=chart)  # app.js passes the object as-is
+    assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
 
 
 def test_chart_bad_symbol_or_empty_404(db):

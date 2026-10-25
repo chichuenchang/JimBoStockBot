@@ -1,6 +1,7 @@
 """Localhost dashboard (FastAPI). Binds 127.0.0.1 only."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 
 from stockbot import charts, history, interval
 from stockbot import pause as pause_flags
+from stockbot.agent import chart_tool
 from stockbot.clock import RealClock, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
@@ -111,7 +113,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         d = db.decision(decision_id)
         if d is None:
             raise HTTPException(404)
-        return d
+        return {**d, "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
 
     @app.get("/api/candles")
     async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
@@ -141,7 +143,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         if symbol not in cfg.settings.universe or tf not in HISTORY_TFS:
             raise HTTPException(404)
         try:
-            png = charts.history_chart(db, symbol, tf, start, end, log)
+            png = charts.history_chart(db, charts.ChartSpec(symbol, tf, start, end, log))
         except ValueError as e:
             raise HTTPException(404, str(e)) from e
         return Response(png, media_type="image/png")

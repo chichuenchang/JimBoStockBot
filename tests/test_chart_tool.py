@@ -4,6 +4,7 @@ import pytest
 
 from stockbot.agent import chart_tool
 from stockbot.agent.schema import ParseError
+from stockbot.charts import ChartSpec
 from stockbot.db import DB
 from tests.snapshot import CFG
 from tests.test_history import day_bar, days
@@ -65,6 +66,13 @@ async def test_run_bad_dates(session):
     text, pngs = await session.run([{"symbol": "MSFT", "tf": "1Day", "start": "2026-01-20", "end": "2026-01-10"},
                                     {"symbol": "MSFT", "tf": "1Day", "start": "soon"}])
     assert pngs == () and "# CHART 1 skipped: start after end" in text and "# CHART 2 skipped:" in text
+
+
+async def test_seen_reads_back_run(session):
+    text, _ = await session.run([{"symbol": "MSFT", "tf": "1Week", "start": "2026-01-05", "log": True},
+                                 {"symbol": "ZZZZ"}, {"symbol": "MSFT", "end": "2026-01-20"}])
+    assert chart_tool.seen("PROMPT" + text) == [ChartSpec("MSFT", "1Week", date(2026, 1, 5), date(2026, 1, 29), True),
+                                                ChartSpec("MSFT", "1Day", date(2025, 1, 20), date(2026, 1, 20))]
 
 
 async def test_default_start_one_year(session):

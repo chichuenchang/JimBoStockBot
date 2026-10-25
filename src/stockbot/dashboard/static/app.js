@@ -227,9 +227,9 @@ async function loadArm(st) {
   document.querySelectorAll("#decisions details").forEach((el) => el.addEventListener("toggle", async () => {
     if (!el.open || el.dataset.loaded) return;
     const d = await get(`/api/decision/${el.dataset.id}`);
-    // chart-tool pictures the bot saw: re-drawn from the spec lines in its prompt (agent/chart_tool.py)
-    const pics = [...d.prompt.matchAll(/^# CHART image \d+: (\S+) (\S+) (\S+)\.\.(\S+) (linear|log)$/gm)].map(([, sym, tf, a, b, scale]) =>
-      `<img alt="${esc(sym)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams({ symbol: sym, tf, start: a, end: b, log: scale === "log" }))}">`);
+    // chart-tool pictures the bot saw, re-drawn (agent/chart_tool.py seen)
+    const pics = d.charts.map((c) =>
+      `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
     el.querySelector(".detail").innerHTML = `<h2>Prompt</h2>${pics.join("")}<pre>${esc(d.prompt)}</pre><h2>Reply</h2><pre>${esc(d.raw)}</pre>`;
     el.dataset.loaded = "1";
   }));

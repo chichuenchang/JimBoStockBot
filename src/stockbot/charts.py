@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
@@ -16,10 +17,20 @@ from stockbot.models import Bar
 SIZE_IN, DPI = (10.24, 5.12), 100  # 1024 x 512 px
 
 
-def history_chart(db: DB, symbol: str, tf: HistoryTf, start: date, end: date, log: bool = False) -> bytes:
-    """Chart of stored daily history, start..end inclusive. ValueError when no bars."""
-    bars = aggregate(db.daily_bars(symbol, start, end + timedelta(days=1)), tf)
-    return render(bars, f"{symbol} {tf} {start}..{end}" + (" (log scale)" if log else ""), log)
+@dataclass(frozen=True)
+class ChartSpec:
+    """One history chart, start..end inclusive: drawn for the bot, re-drawn on the dashboard."""
+    symbol: str
+    tf: HistoryTf
+    start: date
+    end: date
+    log: bool = False
+
+
+def history_chart(db: DB, c: ChartSpec) -> bytes:
+    """Chart of stored daily history. ValueError when no bars."""
+    bars = aggregate(db.daily_bars(c.symbol, c.start, c.end + timedelta(days=1)), c.tf)
+    return render(bars, f"{c.symbol} {c.tf} {c.start}..{c.end}" + (" (log scale)" if c.log else ""), c.log)
 
 
 def render(bars: list[Bar], title: str, log: bool = False) -> bytes:
