@@ -2,14 +2,23 @@
 from __future__ import annotations
 
 import io
+from datetime import date, timedelta
 
 from matplotlib.dates import AutoDateLocator, ConciseDateFormatter
 from matplotlib.figure import Figure  # no pyplot: no global state, safe off the main thread
 
 from stockbot.clock import ET
+from stockbot.db import DB
+from stockbot.history import HistoryTf, aggregate
 from stockbot.models import Bar
 
 SIZE_IN, DPI = (10.24, 5.12), 100  # 1024 x 512 px
+
+
+def history_chart(db: DB, symbol: str, tf: HistoryTf, start: date, end: date, log: bool = False) -> bytes:
+    """Chart of stored daily history, start..end inclusive. ValueError when no bars."""
+    bars = aggregate(db.daily_bars(symbol, start, end + timedelta(days=1)), tf)
+    return render(bars, f"{symbol} {tf} {start}..{end}" + (" (log scale)" if log else ""), log)
 
 
 def render(bars: list[Bar], title: str, log: bool = False) -> bytes:

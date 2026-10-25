@@ -206,3 +206,63 @@ def test_conviction_api(tmp_path):
     assert t["conviction"] == 0.9
     [row] = c.get("/api/arm/kimi-improved/conviction").json()
     assert row == {"conviction": "high >=0.67", "trades": 1, "win_rate": 100.0, "avg_r": 2.0}
+
+
+def seed_daily(db):
+    from datetime import date
+
+    from tests.test_history import days
+    db.upsert_daily(days("MSFT", date(2026, 1, 26), [10, 12, 9, 11, 13, 20]))  # Mon..Fri + next Mon
+
+
+def test_candles_week_from_history(db):
+    seed_daily(db)
+    bars = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week").json()["bars"]
+    assert [(b["open"], b["high"], b["low"], b["close"]) for b in bars] == [(10, 14, 8, 13), (20, 21, 19, 20)]
+    month = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Month").json()["bars"]
+    assert len(month) == 2
+    day = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    assert len(day) == 6
+
+
+def test_candles_week_empty_history(db):
+    r = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week")
+    assert r.status_code == 200 and r.json()["bars"] == []
+
+
+def test_chart_png(db):
+    seed_daily(db)
+    r = client(db).get("/api/chart?symbol=MSFT&tf=1Day&start=2026-01-01&end=2026-03-01&log=true")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/png" and r.content[:4] == b"\x89PNG"
+
+
+def test_chart_bad_symbol_or_empty_404(db):
+    seed_daily(db)
+    assert client(db).get("/api/chart?symbol=ZZZZ&tf=1Day&start=2026-01-01&end=2026-03-01").status_code == 404
+    assert client(db).get("/api/chart?symbol=MSFT&tf=1Day&start=2020-01-01&end=2020-03-01").status_code == 404
+
+
+async def test_candles_day_appends_live_after_history(db):
+    from datetime import date
+
+    from stockbot.data.base import DataError
+    from tests.test_history import day_bar
+    seed_daily(db)
+
+    class Live:
+        calls = []
+
+        async def bars(self, symbol, tf, start, end):
+            self.calls.append((tf, start))
+            if symbol == "NVDA":
+                raise DataError("HTTP 500")
+            return [day_bar(symbol, date(2026, 2, 3), 21, 22, 20, 21.5)]
+
+    clock = ReplayClock(T0)
+    c = TestClient(create_app(db, CFG, Budget(db, CFG, clock), Live()))
+    bars = c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    assert [b["close"] for b in bars][-2:] == [20, 21.5]
+    assert Live.calls[0] == ("1Day", day_bar("X", date(2026, 2, 3), 0, 0, 0, 0).ts)  # day after last stored
+    db.upsert_daily([day_bar("NVDA", date(2026, 1, 26), 1, 2, 0.5, 1.5)])
+    r = c.get("/api/candles?symbol=NVDA&arm=kimi-improved&tf=1Week").json()
+    assert [b["close"] for b in r["bars"]] == [1.5] and "HTTP 500" in r["error"]  # stored history survives feed error
