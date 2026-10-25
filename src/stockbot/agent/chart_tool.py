@@ -18,7 +18,7 @@ from stockbot.history import HISTORY_TFS
 
 log = logging.getLogger("stockbot")
 DEFAULT_SPAN = timedelta(days=365)
-_SEEN = re.compile(r"^# CHART image \d+: (\S+) (\S+) (\S+)\.\.(\S+) (linear|log)$", re.M)  # parses _line
+_SEEN = re.compile(r"^# CHART image \d+: (\S+) (\S+) (\S+)\.\.(\S+) (linear|log)$", re.MULTILINE)  # parses _line
 
 
 def _line(n: int, c: ChartSpec) -> str:
@@ -74,7 +74,7 @@ class Session:
             raise ValueError("start after end")
         log_scale = item.get("log", False)
         if not isinstance(log_scale, bool):  # bool("false") is True
-            raise ValueError('"log" must be true or false')
+            raise TypeError('"log" must be true or false')
         return ChartSpec(sym, tf, start, end, log_scale)
 
     async def run(self, raw: list) -> tuple[str, tuple[bytes, ...]]:

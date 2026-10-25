@@ -309,7 +309,7 @@ async def test_history_sync_once_per_day(tmp_path):
 
 
 async def test_history_restart_syncs_again(tmp_path):
-    daemon, session, clock, _ = build(tmp_path)
+    daemon, _, clock, _ = build(tmp_path)
     daemon.ctx.history = CountingHistory()
     await daemon.step(clock.now())
     restarted = Daemon(daemon.ctx, serve_dashboard=False)  # e.g. universe grew: new symbols need backfill
