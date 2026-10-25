@@ -281,3 +281,39 @@ def test_fundamentals_source_from_env(monkeypatch):
     monkeypatch.setenv("ALPHAVANTAGE_API_KEY", "k")
     src = _fundamentals()
     assert isinstance(src, Fundamentals) and isinstance(src.calendar, AlphaVantage)
+
+
+class CountingHistory:
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+
+    async def daily_history(self, symbol, start, end):
+        self.calls.append((symbol, start, end))
+        if self.fail:
+            raise DataError("HTTP 500")
+        return []
+
+
+async def test_history_sync_once_per_day(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory()
+    await run_day(daemon, session, clock)  # ends close + 10 min: today not complete yet
+    assert len(daemon.ctx.history.calls) == len(CFG.settings.universe)
+    assert daemon.ctx.db.kv_get("history_synced") == (DAY - timedelta(days=1)).isoformat()
+    assert all(end <= session.open_utc for _, _, end in daemon.ctx.history.calls)  # yesterday's bars only
+    t = session.close_utc + timedelta(minutes=17)
+    clock.set(t)
+    await daemon.step(t)
+    assert daemon.ctx.db.kv_get("history_synced") == DAY.isoformat()
+    assert len(daemon.ctx.history.calls) == 2 * len(CFG.settings.universe)
+
+
+async def test_history_failure_backoff(tmp_path, caplog):
+    daemon, session, clock, _ = build(tmp_path)
+    daemon.ctx.history = CountingHistory(fail=True)
+    await run_day(daemon, session, clock, until=session.open_utc - timedelta(minutes=1))  # 29 passes
+    assert len(daemon.ctx.history.calls) == 1  # failed once; no retry for 30 min
+    assert "history sync failed" in caplog.text
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=20))
+    assert len(daemon.ctx.history.calls) == 2  # one retry at open
+    assert daemon.ctx.db._q("SELECT COUNT(*) n FROM decisions")[0]["n"] > 0  # cycles still ran

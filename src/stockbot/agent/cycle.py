@@ -22,6 +22,7 @@ from stockbot.config import AppConfig, ArmCfg
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
 from stockbot.db import DB
+from stockbot.history import HistorySource
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
 from stockbot.models import AccountState, ExitPlan, Position
@@ -47,6 +48,7 @@ class AppContext:
     clock: Clock
     fundamentals: FundamentalsSource | None = None
     search: SearchClient | None = None  # used by arms with search: true
+    history: HistorySource | None = None  # daily_bars sync source; None in replay
 
 
 @dataclass(frozen=True)
