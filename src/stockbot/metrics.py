@@ -5,7 +5,7 @@ import math
 import random
 import statistics
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from stockbot.clock import et_date
 from stockbot.models import ClosedTrade
@@ -25,6 +25,11 @@ class TradeStats:
 def daily_closes(series: list[tuple[datetime, float]]) -> dict[date, float]:
     """Last NAV of each ET day, in day order (series must be time-ordered)."""
     return {et_date(ts): nav for ts, nav in series}
+
+
+def with_start(series: list[tuple[datetime, float]], start: float) -> list[tuple[datetime, float]]:
+    """Series with start cash as the prior day's close, so day one's return counts."""
+    return [(series[0][0] - timedelta(days=1), start)] + series if series else []
 
 
 def daily_returns(series: list[tuple[datetime, float]]) -> list[float]:

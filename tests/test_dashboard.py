@@ -11,6 +11,7 @@ from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
+from stockbot.metrics import sharpe
 from stockbot.models import BENCHMARK, Fill
 from stockbot.pause import is_paused
 from tests.snapshot import CFG
@@ -106,6 +107,19 @@ def test_sharpe_alpha_beta_hidden_until_enough_days(tmp_path):
     for arm in ("kimi-improved", BENCHMARK):
         r = row(leaderboard(db, CFG), arm)
         assert r["sharpe"] is None and r["alpha_pct"] is None and r["beta"] is None
+
+
+def test_sharpe_counts_first_day_vs_start_cash(tmp_path):
+    db = DB.open(tmp_path / "first.db")
+    db.ensure_account("kimi-improved", 10000)
+    rng = random.Random(5)
+    navs = [9500.0]  # day one: -5% from start cash
+    for _ in range(24):
+        navs.append(navs[-1] * (1 + rng.gauss(0.002, 0.01)))
+    for i, nav in enumerate(navs):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), nav)
+    rets = [-0.05] + [b / a - 1 for a, b in zip(navs, navs[1:])]
+    assert row(leaderboard(db, CFG), "kimi-improved")["sharpe"] == pytest.approx(sharpe(rets))
 
 
 def test_alpha_none_with_one_day(db):

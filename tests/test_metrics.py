@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
-                              max_drawdown, sharpe, sharpe_ci, trade_stats)
+                              max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import ClosedTrade
 
 T = datetime(2026, 10, 21, 15, tzinfo=UTC)
@@ -79,6 +79,12 @@ def test_daily_returns_uses_last_nav_per_et_day():
         (datetime(2026, 10, 21, 19, tzinfo=UTC), 1098.9),
     ]
     assert daily_returns(series) == [pytest.approx(0.1)]
+
+
+def test_with_start_counts_first_day_against_start_cash():
+    first = [(datetime(2026, 10, 23, 19, tzinfo=UTC), 99.0), (datetime(2026, 10, 26, 19, tzinfo=UTC), 108.9)]
+    assert daily_returns(with_start(first, 100.0)) == [pytest.approx(-0.01), pytest.approx(0.1)]
+    assert with_start([], 100.0) == []
 
 
 def series(navs):
