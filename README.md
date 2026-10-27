@@ -4,6 +4,7 @@ Local LLM paper-trading arena. Alpha Arena replica vs improved harness, several 
 Design: `docs/superpowers/specs/2026-10-21-llm-trading-arena-design.md`. AA teardown: `docs/research/alpha-arena-teardown.md`. Related work + why the improved-arm extras exist: `docs/research/related-projects.md`.
 Control arms `rules-trend`, `random-control`: `src/stockbot/agent/control.py`. `rules-momentum` (noise-band intraday momentum on QQQ, why: `docs/research/trading-strategy-evidence.md`): `src/stockbot/agent/momentum.py`; trades only after 5 prior sessions of 1-min bars, so replay needs `record --days` ≥ 6.
 Price history since `history_start` (daily, Alpaca SIP) syncs in daemon; arm flag `charts: true` = chart-image tool before deciding: `docs/superpowers/specs/2026-10-25-price-history-charts-design.md`.
+Kimi arms: coding-plan key, flat fee (why + probes: `config/models.yaml`). Arm flag `every_min` = own interval on the global slots. Plan quota polled every 10 min (`src/stockbot/llm/quota.py`); `status` + dashboard show quota and monthly tokens.
 
 ## Setup
 
