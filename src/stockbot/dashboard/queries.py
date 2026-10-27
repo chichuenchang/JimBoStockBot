@@ -8,9 +8,8 @@ from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
-from stockbot.metrics import (SHARPE_CI_MIN_DAYS, aligned_daily_returns, alpha_beta, conviction_buckets,
-                              daily_closes, daily_returns, max_drawdown, sharpe, sharpe_ci, trade_stats,
-                              with_start)
+from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
+                              max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
@@ -57,8 +56,7 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
         spend = db.spent_by_arm(account)
         ret = (nav / start - 1) * 100
         daily = daily_returns(series)
-        enough = len(daily) >= SHARPE_CI_MIN_DAYS  # fewer: ratios are noise (Sharpe 171 on 2 days)
-        alpha, beta = (None, None) if account == BENCHMARK or not enough else \
+        alpha, beta = (None, None) if account == BENCHMARK else \
             alpha_beta(*aligned_daily_returns(daily_closes(series), bench_closes))
         rows.append(dict(zip(LEADERBOARD_KEYS, [
             account,
@@ -69,7 +67,7 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
             pnl, _costs(db, account, cfg), spend, pnl - spend,
             None if stats.win_rate is None else stats.win_rate * 100,
             stats.avg_win, stats.avg_loss, stats.profit_factor, stats.expectancy, stats.pnl_ex_best,
-            sharpe(daily) if enough else None, sharpe_ci(daily),
+            sharpe(daily), sharpe_ci(daily),
             None if alpha is None else alpha * 100, beta,
             max_drawdown([v for _, v in series] + [nav]) * 100,
             stats.n,

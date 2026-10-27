@@ -15,12 +15,12 @@ def trade(pnl):
 
 
 def test_sharpe():
-    assert sharpe([0.01, -0.005, 0.02]) == pytest.approx(10.513, rel=1e-3)
+    assert sharpe([0.01, -0.005, 0.02] * 7) == pytest.approx(12.566, rel=1e-3)
 
 
-def test_sharpe_none_when_flat():
-    assert sharpe([0.0, 0.0]) is None
-    assert sharpe([0.01]) is None
+def test_sharpe_none_when_flat_or_too_few_days():
+    assert sharpe([0.0] * 25) is None
+    assert sharpe([0.01, -0.005] * 9) is None
 
 
 def test_max_drawdown():
@@ -92,10 +92,9 @@ def series(navs):
 
 
 def test_alpha_beta_of_leveraged_copy():
-    bench = [100, 101, 99.5, 102, 101, 103]
-    rb = [b / a - 1 for a, b in zip(bench, bench[1:])]
-    arm = [100]
-    for r in rb:
+    bench, arm = [100.0], [100.0]
+    for r in [0.01, -0.015, 0.025, -0.01, 0.02] * 4:
+        bench.append(bench[-1] * (1 + r))
         arm.append(arm[-1] * (1 + 2 * r + 0.001))
     ra, rb2 = aligned_daily_returns(daily_closes(series(arm)), daily_closes(series(bench)))
     alpha, beta = alpha_beta(ra, rb2)
@@ -110,9 +109,9 @@ def test_aligned_returns_skip_days_missing_from_either():
     assert ra == pytest.approx([0.21]) and rb == pytest.approx([0.0])
 
 
-def test_alpha_beta_none_without_data_or_variance():
-    assert alpha_beta([0.01], [0.02]) == (None, None)
-    assert alpha_beta([0.01, 0.02], [0.0, 0.0]) == (None, None)
+def test_alpha_beta_none_without_enough_days_or_variance():
+    assert alpha_beta([0.01, 0.02] * 9, [0.02, 0.01] * 9) == (None, None)
+    assert alpha_beta([0.01, 0.02] * 10, [0.0] * 20) == (None, None)
 
 
 def test_sharpe_ci_brackets_point_estimate():

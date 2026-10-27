@@ -37,10 +37,13 @@ def daily_returns(series: list[tuple[datetime, float]]) -> list[float]:
     return [b / a - 1 for a, b in zip(navs, navs[1:]) if a]
 
 
+RATIO_MIN_DAYS = 20  # fewer daily returns: Sharpe/alpha/beta are noise (Sharpe 171 on 2 days)
+
+
 def sharpe(daily: list[float]) -> float | None:
     # plain floats, not statistics.stdev (exact fractions): sharpe_ci calls this 1000x per render
     n = len(daily)
-    if n < 2 or max(daily) == min(daily):
+    if n < RATIO_MIN_DAYS or max(daily) == min(daily):
         return None
     mean = math.fsum(daily) / n
     sd = math.sqrt(math.fsum((x - mean) ** 2 for x in daily) / (n - 1))
@@ -61,7 +64,7 @@ def aligned_daily_returns(ca: dict[date, float], cb: dict[date, float]) -> tuple
 def alpha_beta(ra: list[float], rb: list[float]) -> tuple[float | None, float | None]:
     """OLS of arm on benchmark daily returns: (yearly alpha, beta). Alpha = return not
     explained by riding the benchmark."""
-    if len(ra) < 2:
+    if len(ra) < RATIO_MIN_DAYS:
         return None, None
     var_b = statistics.variance(rb)
     if var_b == 0:
@@ -70,14 +73,9 @@ def alpha_beta(ra: list[float], rb: list[float]) -> tuple[float | None, float | 
     return (statistics.mean(ra) - beta * statistics.mean(rb)) * 252, beta
 
 
-SHARPE_CI_MIN_DAYS = 20
-
-
 def sharpe_ci(daily: list[float], level: float = 0.9, n: int = 1000,
               seed: int = 0) -> tuple[float, float] | None:
     """Bootstrap interval for the Sharpe ratio; None until enough days to mean anything."""
-    if len(daily) < SHARPE_CI_MIN_DAYS:
-        return None
     rng = random.Random(seed)
     vals = sorted(v for v in (sharpe(rng.choices(daily, k=len(daily))) for _ in range(n))
                   if v is not None)
