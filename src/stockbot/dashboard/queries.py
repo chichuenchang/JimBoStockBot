@@ -109,11 +109,8 @@ def drawdown(db: DB) -> dict[str, list]:
 def daily_pnl(db: DB) -> dict[str, list]:
     out = {}
     for a in db.accounts():
-        prev, rows = db.start_cash(a), []
-        for d, nav in daily_closes(db.equity_series(a)).items():
-            rows.append([d.isoformat(), nav - prev])
-            prev = nav
-        out[a] = rows
+        closes = list(daily_closes(with_start(db.equity_series(a), db.start_cash(a))).items())
+        out[a] = [[d.isoformat(), nav - prev] for (_, prev), (d, nav) in zip(closes, closes[1:])]
     return out
 
 
