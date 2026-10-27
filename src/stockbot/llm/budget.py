@@ -59,7 +59,7 @@ class Budget:
     def summary(self) -> dict:
         month = self._month()
         out = {name: {"spent": self.db.spent(name, month), "cap": m.monthly_cap_usd,
-                      "state": self.state(name)}
+                      "state": self.state(name), "tokens": self.db.tokens(name, month)}
                for name, m in self.cfg.models.items() if m.enabled}
         total = self.db.spent(None, month)
         cap = self.cfg.settings.global_cap_usd

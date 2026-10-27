@@ -72,6 +72,8 @@ def test_record_returns_cost_and_persists(setup):
 def test_summary(setup):
     db, _, b = setup
     spend(db, KIMI, 10)
+    db.insert_usage(KIMI, "kimi-improved", "decision", OCT, 1000, 600, 50, 0)
     s = b.summary()
-    assert s[KIMI] == {"spent": 10, "cap": 80, "state": "ok"}
+    assert s[KIMI] == {"spent": 10, "cap": 80, "state": "ok",
+                       "tokens": {"calls": 2, "input": 1000, "cached": 600, "output": 50}}
     assert s["_total"]["spent"] == 10 and s["_total"]["cap"] == 100

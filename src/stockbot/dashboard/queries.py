@@ -166,6 +166,17 @@ def fill_markers(db: DB, account: str, symbol: str) -> list[dict]:
             for f in db.fills(account) if f.symbol == symbol]
 
 
+def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
+    """Latest flat-plan quota poll per enabled model that has one (llm/quota.py); state as budget's."""
+    out = {}
+    for name, m in cfg.models.items():
+        if m.enabled and (rows := db.latest_quota(name)):
+            used = max(r["used_ratio"] for r in rows)
+            out[name] = {"windows": rows, "state": "exhausted" if used >= 1
+                         else "warn" if used >= cfg.settings.budget_warn_frac else "ok"}
+    return out
+
+
 def status(db: DB, cfg: AppConfig, budget) -> dict:
     hb = db.kv_get("heartbeat")
     return {
@@ -175,6 +186,7 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "paused_all": pause.flagged(db, pause.ALL),
         "interval": {"minutes": interval.get(db, cfg.settings), "source": interval.source(db)},
         "budget": budget.summary(),
+        "quota": quota(db, cfg),
         "arms": [{"arm": a.name, "model": a.model or "-", "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),
                   "paused": pause.flagged(db, a.name)} for a in cfg.arms if a.enabled],

@@ -51,6 +51,15 @@ async function loadStatus() {
   const why = hot.map(([name, b]) => `${name === "_total" ? "total" : esc(name)} ${b.state}`).join(", ");
   const bcol = worst === "ok" ? css("--good") : worst === "warn" ? css("--warning") : css("--critical");
   chips.push(`<span class="chip"><span class="dot" style="background:${bcol}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
+  // flat-plan models (llm/quota.py): quota used per window, tokens this month
+  const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
+  for (const [name, q] of Object.entries(st.quota)) {
+    const qcol = q.state === "ok" ? css("--good") : q.state === "warn" ? css("--warning") : css("--critical");
+    const used = q.windows.map((w) => `${esc(w.window)} ${fmt(w.used_ratio * 100, 0)}%`).join(" · ");
+    const tk = st.budget[name]?.tokens;
+    const tokens = tk ? ` · ${tk.calls} calls, ${kTok(tk.input)} in / ${kTok(tk.output)} out this month` : "";
+    chips.push(`<span class="chip" title="polled ${etTime(q.windows[0].ts)} ET"><span class="dot" style="background:${qcol}"></span>${esc(name)} quota <b>${used}</b>${tokens}</span>`);
+  }
   const iv = st.interval;
   chips.push(`<span class="chip">decide every <input id="intervalin" type="number" min="1" max="60" value="${iv.minutes}" style="width:3.5em"> min`
     + ` <button id="intervalset">Set</button>${iv.source === "override" ? ' <button id="intervalreset" title="back to settings.yaml">Reset</button>' : ""}</span>`);

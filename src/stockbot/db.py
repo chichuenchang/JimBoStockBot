@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS daily_bars (
   symbol TEXT NOT NULL, day TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
   close REAL NOT NULL, volume REAL NOT NULL, PRIMARY KEY (symbol, day));
+CREATE TABLE IF NOT EXISTS llm_quota (
+  id INTEGER PRIMARY KEY, model TEXT NOT NULL, ts TEXT NOT NULL, window TEXT NOT NULL,
+  used_ratio REAL NOT NULL, reset_ts TEXT);
 """
 
 
@@ -319,6 +322,23 @@ class DB:
 
     def spent_by_arm(self, arm: str) -> float:
         return self._q("SELECT COALESCE(SUM(cost),0) s FROM llm_usage WHERE arm=?", arm)[0]["s"]
+
+    def tokens(self, model: str, month: str) -> dict:
+        r = self._q("SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input, COALESCE(SUM(cached_tokens),0) "
+                    "cached, COALESCE(SUM(output_tokens),0) output FROM llm_usage WHERE month=? AND model=?",
+                    month, model)[0]
+        return dict(r)
+
+    # flat-plan quota: llm/quota.py
+    def insert_quota(self, model: str, ts: datetime, windows) -> None:
+        with self.transaction():
+            self.conn.executemany("INSERT INTO llm_quota(model,ts,window,used_ratio,reset_ts) VALUES(?,?,?,?,?)", [
+                (model, iso(ts), w.name, w.used, w.reset and iso(w.reset)) for w in windows])
+
+    def latest_quota(self, model: str) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT ts, window, used_ratio, reset_ts FROM llm_quota WHERE model=? AND "
+            "ts=(SELECT MAX(ts) FROM llm_quota WHERE model=?) ORDER BY id", model, model)]
 
     # journal
     def journal_append(self, arm: str, ts: datetime, kind: str, text: str) -> None:

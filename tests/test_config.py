@@ -60,10 +60,22 @@ def test_search_flag_loaded():
     assert [a.name for a in CFG.arms if a.search] == ["deepseek-improved"]
 
 
-def test_repo_search_arm():
+def test_repo_search_arms():
     cfg = load_config(REPO_CONFIG)
-    assert [a.name for a in cfg.arms if a.search] == ["deepseek-improved"]
+    assert [a.name for a in cfg.arms if a.search] == ["kimi-improved", "deepseek-improved"]
     assert cfg.models["deepseek-v4.1-flash"].monthly_cap_usd == 35
+
+
+def test_repo_kimi_arms_mirror_deepseek():
+    cfg = load_config(REPO_CONFIG)
+    arms = {a.name: a for a in cfg.arms}
+    for kind in ("baseline", "improved"):
+        k, d = arms[f"kimi-{kind}"], arms[f"deepseek-{kind}"]
+        assert k.enabled and k.model == "kimi-k3.1" and k.every_min == 10
+        assert (k.variant, k.search, k.charts) == (d.variant, d.search, d.charts)
+    m = cfg.models["kimi-k3.1"]
+    assert m.enabled and m.model == "k3.1-pro" and m.extra_body == {"reasoning_effort": "none"}
+    assert m.quota_url == "https://api.kimi.com/coding/v1/usages"
 
 
 def test_search_on_control_arm_rejected(tmp_path):
@@ -99,9 +111,22 @@ def test_api_key_reads_env(monkeypatch):
 
 
 def test_charts_flag_only_on_jimbo():
-    for cfg in (CFG, load_config(REPO_CONFIG)):
-        assert [a.name for a in cfg.arms if a.charts] == ["deepseek-improved"]
+    assert [a.name for a in CFG.arms if a.charts] == ["deepseek-improved"]
+    assert [a.name for a in load_config(REPO_CONFIG).arms if a.charts] == ["kimi-improved", "deepseek-improved"]
     assert CFG.settings.chart_max_per_decision == 3
+
+
+def test_every_min_defaults_none():
+    assert all(a.every_min is None for a in CFG.arms)
+
+
+@pytest.mark.parametrize("bad", [0, 61, "10"])
+def test_every_min_out_of_range_rejected(tmp_path, bad):
+    d = copy_config(tmp_path)
+    (d / "arms.yaml").write_text(
+        f"arms:\n  - {{name: slow, model: kimi-k3, variant: baseline, enabled: true, every_min: {bad!r}}}\n")
+    with pytest.raises(ConfigError, match="slow: every_min"):
+        load_config(d)
 
 
 def test_charts_on_control_arm_rejected(tmp_path):
