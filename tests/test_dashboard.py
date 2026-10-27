@@ -96,6 +96,18 @@ def test_alpha_beta_and_sharpe_ci_vs_benchmark(tmp_path):
     assert f"{lo:.2f} to {hi:.2f}" in html
 
 
+def test_sharpe_alpha_beta_hidden_until_enough_days(tmp_path):
+    db = DB.open(tmp_path / "few.db")
+    for a in ("kimi-improved", BENCHMARK):
+        db.ensure_account(a, 10000)
+    for i, (arm, bench) in enumerate([(10000, 10000), (10100, 10050), (10050, 10120), (10200, 10180)]):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), arm)
+        db.snapshot_equity(BENCHMARK, T0 + timedelta(days=i), bench)
+    for arm in ("kimi-improved", BENCHMARK):
+        r = row(leaderboard(db, CFG), arm)
+        assert r["sharpe"] is None and r["alpha_pct"] is None and r["beta"] is None
+
+
 def test_alpha_none_with_one_day(db):
     r = row(leaderboard(db, CFG), "kimi-improved")
     assert r["alpha_pct"] is None and r["beta"] is None and r["sharpe_ci"] is None
