@@ -8,7 +8,7 @@ from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
-from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
+from stockbot.dashboard.queries import LEADERBOARD_KEYS, drawdown, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.metrics import sharpe
@@ -120,6 +120,15 @@ def test_sharpe_counts_first_day_vs_start_cash(tmp_path):
         db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), nav)
     rets = [-0.05] + [b / a - 1 for a, b in zip(navs, navs[1:])]
     assert row(leaderboard(db, CFG), "kimi-improved")["sharpe"] == pytest.approx(sharpe(rets))
+
+
+def test_drawdown_chart_counts_from_start_cash(tmp_path):
+    db = DB.open(tmp_path / "dd.db")
+    db.ensure_account("kimi-improved", 10000)
+    for i, nav in enumerate([9500, 9800]):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), nav)
+    assert [p[1] for p in drawdown(db)["kimi-improved"]] == pytest.approx([-5.0, -2.0])
+    assert row(leaderboard(db, CFG), "kimi-improved")["max_drawdown"] == pytest.approx(5.0)
 
 
 def test_alpha_none_with_one_day(db):

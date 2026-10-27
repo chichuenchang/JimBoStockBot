@@ -98,7 +98,7 @@ def equity(db: DB, mode: str = "usd") -> dict[str, list]:
 def drawdown(db: DB) -> dict[str, list]:
     out = {}
     for a in db.accounts():
-        peak, pts = float("-inf"), []
+        peak, pts = db.start_cash(a), []  # same base as the leaderboard's worst drop
         for ts, nav in db.equity_series(a):
             peak = max(peak, nav)
             pts.append([int(ts.timestamp() * 1000), (nav / peak - 1) * 100 if peak > 0 else 0.0])
