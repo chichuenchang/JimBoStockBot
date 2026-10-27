@@ -1,6 +1,7 @@
 """Localhost dashboard (FastAPI). Binds 127.0.0.1 only."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -18,14 +19,20 @@ from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
-from stockbot.data.base import DataError, MarketData
+from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
-from stockbot.models import BENCHMARK
+from stockbot.models import BENCHMARK, Session
 
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
+
+
+def _regular_hours(bars: list, tf: str, sessions: dict[date, Session]) -> list:
+    """Drop pre/post-market bars (the feed returns them); an hour bar stays if it overlaps the session."""
+    return [b for b in bars if (s := sessions.get(et_date(b.ts)))
+            and s.open_utc < b.ts + TF_DURATION[tf] and b.ts < s.close_utc]
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
@@ -122,16 +129,20 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         end = datetime.now(UTC)
         long = tf in history.HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
-        err = None
+        err, sessions = None, {}
         start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
                  else end - CANDLE_WINDOW["1Day" if long else tf])
         if data is not None and start < end:  # history holds today once the close is synced
             try:
-                bars += await data.bars(symbol, "1Day" if long else tf, start, end)
+                if long:
+                    bars += await data.bars(symbol, "1Day", start, end)
+                else:  # calendar knows half-days
+                    fetched, cal = await asyncio.gather(data.bars(symbol, tf, start, end),
+                                                        data.calendar(et_date(start), et_date(end)))
+                    bars, sessions = fetched, {s.day: s for s in cal}
             except DataError as e:
                 err = str(e)
-        if long:
-            bars = history.aggregate(bars, tf)
+        bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf, sessions)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
                           "close": b.close} for b in bars],
                 "markers": q.fill_markers(db, known(arm), symbol), "error": err}

@@ -8,9 +8,10 @@ from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
-from stockbot.dashboard.queries import LEADERBOARD_KEYS, leaderboard
+from stockbot.dashboard.queries import LEADERBOARD_KEYS, daily_pnl, drawdown, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
+from stockbot.metrics import sharpe
 from stockbot.models import BENCHMARK, Fill
 from stockbot.pause import is_paused
 from tests.snapshot import CFG
@@ -96,6 +97,49 @@ def test_alpha_beta_and_sharpe_ci_vs_benchmark(tmp_path):
     assert f"{lo:.2f} to {hi:.2f}" in html
 
 
+def test_sharpe_alpha_beta_hidden_until_enough_days(tmp_path):
+    db = DB.open(tmp_path / "few.db")
+    for a in ("kimi-improved", BENCHMARK):
+        db.ensure_account(a, 10000)
+    for i, (arm, bench) in enumerate([(10000, 10000), (10100, 10050), (10050, 10120), (10200, 10180)]):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), arm)
+        db.snapshot_equity(BENCHMARK, T0 + timedelta(days=i), bench)
+    for arm in ("kimi-improved", BENCHMARK):
+        r = row(leaderboard(db, CFG), arm)
+        assert r["sharpe"] is None and r["alpha_pct"] is None and r["beta"] is None
+
+
+def test_sharpe_counts_first_day_vs_start_cash(tmp_path):
+    db = DB.open(tmp_path / "first.db")
+    db.ensure_account("kimi-improved", 10000)
+    rng = random.Random(5)
+    navs = [9500.0]  # day one: -5% from start cash
+    for _ in range(24):
+        navs.append(navs[-1] * (1 + rng.gauss(0.002, 0.01)))
+    for i, nav in enumerate(navs):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), nav)
+    rets = [-0.05] + [b / a - 1 for a, b in zip(navs, navs[1:])]
+    assert row(leaderboard(db, CFG), "kimi-improved")["sharpe"] == pytest.approx(sharpe(rets))
+
+
+def test_drawdown_chart_counts_from_start_cash(tmp_path):
+    db = DB.open(tmp_path / "dd.db")
+    db.ensure_account("kimi-improved", 10000)
+    for i, nav in enumerate([9500, 9800]):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(days=i), nav)
+    assert [p[1] for p in drawdown(db)["kimi-improved"]] == pytest.approx([-5.0, -2.0])
+    assert row(leaderboard(db, CFG), "kimi-improved")["max_drawdown"] == pytest.approx(5.0)
+
+
+def test_daily_pnl_day_one_vs_start_cash(tmp_path):
+    db = DB.open(tmp_path / "pnl.db")
+    db.ensure_account("kimi-improved", 10000)
+    for i, nav in enumerate([9500, 9600, 9800]):
+        db.snapshot_equity("kimi-improved", T0 + timedelta(hours=i), nav)  # last snapshot of a day wins
+    db.snapshot_equity("kimi-improved", T0 + timedelta(days=1), 9700)
+    assert [p[1] for p in daily_pnl(db)["kimi-improved"]] == pytest.approx([-200, -100])
+
+
 def test_alpha_none_with_one_day(db):
     r = row(leaderboard(db, CFG), "kimi-improved")
     assert r["alpha_pct"] is None and r["beta"] is None and r["sharpe_ci"] is None
@@ -155,6 +199,32 @@ def test_api_shapes(db):
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
     assert len(candles["markers"]) == 2 and candles["bars"] == []
+
+
+def test_intraday_candles_regular_session_only(db):
+    from stockbot.clock import et_at
+    from stockbot.models import Bar, Session
+    day, half = et_date(T0), et_date(T0) + timedelta(days=1)  # half: early 13:00 close
+    times = {"1Min": [(day, hm) for hm in ("08:00", "09:29", "09:30", "15:59", "16:00", "17:00")]
+             + [(half, "12:59"), (half, "13:00")],
+             "1Hour": [(day, hm) for hm in ("08:00", "09:00", "15:00", "16:00")] + [(half, "12:00"), (half, "13:00")]}
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            return [Bar(symbol, et_at(d, hm), 1, 1, 1, 1, 1) for d, hm in times[tf]]
+
+        async def calendar(self, start, end):
+            return [Session(day, et_at(day, "09:30"), et_at(day, "16:00")),
+                    Session(half, et_at(half, "09:30"), et_at(half, "13:00"))]
+
+    def ts(d, hm):
+        return int(et_at(d, hm).timestamp())
+
+    c = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live()))
+    kept = {tf: [b["time"] for b in c.get(f"/api/candles?symbol=MSFT&arm=kimi-improved&tf={tf}").json()["bars"]]
+            for tf in times}
+    assert kept == {"1Min": [ts(day, "09:30"), ts(day, "15:59"), ts(half, "12:59")],
+                    "1Hour": [ts(day, "09:00"), ts(day, "15:00"), ts(half, "12:00")]}
 
 
 def test_no_secrets_in_responses(db, monkeypatch):
