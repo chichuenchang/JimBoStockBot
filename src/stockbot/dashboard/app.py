@@ -1,6 +1,7 @@
 """Localhost dashboard (FastAPI). Binds 127.0.0.1 only."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -133,9 +134,12 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
                  else end - CANDLE_WINDOW["1Day" if long else tf])
         if data is not None and start < end:  # history holds today once the close is synced
             try:
-                bars += await data.bars(symbol, "1Day" if long else tf, start, end)
-                if not long:  # calendar knows half-days
-                    sessions = {s.day: s for s in await data.calendar(et_date(start), et_date(end))}
+                if long:
+                    bars += await data.bars(symbol, "1Day", start, end)
+                else:  # calendar knows half-days
+                    fetched, cal = await asyncio.gather(data.bars(symbol, tf, start, end),
+                                                        data.calendar(et_date(start), et_date(end)))
+                    bars, sessions = fetched, {s.day: s for s in cal}
             except DataError as e:
                 err = str(e)
         bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf, sessions)
