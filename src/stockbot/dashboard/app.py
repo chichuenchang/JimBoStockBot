@@ -26,6 +26,13 @@ from stockbot.models import BENCHMARK
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
+BAR_LEN = {"1Min": timedelta(minutes=1), "1Hour": timedelta(hours=1)}
+
+
+def _regular_hours(bars: list, tf: str) -> list:
+    """Drop pre/post-market bars (the feed returns them); an hour bar stays if it overlaps 09:30-16:00 ET."""
+    return [b for b in bars
+            if et_at(et_date(b.ts), "09:30") < b.ts + BAR_LEN[tf] and b.ts < et_at(et_date(b.ts), "16:00")]
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
@@ -130,8 +137,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
                 bars += await data.bars(symbol, "1Day" if long else tf, start, end)
             except DataError as e:
                 err = str(e)
-        if long:
-            bars = history.aggregate(bars, tf)
+        bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
                           "close": b.close} for b in bars],
                 "markers": q.fill_markers(db, known(arm), symbol), "error": err}

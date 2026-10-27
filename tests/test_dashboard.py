@@ -183,6 +183,24 @@ def test_api_shapes(db):
     assert len(candles["markers"]) == 2 and candles["bars"] == []
 
 
+def test_intraday_candles_regular_session_only(db):
+    from stockbot.clock import et_at
+    from stockbot.models import Bar
+    day = et_date(T0)
+    times = {"1Min": ["08:00", "09:29", "09:30", "15:59", "16:00", "17:00"],
+             "1Hour": ["08:00", "09:00", "15:00", "16:00"]}
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            return [Bar(symbol, et_at(day, hm), 1, 1, 1, 1, 1) for hm in times[tf]]
+
+    c = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live()))
+    kept = {tf: [b["time"] for b in c.get(f"/api/candles?symbol=MSFT&arm=kimi-improved&tf={tf}").json()["bars"]]
+            for tf in times}
+    ts = lambda hm: int(et_at(day, hm).timestamp())  # noqa: E731
+    assert kept == {"1Min": [ts("09:30"), ts("15:59")], "1Hour": [ts("09:00"), ts("15:00")]}
+
+
 def test_no_secrets_in_responses(db, monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-secret-value")
     c = client(db)
