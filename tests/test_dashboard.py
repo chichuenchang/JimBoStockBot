@@ -470,6 +470,9 @@ def test_usage_follows_config(db):
     assert bots["old-bot"]["model"] == "deepseek-v4.1-flash" and bots["old-bot"]["today"]["cost"] == 0.2
     assert u["quota"]["gpt"] == {"state": None, "bots": ["new-bot"], "windows": [], "history": {}}
     assert "gpt" not in usage(db, CFG, NOW)["quota"]  # no bot on it, no card
+    db.insert_quota("gpt", NOW, [Window("5h", 0.1, None)])
+    no_bot = dataclasses.replace(CFG, models={**CFG.models, "gpt": plan})
+    assert "gpt" not in usage(db, no_bot, NOW)["quota"]  # polled but no bot: still no card
 
 
 def test_usage_removed_bot_latest_model(db):

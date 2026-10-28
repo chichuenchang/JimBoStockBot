@@ -251,9 +251,10 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
             bots.append(b)
             model_of[b] = rs[-1]["model"]
     polled = quota(db, cfg)
-    # flat plan = quota_url in models.yaml; listed before its first poll so a new bot is never shown as $0 billed
-    plans = {**polled, **{m: {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
-                          if m not in polled and (mc := cfg.models.get(m)) and mc.enabled and mc.quota_url}}
+    # card per model a bot runs on, if polled or flat plan (quota_url in models.yaml): listed before its
+    # first poll so a new bot is never shown as $0 billed
+    plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
+             if m in polled or ((mc := cfg.models.get(m)) and mc.enabled and mc.quota_url)}
     since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
     series = {}
     for b, rs in by_bot.items():
