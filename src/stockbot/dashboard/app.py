@@ -18,6 +18,7 @@ from stockbot.agent import chart_tool
 from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
+from stockbot.dashboard import tab_order
 from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
 from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
@@ -59,7 +60,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
-                                                 "arms": arm_names, "names": names, "js_version": js_version, **ctx})
+                                                 "arms": tab_order.get(db, arm_names), "names": names,
+                                                 "js_version": js_version, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -187,6 +189,14 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             raise HTTPException(400, "minutes must be a whole number or null")
         try:
             interval.set(db, m)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return {"ok": True}
+
+    @app.post("/api/tab_order")
+    def set_tab_order(body: dict):
+        try:
+            tab_order.set(db, body.get("arms"), arm_names)
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         return {"ok": True}
