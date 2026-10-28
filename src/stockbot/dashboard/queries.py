@@ -222,7 +222,8 @@ def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start:
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
     """Token use per bot: today (ET) and this month, a running total since today's start or `days`
-    back, and quota per flat-plan model."""
+    back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
+    a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
     start = today if days is None else min(today, now - timedelta(days=days))
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
@@ -238,7 +239,10 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
         if b not in bots:
             bots.append(b)
             model_of[b] = m
-    plans = quota(db, cfg)
+    polled = quota(db, cfg)
+    # flat plan = quota_url in models.yaml; listed before its first poll so a new bot is never shown as $0 billed
+    plans = {**polled, **{m: {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
+                          if m not in polled and (mc := cfg.models.get(m)) and mc.enabled and mc.quota_url}}
     series = {}
     for b, rs in by_bot.items():
         run, pts = 0, []

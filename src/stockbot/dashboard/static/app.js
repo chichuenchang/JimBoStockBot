@@ -292,9 +292,12 @@ async function loadUsage() {
       : `<section class="card"><p class="muted">No bot runs on a flat plan (a model with quota_url in models.yaml).</p></section>`;
     el.dataset.key = key;
   }
-  plans.forEach(([, p], i) => {
-    document.getElementById(`qstate-${i}`).innerHTML = `<span class="dot" style="background:${stateColor(p.state)}"></span>`;
-    document.getElementById(`qkpi-${i}`).innerHTML = p.windows.map((w) =>
+  plans.forEach(([m, p], i) => {
+    // state null: plan in models.yaml, no quota poll stored yet (daemon.QUOTA_EVERY; failures in the log)
+    document.getElementById(`qstate-${i}`).innerHTML = `<span class="dot" style="background:${p.state ? stateColor(p.state) : css("--bench")}"></span>`;
+    document.getElementById(`qkpi-${i}`).innerHTML = !p.windows.length
+      ? `<p class="muted">No quota reading yet; the running daemon polls it. Stays empty? Look for "quota ${esc(m)}" in logs/stockbot.log.</p>`
+      : p.windows.map((w) =>
       `<div class="kpi" title="polled ${etTime(w.ts)}"><span>${esc(w.window)} window</span><b>${pctOf(w.used_ratio)}</b>` +
       `<span class="small">${w.reset_ts ? "resets " + etTime(w.reset_ts) : "no reset time"}</span></div>`).join("");
     const names = [...new Set([...p.bots, ...p.windows.flatMap((w) => Object.keys(w.bots))])];
