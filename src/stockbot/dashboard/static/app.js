@@ -268,7 +268,9 @@ function initArm() {
 let usageSpan = "today";
 const pctOf = (r) => fmt(r * 100, 1) + "%";
 async function loadUsage() {
-  const u = await get(`/api/usage?span=${usageSpan}`);
+  const span = usageSpan;
+  const u = await get(`/api/usage?span=${span}`);
+  if (span !== usageSpan) return;  // span clicked while in flight: the click's own load draws
   const bots = u.bots.map((b) => b.bot);
   draw("tokens", "line", { datasets: bots.filter((b) => u.series[b]?.length).map((b) => ({
     label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
