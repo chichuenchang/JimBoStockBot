@@ -260,6 +260,38 @@ function initArm() {
   return loadArm;
 }
 
+// ---------- bot tabs: drag to reorder, saved server-side (dashboard/tab_order.py) ----------
+(function initTabDrag() {
+  const nav = document.querySelector("nav.tabs");
+  const order = () => [...nav.querySelectorAll("a[data-arm]")].map((a) => a.dataset.arm);
+  let dragged = null, before = "";
+  nav.addEventListener("dragstart", (e) => {
+    dragged = e.target.closest?.("a[data-arm]") || null;
+    if (!dragged) return;
+    before = JSON.stringify(order());
+    e.dataTransfer.effectAllowed = "move";
+    dragged.classList.add("dragging");
+  });
+  nav.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    const over = e.target.closest?.("a[data-arm]");
+    if (!over || over === dragged) return;
+    const r = over.getBoundingClientRect();
+    nav.insertBefore(dragged, e.clientX < r.left + r.width / 2 ? over : over.nextSibling);
+  });
+  nav.addEventListener("drop", (e) => e.preventDefault());
+  nav.addEventListener("dragend", async () => {
+    if (!dragged) return;
+    dragged.classList.remove("dragging");
+    dragged = null;
+    if (JSON.stringify(order()) === before) return;
+    const r = await fetch("/api/tab_order", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ arms: order() }) });
+    if (!r.ok) location.reload();  // server refused (config changed?): show what it holds
+  });
+})();
+
 // ---------- polling: 5 s while the market is open, else 60 s ----------
 (async function main() {
   const page = document.body.dataset.page;

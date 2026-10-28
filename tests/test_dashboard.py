@@ -1,4 +1,6 @@
+import json
 import random
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -167,6 +169,31 @@ def test_interval_endpoint(db):
     assert c.post("/api/interval", json={"minutes": None}).status_code == 200
     assert c.get("/api/status").json()["interval"] == {"minutes": CFG.settings.cycle_every_min,
                                                         "source": "default"}
+
+
+def tab_arms(html):
+    nav = html.split('<nav class="tabs">')[1].split("</nav>")[0]
+    return re.findall(r'data-arm="([^"]+)"', nav)
+
+
+def test_tab_order_endpoint(db):
+    c = client(db)
+    arms = tab_arms(c.get("/").text)
+    assert arms == [a.name for a in CFG.arms if a.enabled]
+    moved = arms[2:] + arms[:2]
+    assert c.post("/api/tab_order", json={"arms": moved}).status_code == 200
+    assert tab_arms(client(db).get("/").text) == moved  # fresh app = daemon restart; order kept
+    for bad in (arms[1:], arms + [arms[0]], arms[1:] + ["nope"], "abc"):
+        assert c.post("/api/tab_order", json={"arms": bad}).status_code == 400
+    # SERIES (colors) stays in config order
+    assert f"window.SERIES = {json.dumps(arms + [BENCHMARK])}" in c.get("/").text
+
+
+def test_tab_order_survives_config_change(db):
+    db.kv_set("tab_order", '["rules-momentum", "gone-arm", "kimi-improved"]')
+    arms = tab_arms(client(db).get("/").text)
+    assert arms[:2] == ["rules-momentum", "kimi-improved"]
+    assert sorted(arms) == sorted(a.name for a in CFG.arms if a.enabled)
 
 
 @pytest.mark.parametrize("used,state", [(0.2, "ok"), (0.9, "warn"), (1.0, "exhausted")])

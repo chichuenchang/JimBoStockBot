@@ -49,6 +49,7 @@ header { background: var(--surface-1); border-bottom: 1px solid var(--border); p
   border-bottom: 2px solid transparent; }
 .tabs a:hover { color: var(--text-primary); }
 .tabs a.on { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+.tabs a.dragging { opacity: .4; }
 h2.section { font-size: 15px; margin: 22px 0 10px; }
 h2.section:first-child { margin-top: 4px; }
 h2 .muted, h2.section .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
@@ -127,7 +128,7 @@ a { color: var(--series-1); }
   {% set active = arm if arm is defined else "" %}
   <nav class="tabs">
     <a href="/" class="{{ 'on' if not active }}">Overview</a>
-    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
+    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}" draggable="true" title="drag to reorder"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
 </header>
 <main>{% block body %}{% endblock %}</main>
