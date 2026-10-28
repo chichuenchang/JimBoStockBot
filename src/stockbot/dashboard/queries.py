@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from itertools import accumulate
 
 from stockbot import interval, pause
@@ -212,10 +212,6 @@ def _window_start(window: dict, now: datetime) -> datetime | None:
     return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
 
 
-def _midnight_after(day: date) -> datetime:
-    return et_at(day + timedelta(days=1), "00:00")
-
-
 def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list[dict], now: datetime) -> dict:
     """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there,
     now and at each of `polls`. `rows`: usage since at least every window's start, oldest first."""
@@ -259,11 +255,11 @@ def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list
 
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
-    """Token use per bot: today (ET) and this month, a running total per ET day since today's
-    start or `days` days back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
+    """Token use per bot: today (ET) and this month, a running total since today's start, totals
+    per ET day since today or `days` days back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
-    # whole ET days, so the series' first day is not a partial total
+    # whole ET days, so the first day's total is not partial
     start = today if days is None else et_at(et_date(now) - timedelta(days=days), "00:00")
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
@@ -291,20 +287,17 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
              if m in polled or ((mc := cfg.models.get(m)) and mc.enabled and mc.quota_url)}
     since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
-    series = {}  # running total per ET day: back to 0 at each midnight after a day with calls
+    series = {}  # running total since today's start
+    per_day = {et_date(start) + timedelta(days=i): defaultdict(list)  # every ET day of the span, empty ones too
+               for i in range((et_date(now) - et_date(start)).days + 1)}
     for b, rs in by_bot.items():
-        run, day, pts = 0, None, []
+        run, pts = 0, []
         for r in rs:
-            if r["ts"] >= since["start"]:
-                ts = parse_ts(r["ts"])
-                if et_date(ts) != day:
-                    if day:
-                        pts.append([_ms(_midnight_after(day)), 0])
-                    run, day = 0, et_date(ts)
+            if r["ts"] >= since["start"] and (day := et_date(parse_ts(r["ts"]))) in per_day:
+                per_day[day][b].append(r)
+            if r["ts"] >= since["today"]:
                 run += _tokens(r)
-                pts.append([_ms(ts), run])
-        if day and _midnight_after(day) <= now:
-            pts.append([_ms(_midnight_after(day)), 0])
+                pts.append([_ms(parse_ts(r["ts"])), run])
         if pts:
             series[b] = _thin(pts)
     return {
@@ -313,6 +306,7 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
                   **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
+        "daily": [{"day": d.isoformat(), "bots": {b: _totals(rs) for b, rs in bs.items()}} for d, bs in per_day.items()],
         "quota": {m: _plan(m, info, [b for b in bots if model_of[b] == m], rows, polls.get(m, []), now)
                   for m, info in plans.items()},
     }
