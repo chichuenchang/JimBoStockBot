@@ -72,6 +72,14 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         [row] = q.leaderboard(db, cfg, only=known(arm))
         return page(request, "arm.html", arm=arm, row=row, universe=list(cfg.settings.universe))
 
+    @app.get("/usage", response_class=HTMLResponse)
+    def usage_page(request: Request):
+        return page(request, "usage.html", tab="usage")
+
+    @app.get("/api/usage")
+    def api_usage(span: str = "today"):
+        return q.usage(db, cfg, budget.clock.now(), 7 if span == "7d" else None)
+
     @app.get("/api/leaderboard")
     def api_leaderboard():
         return q.leaderboard(db, cfg)
