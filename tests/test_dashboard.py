@@ -196,6 +196,12 @@ def test_tab_order_survives_config_change(db):
     assert sorted(arms) == sorted(a.name for a in CFG.arms if a.enabled)
 
 
+@pytest.mark.parametrize("raw", ["not json", "42", '{"a": 1}'])
+def test_tab_order_bad_value_falls_back(db, raw):
+    db.kv_set("tab_order", raw)
+    assert tab_arms(client(db).get("/").text) == [a.name for a in CFG.arms if a.enabled]
+
+
 @pytest.mark.parametrize("used,state", [(0.2, "ok"), (0.9, "warn"), (1.0, "exhausted")])
 def test_status_quota(db, used, state):
     db.insert_quota("kimi-k3", T0, [Window("5h", used, T0), Window("7d", 0.1, None)])

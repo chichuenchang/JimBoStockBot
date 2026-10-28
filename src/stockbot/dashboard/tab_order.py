@@ -11,7 +11,13 @@ KEY = "tab_order"
 
 def get(db: DB, arms: list[str]) -> list[str]:
     """Saved order; arms dropped from config vanish, new ones go last in config order."""
-    saved = [a for a in json.loads(db.kv_get(KEY) or "[]") if a in arms]
+    try:
+        saved = json.loads(db.kv_get(KEY) or "[]")
+    except ValueError:
+        saved = []
+    if not isinstance(saved, list):  # bad kv value must not 500 every page: fall back to config order
+        saved = []
+    saved = [a for a in saved if a in arms]
     return saved + [a for a in arms if a not in saved]
 
 
