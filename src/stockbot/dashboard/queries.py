@@ -241,13 +241,16 @@ def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list
         windows.append({**w, "start": ws and iso(ws), "bots": {
             b: s for b, s in share(ws, now, w["used_ratio"]).items() if b in bots or s["calls"]}})
     history: dict[str, dict[str, list]] = {}  # window -> bot -> [ms, % of quota]
+    called = set()  # (window, bot) with calls in some poll's window: same rule as `windows`
     for p in polls:
         end = parse_ts(p["ts"])
         if ws := _window_start(p, end):
             for b, s in share(ws, end, p["used_ratio"]).items():
                 history.setdefault(p["window"], {}).setdefault(b, []).append([_ms(end), s["used_ratio"] * 100])
+                if s["calls"]:
+                    called.add((p["window"], b))
     return {"state": info["state"], "bots": bots, "windows": windows,
-            "history": {w: {b: _thin(v) for b, v in hb.items() if b in bots or any(y for _, y in v)}
+            "history": {w: {b: _thin(v) for b, v in hb.items() if b in bots or (w, b) in called}
                         for w, hb in history.items()}}
 
 

@@ -467,6 +467,17 @@ def test_usage_quota_window_after_poll(db):
     assert [p[1] for p in h["kimi-baseline"]] == [0]
 
 
+def test_usage_quota_bot_moved_off_model(db):
+    """Bot now on another model, with a 0-token call in the window: listed in table and chart alike."""
+    db.insert_usage("kimi-k3", "kimi-baseline", "decision", NOW - timedelta(hours=1), 300, 0, 0, 0)
+    db.insert_usage("kimi-k3", "old-bot", "decision", NOW - timedelta(hours=2), 0, 0, 0, 0)
+    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(minutes=5), 10, 0, 0, 0)
+    db.insert_quota("kimi-k3", NOW, [Window("5h", 0.1, None)])
+    plan = client(db).get("/api/usage").json()["quota"]["kimi-k3"]
+    assert "old-bot" not in plan["bots"] and "old-bot" in plan["windows"][0]["bots"]
+    assert [p[1] for p in plan["history"]["5h"]["old-bot"]] == [0]
+
+
 def test_usage_follows_config(db):
     """A bot added to arms.yaml (here on a flat plan not polled yet) or dropped from it needs no code change."""
     import dataclasses
