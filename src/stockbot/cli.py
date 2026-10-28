@@ -23,6 +23,7 @@ from stockbot.broker.sim import SimBroker
 from stockbot.clock import RealClock, ReplayClock
 from stockbot.config import AppConfig, ConfigError, api_key, load_config
 from stockbot.daemon import Daemon
+from stockbot.dashboard import queries
 from stockbot.db import DB
 from stockbot.llm.base import make_client
 from stockbot.llm.budget import Budget
@@ -168,6 +169,13 @@ def _status(cfg: AppConfig, db: DB) -> int:
     budget = Budget(db, cfg, RealClock())
     for name, row in budget.summary().items():
         print(f"{name:24} ${row['spent']:.2f} / ${row['cap']:.2f}  {row['state']}")
+        if t := row.get("tokens"):
+            print(f"{'':24} tokens {t['calls']} calls, {t['input']:,} in ({t['cached']:,} cached), "
+                  f"{t['output']:,} out this month")
+    for name, q in queries.quota(db, cfg).items():
+        rows = q["windows"]
+        print(f"{name:24} quota " + ", ".join(f"{r['window']} {r['used_ratio']:.0%}" for r in rows)
+              + f"  {q['state']}  (polled {rows[0]['ts']})")
     for arm in cfg.arms:
         last = db.last_decision_ts(arm.name)
         try:
@@ -277,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
         clock = RealClock()
         data = _alpaca()
         ctx = _ctx(cfg, db, data, clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg), data)
-        asyncio.run(Daemon(ctx).run_forever())
+        asyncio.run(Daemon(ctx, poll_quota=True).run_forever())
         return 0
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)

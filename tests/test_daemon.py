@@ -1,5 +1,6 @@
+import dataclasses
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -14,6 +15,7 @@ from stockbot.data.recorded import RecordedData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
+from stockbot.llm.quota import Window
 from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
 from tests.snapshot import CFG, cli
@@ -97,6 +99,22 @@ async def test_interval_change_takes_effect(tmp_path):
     assert daemon.ctx.db.decision_exists("kimi-improved", slot)
 
 
+async def test_arm_every_min_skips_close_slots(tmp_path):
+    daemon, session, clock, _ = build(tmp_path)
+    slow = dataclasses.replace(CFG.arms[0], every_min=10)
+    daemon.ctx.cfg = dataclasses.replace(CFG, arms=(slow, *CFG.arms[1:]))
+    interval.set(daemon.ctx.db, 5)
+    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=36))  # 9:45..10:05
+    db = daemon.ctx.db
+
+    def slots(arm):
+        return [r["slot_ts"] for r in db._q(
+            "SELECT slot_ts FROM decisions WHERE arm=? AND reason='scheduled' ORDER BY slot_ts", arm)]
+    at = [(session.open_utc + timedelta(minutes=m)).isoformat() for m in (15, 20, 25, 30, 35)]
+    assert slots(slow.name) == at[::2]
+    assert slots(CFG.arms[1].name) == at
+
+
 def test_cli_interval(tmp_path, capsys):
     db_path = tmp_path / "x.db"
     assert cli(db_path, "interval", "5") == 0
@@ -146,8 +164,14 @@ def test_cli_pause_resume(tmp_path):
 
 
 def test_cli_status(tmp_path, capsys):
+    db = DB.open(tmp_path / "x.db")
+    db.insert_usage("kimi-k3", "kimi-improved", "decision", datetime.now(UTC), 12000, 0, 340, 0)
+    db.insert_quota("kimi-k3", datetime.now(UTC), [Window("5h", 0.25, None)])
+    db.close()
     assert cli(tmp_path / "x.db", "status") == 0
-    assert "kimi-k3" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "kimi-k3" in out and "tokens 1 calls, 12,000 in (0 cached), 340 out" in out
+    assert "quota 5h 25%" in out
 
 
 async def test_market_open_flag(tmp_path):

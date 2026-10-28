@@ -10,6 +10,7 @@ from stockbot.agent.cycle import AppContext, run_cycle
 from stockbot.broker.sim import buy_price, floor3
 from stockbot.clock import ET, et_at, et_date, in_session, report_slots
 from stockbot.data.base import DataError
+from stockbot.llm import quota
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
 from stockbot.report.analyst import build_report
@@ -18,6 +19,7 @@ log = logging.getLogger("stockbot")
 REPLAY_GAP = timedelta(minutes=2)
 HISTORY_LAG = timedelta(minutes=16)  # free plan: SIP feed blocked for the last 15 min
 HISTORY_RETRY = timedelta(minutes=30)
+QUOTA_EVERY = timedelta(minutes=10)
 
 
 def floor_minute(ts: datetime) -> datetime:
@@ -25,9 +27,12 @@ def floor_minute(ts: datetime) -> datetime:
 
 
 class Daemon:
-    def __init__(self, ctx: AppContext, serve_dashboard: bool = True):
+    def __init__(self, ctx: AppContext, serve_dashboard: bool = True, poll_quota: bool = False):
         self.ctx = ctx
         self.serve_dashboard = serve_dashboard
+        self.poll_quota = poll_quota  # live runs only: replay must not hit provider endpoints
+        self._quota_next = datetime.min.replace(tzinfo=UTC)
+        self._quota_warned: set[tuple] = set()  # (model, window, reset): warn once per window
         self.sessions: list[Session] = []
         self._calendar_day = None
         self._data_failed = False
@@ -74,6 +79,11 @@ class Daemon:
 
     def _mark(self, kind: str, slot: datetime) -> None:
         self.ctx.db.kv_set(f"{kind}:{slot.isoformat()}", "1")
+
+    def _arm_due(self, arm, slot: datetime) -> bool:
+        """Arm with every_min: only slots at least that long after its last scheduled cycle."""
+        raw = self.ctx.db.kv_get(f"cycle_last:{arm.name}")
+        return not (arm.every_min and raw) or slot - datetime.fromisoformat(raw) >= timedelta(minutes=arm.every_min)
 
     # jobs
     async def _refresh_calendar(self, now: datetime) -> None:
@@ -139,8 +149,12 @@ class Daemon:
             return
         ok = True
         for arm in self.ctx.cfg.arms:
-            if arm.enabled:
-                ok &= await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices))
+            if not arm.enabled or not self._arm_due(arm, slot):
+                continue
+            if await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices)):
+                self.ctx.db.kv_set(f"cycle_last:{arm.name}", slot.isoformat())
+            else:
+                ok = False
         if ok:
             self._mark("cycle", slot)
             self.cycles_run += 1
@@ -177,6 +191,27 @@ class Daemon:
         if n:
             log.info("price history: %d daily bars written through %s", n, done)
 
+    async def _quota(self, now: datetime) -> None:
+        """Flat-plan quota of models with quota_url, every QUOTA_EVERY: llm/quota.py."""
+        if not self.poll_quota or now < self._quota_next:
+            return
+        self._quota_next = now + QUOTA_EVERY
+        warn = self.ctx.cfg.settings.budget_warn_frac
+        for m in self.ctx.cfg.models.values():
+            if not (m.enabled and m.quota_url):
+                continue
+            try:
+                windows = await quota.fetch(m)
+            except quota.QuotaError as e:
+                log.error("quota %s: %s", m.name, e)
+                continue
+            self.ctx.db.insert_quota(m.name, now, windows)
+            for w in windows:
+                if w.used >= warn and (key := (m.name, w.name, w.reset)) not in self._quota_warned:
+                    self._quota_warned.add(key)
+                    log.warning("%s quota %s window %.0f%% used, resets %s", m.name, w.name, w.used * 100,
+                                w.reset.astimezone(ET).strftime("%m-%d %H:%M ET") if w.reset else "?")
+
     async def step(self, now: datetime) -> None:
         db = self.ctx.db
         self._data_failed = False
@@ -202,6 +237,7 @@ class Daemon:
             if not replayed:  # never wake the LLM on stale catch-up bars
                 await self._wakes(tick)
         await self._history(now, session)  # after cycles: first backfill must not delay a decision
+        await self._quota(now)
         db.kv_set("data_ok", "0" if self._data_failed else "1")
 
     async def run_forever(self, poll_s: float = 20) -> None:

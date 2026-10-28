@@ -11,6 +11,7 @@ from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, daily_pnl, drawdown, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
+from stockbot.llm.quota import Window
 from stockbot.metrics import sharpe
 from stockbot.models import BENCHMARK, Fill
 from stockbot.pause import is_paused
@@ -168,6 +169,14 @@ def test_interval_endpoint(db):
                                                         "source": "default"}
 
 
+@pytest.mark.parametrize("used,state", [(0.2, "ok"), (0.9, "warn"), (1.0, "exhausted")])
+def test_status_quota(db, used, state):
+    db.insert_quota("kimi-k3", T0, [Window("5h", used, T0), Window("7d", 0.1, None)])
+    q = client(db).get("/api/status").json()["quota"]
+    assert list(q) == ["kimi-k3"] and q["kimi-k3"]["state"] == state
+    assert [w["window"] for w in q["kimi-k3"]["windows"]] == ["5h", "7d"]
+
+
 def test_cross_site_post_refused(db):
     """Any web page the user visits could POST to 127.0.0.1; the browser labels it."""
     c = client(db)
@@ -191,7 +200,7 @@ def test_api_shapes(db):
     assert c.get("/api/daily_pnl").json()["kimi-improved"]
     assert c.get("/api/heatmap").json()["kimi-improved"]["MSFT"] == pytest.approx(49.5)
     st = c.get("/api/status").json()
-    assert "budget" in st and "arms" in st
+    assert "budget" in st and "arms" in st and st["quota"] == {}
     trades = c.get("/api/arm/kimi-improved/trades").json()
     assert trades[0]["symbol"] == "MSFT"
     [d] = c.get("/api/arm/kimi-improved/decisions").json()
