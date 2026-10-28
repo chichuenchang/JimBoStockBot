@@ -7,7 +7,7 @@ from datetime import datetime
 
 import httpx
 
-from stockbot.config import ModelCfg, api_key
+from stockbot.config import ConfigError, ModelCfg, api_key
 
 
 @dataclass(frozen=True)
@@ -32,9 +32,12 @@ def parse(data: dict) -> list[Window]:
 
 async def fetch(cfg: ModelCfg, timeout_s: float = 20) -> list[Window]:
     try:
+        key = api_key(cfg)
+    except ConfigError as e:
+        raise QuotaError(str(e)) from e
+    try:
         async with httpx.AsyncClient() as http:
-            resp = await http.get(cfg.quota_url, headers={"Authorization": f"Bearer {api_key(cfg)}"},
-                                  timeout=timeout_s)
+            resp = await http.get(cfg.quota_url, headers={"Authorization": f"Bearer {key}"}, timeout=timeout_s)
     except httpx.HTTPError as e:
         raise QuotaError(f"transport error {type(e).__name__}") from e
     if resp.status_code != 200:

@@ -51,6 +51,11 @@ async def test_fetch_http_error():
         await quota.fetch(KIMI)
 
 
+async def test_fetch_missing_key():
+    with pytest.raises(quota.QuotaError, match="no api_key_env"):
+        await quota.fetch(dataclasses.replace(KIMI, api_key_env=None))
+
+
 def test_db_latest_quota(tmp_path):
     db = DB.open(tmp_path / "t.db")
     t = datetime(2026, 10, 27, 15, tzinfo=UTC)
