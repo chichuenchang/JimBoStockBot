@@ -10,7 +10,9 @@ function colorOf(series) {
   return css(`--series-${(i % 8) + 1}`);
 }
 const nameOf = (s) => window.NAMES[s] || s;
+const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
+const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
 const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York",
@@ -49,8 +51,14 @@ async function loadStatus() {
   const hot = Object.entries(st.budget).filter(([, b]) => b.state !== "ok");
   const worst = hot.reduce((w, [, b]) => (rank[b.state] > rank[w] ? b.state : w), "ok");
   const why = hot.map(([name, b]) => `${name === "_total" ? "total" : esc(name)} ${b.state}`).join(", ");
-  const bcol = worst === "ok" ? css("--good") : worst === "warn" ? css("--warning") : css("--critical");
-  chips.push(`<span class="chip"><span class="dot" style="background:${bcol}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
+  chips.push(`<span class="chip"><span class="dot" style="background:${stateColor(worst)}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
+  // flat-plan models (llm/quota.py): quota used per window, tokens this month
+  for (const [name, q] of Object.entries(st.quota)) {
+    const used = q.windows.map((w) => `${esc(w.window)} ${fmt(w.used_ratio * 100, 0)}%`).join(" · ");
+    const tk = st.budget[name]?.tokens;
+    const tokens = tk ? ` · ${tk.calls} calls, ${kTok(tk.input)} in / ${kTok(tk.output)} out this month` : "";
+    chips.push(`<span class="chip" title="polled ${etTime(q.windows[0].ts)} ET"><span class="dot" style="background:${stateColor(q.state)}"></span>${esc(name)} quota <b>${used}</b>${tokens}</span>`);
+  }
   const iv = st.interval;
   chips.push(`<span class="chip">decide every <input id="intervalin" type="number" min="1" max="60" value="${iv.minutes}" style="width:3.5em"> min`
     + ` <button id="intervalset">Set</button>${iv.source === "override" ? ' <button id="intervalreset" title="back to settings.yaml">Reset</button>' : ""}</span>`);
@@ -251,6 +259,39 @@ function initArm() {
   loadCandles();
   return loadArm;
 }
+
+// ---------- bot tabs: drag to reorder, saved server-side (dashboard/tab_order.py) ----------
+(function initTabDrag() {
+  const nav = document.querySelector("nav.tabs");
+  const order = () => [...nav.querySelectorAll("a[data-arm]")].map((a) => a.dataset.arm);
+  let dragged = null, before = "";
+  nav.addEventListener("dragstart", (e) => {
+    dragged = e.target.closest?.("a[data-arm]") || null;
+    if (!dragged) return;
+    before = JSON.stringify(order());
+    e.dataTransfer.effectAllowed = "move";
+    dragged.classList.add("dragging");
+  });
+  nav.addEventListener("dragover", (e) => {
+    if (!dragged) return;
+    e.preventDefault();
+    const over = e.target.closest?.("a[data-arm]");
+    if (!over || over === dragged) return;
+    const r = over.getBoundingClientRect();
+    nav.insertBefore(dragged, e.clientX < r.left + r.width / 2 ? over : over.nextSibling);
+  });
+  nav.addEventListener("drop", (e) => e.preventDefault());
+  nav.addEventListener("dragend", async () => {
+    if (!dragged) return;
+    dragged.classList.remove("dragging");
+    dragged = null;
+    const arms = order();
+    if (JSON.stringify(arms) === before) return;
+    const r = await fetch("/api/tab_order", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ arms }) }).catch(() => null);
+    if (!r?.ok) location.reload();  // refused (config changed?) or unreachable: show what the server holds
+  });
+})();
 
 // ---------- polling: 5 s while the market is open, else 60 s ----------
 (async function main() {

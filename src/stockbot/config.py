@@ -28,6 +28,7 @@ class ModelCfg:
     monthly_cap_usd: float
     enabled: bool
     extra_body: dict | None = None  # merged into the request body, e.g. thinking switches
+    quota_url: str | None = None  # set = flat plan: polled by llm/quota.py, no own USD cap in llm/budget.py
 
 
 @dataclass(frozen=True)

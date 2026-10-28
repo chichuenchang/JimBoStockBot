@@ -12,6 +12,14 @@ State = Literal["ok", "warn", "exhausted"]
 SEVERITY: tuple[State, ...] = ("ok", "warn", "exhausted")
 
 
+def level(used: float, cap: float, warn_frac: float) -> State:
+    if used >= cap:
+        return "exhausted"
+    if used >= warn_frac * cap:
+        return "warn"
+    return "ok"
+
+
 class Budget:
     def __init__(self, db: DB, cfg: AppConfig, clock: Clock):
         self.db, self.cfg, self.clock = db, cfg, clock
@@ -20,19 +28,15 @@ class Budget:
         return month_key(self.clock.now())
 
     def _level(self, spent: float, cap: float) -> State:
-        if spent >= cap:
-            return "exhausted"
-        if spent >= self.cfg.settings.budget_warn_frac * cap:
-            return "warn"
-        return "ok"
+        return level(spent, cap, self.cfg.settings.budget_warn_frac)
 
     def state(self, model: str) -> State:
-        """Worse of the model's own cap and the global cap."""
+        """Worse of the model's own cap and the global cap. Flat plan (quota_url): no own cap."""
         m = self.cfg.models[model]
-        if not m.enabled or m.monthly_cap_usd <= 0:
+        if not m.enabled or (m.monthly_cap_usd <= 0 and not m.quota_url):
             return "exhausted"
         month = self._month()
-        own = self._level(self.db.spent(model, month), m.monthly_cap_usd)
+        own = "ok" if m.quota_url else self._level(self.db.spent(model, month), m.monthly_cap_usd)
         total = self._level(self.db.spent(None, month), self.cfg.settings.global_cap_usd)
         return max(own, total, key=SEVERITY.index)
 
@@ -59,7 +63,7 @@ class Budget:
     def summary(self) -> dict:
         month = self._month()
         out = {name: {"spent": self.db.spent(name, month), "cap": m.monthly_cap_usd,
-                      "state": self.state(name)}
+                      "state": self.state(name), "tokens": self.db.tokens(name, month)}
                for name, m in self.cfg.models.items() if m.enabled}
         total = self.db.spent(None, month)
         cap = self.cfg.settings.global_cap_usd

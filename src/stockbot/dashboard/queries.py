@@ -8,8 +8,9 @@ from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
+from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
-                              max_drawdown, sharpe, sharpe_ci, trade_stats)
+                              max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import BENCHMARK
 
 LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmark_pct", "pnl", "costs",
@@ -41,14 +42,15 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
     broker = _broker(db, cfg)
     navs = {a: broker.nav(a, {}) for a in db.accounts() if not only or a in (only, BENCHMARK)}
     bench_ret = (navs[BENCHMARK] / db.start_cash(BENCHMARK) - 1) * 100 if BENCHMARK in navs else None
-    bench_closes = daily_closes(db.equity_series(BENCHMARK)) if BENCHMARK in navs else {}
+    bench_closes = daily_closes(with_start(db.equity_series(BENCHMARK), db.start_cash(BENCHMARK))) \
+        if BENCHMARK in navs else {}
     rows = []
     for account, nav in navs.items():
         if only and account != only:
             continue
         start = db.start_cash(account)
         arm = arms.get(account)
-        series = db.equity_series(account)
+        series = with_start(db.equity_series(account), start)
         stats = trade_stats(db.closed_trades(account))
         cash = db.load_account(account).cash
         pnl = nav - start
@@ -97,7 +99,7 @@ def equity(db: DB, mode: str = "usd") -> dict[str, list]:
 def drawdown(db: DB) -> dict[str, list]:
     out = {}
     for a in db.accounts():
-        peak, pts = float("-inf"), []
+        peak, pts = db.start_cash(a), []  # same base as the leaderboard's worst drop
         for ts, nav in db.equity_series(a):
             peak = max(peak, nav)
             pts.append([int(ts.timestamp() * 1000), (nav / peak - 1) * 100 if peak > 0 else 0.0])
@@ -108,11 +110,8 @@ def drawdown(db: DB) -> dict[str, list]:
 def daily_pnl(db: DB) -> dict[str, list]:
     out = {}
     for a in db.accounts():
-        prev, rows = db.start_cash(a), []
-        for d, nav in daily_closes(db.equity_series(a)).items():
-            rows.append([d.isoformat(), nav - prev])
-            prev = nav
-        out[a] = rows
+        closes = list(daily_closes(with_start(db.equity_series(a), db.start_cash(a))).items())
+        out[a] = [[d.isoformat(), nav - prev] for (_, prev), (d, nav) in zip(closes, closes[1:])]
     return out
 
 
@@ -168,6 +167,16 @@ def fill_markers(db: DB, account: str, symbol: str) -> list[dict]:
             for f in db.fills(account) if f.symbol == symbol]
 
 
+def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
+    """Latest flat-plan quota poll per enabled model that has one (llm/quota.py); state as budget's."""
+    out = {}
+    for name, m in cfg.models.items():
+        if m.enabled and (rows := db.latest_quota(name)):
+            used = max(r["used_ratio"] for r in rows)
+            out[name] = {"windows": rows, "state": level(used, 1, cfg.settings.budget_warn_frac)}
+    return out
+
+
 def status(db: DB, cfg: AppConfig, budget) -> dict:
     hb = db.kv_get("heartbeat")
     return {
@@ -177,6 +186,7 @@ def status(db: DB, cfg: AppConfig, budget) -> dict:
         "paused_all": pause.flagged(db, pause.ALL),
         "interval": {"minutes": interval.get(db, cfg.settings), "source": interval.source(db)},
         "budget": budget.summary(),
+        "quota": quota(db, cfg),
         "arms": [{"arm": a.name, "model": a.model or "-", "variant": a.variant,
                   "last_decision": (lambda t: t.isoformat() if t else None)(db.last_decision_ts(a.name)),
                   "paused": pause.flagged(db, a.name)} for a in cfg.arms if a.enabled],

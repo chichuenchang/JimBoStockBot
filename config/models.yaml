@@ -1,17 +1,22 @@
 # Model ids + prices from tracker sites, unverified (2026-10-21). Check provider pricing pages.
 # Prices: USD per 1M tokens. monthly_cap_usd counts toward settings.global_cap_usd when enabled.
 models:
-  kimi-k3:
+  kimi-k3.1:
+    # Kimi coding plan (CN): flat subscription, so $0 prices; spend is tokens + quota, not USD.
+    # quota_url marks flat plan: no own USD cap (llm/budget.py). Probed 2026-10-27:
+    # thinking {type: disabled} -> 400 "K3.1 Pro does not support disabled thinking mode";
+    # reasoning_effort none -> 0 reasoning tokens. Images + json_object work.
     adapter: openai_compat
-    base_url: https://api.moonshot.ai/v1
-    model: kimi-k3
-    api_key_env: MOONSHOT_API_KEY
-    price_in: 3.0
-    price_in_cached: 0.30
-    price_out: 15.0
-    monthly_cap_usd: 80
-    enabled: false
-    extra_body: {reasoning_effort: low}  # K3 always thinks; low effort is the floor
+    base_url: https://api.kimi.com/coding/v1
+    model: k3.1-pro
+    api_key_env: KIMI_API_KEY
+    price_in: 0
+    price_in_cached: 0
+    price_out: 0
+    monthly_cap_usd: 0
+    enabled: true
+    extra_body: {reasoning_effort: none}
+    quota_url: https://api.kimi.com/coding/v1/usages
   deepseek-v4.1-flash:
     # peak prices (conservative); off-peak is half
     adapter: openai_compat

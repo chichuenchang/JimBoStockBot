@@ -1,5 +1,5 @@
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -14,6 +14,7 @@ from stockbot.data.recorded import RecordedData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
+from stockbot.llm.quota import Window
 from stockbot.models import BENCHMARK
 from stockbot.pause import ALL, flagged
 from tests.snapshot import CFG, cli
@@ -146,8 +147,14 @@ def test_cli_pause_resume(tmp_path):
 
 
 def test_cli_status(tmp_path, capsys):
+    db = DB.open(tmp_path / "x.db")
+    db.insert_usage("kimi-k3", "kimi-improved", "decision", datetime.now(UTC), 12000, 0, 340, 0)
+    db.insert_quota("kimi-k3", datetime.now(UTC), [Window("5h", 0.25, None)])
+    db.close()
     assert cli(tmp_path / "x.db", "status") == 0
-    assert "kimi-k3" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "kimi-k3" in out and "tokens 1 calls, 12,000 in (0 cached), 340 out" in out
+    assert "quota 5h 25%" in out
 
 
 async def test_market_open_flag(tmp_path):
