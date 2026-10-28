@@ -328,6 +328,17 @@ class DB:
             "SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input, COALESCE(SUM(cached_tokens),0) cached, "
             "COALESCE(SUM(output_tokens),0) output FROM llm_usage WHERE month=? AND model=?", month, model)[0])
 
+    def usage_since(self, ts: datetime) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT model, arm, ts, input_tokens, cached_tokens, output_tokens, cost FROM llm_usage "
+            "WHERE ts>=? ORDER BY ts, id", iso(ts))]
+
+    def usage_by_arm(self, month: str) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT arm, MAX(model) model, COUNT(*) calls, SUM(input_tokens) input, SUM(cached_tokens) cached, "
+            "SUM(output_tokens) output, SUM(cost) cost FROM llm_usage WHERE month=? GROUP BY arm",
+            month)]
+
     # flat-plan quota: llm/quota.py
     def insert_quota(self, model: str, ts: datetime, windows) -> None:
         with self.transaction():
@@ -338,6 +349,10 @@ class DB:
         return [dict(r) for r in self._q(
             "SELECT ts, window, used_ratio, reset_ts FROM llm_quota WHERE model=? AND "
             "ts=(SELECT MAX(ts) FROM llm_quota WHERE model=?) ORDER BY id", model, model)]
+
+    def quota_since(self, model: str, ts: datetime) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT ts, window, used_ratio FROM llm_quota WHERE model=? AND ts>=? ORDER BY ts, id", model, iso(ts))]
 
     # journal
     def journal_append(self, arm: str, ts: datetime, kind: str, text: str) -> None:
