@@ -60,7 +60,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
-                                                 "arms": tab_order.get(db, arm_names), "names": names, "js_version": js_version, **ctx})
+                                                 "arms": tab_order.get(db, arm_names), "names": names,
+                                                 "js_version": js_version, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
