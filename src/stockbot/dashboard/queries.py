@@ -216,7 +216,8 @@ def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start:
     history: dict[str, list] = {}
     for r in db.quota_since(model, start):
         history.setdefault(r["window"], []).append([int(parse_ts(r["ts"]).timestamp() * 1000), r["used_ratio"] * 100])
-    return {"state": info["state"], "windows": windows, "history": {k: _thin(v) for k, v in history.items()}}
+    return {"state": info["state"], "bots": bots, "windows": windows,
+            "history": {k: _thin(v) for k, v in history.items()}}
 
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:

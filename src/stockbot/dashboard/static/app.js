@@ -297,7 +297,7 @@ async function loadUsage() {
     document.getElementById(`qkpi-${i}`).innerHTML = p.windows.map((w) =>
       `<div class="kpi" title="polled ${etTime(w.ts)}"><span>${esc(w.window)} window</span><b>${pctOf(w.used_ratio)}</b>` +
       `<span class="small">${w.reset_ts ? "resets " + etTime(w.reset_ts) : "no reset time"}</span></div>`).join("");
-    const names = [...new Set(p.windows.flatMap((w) => Object.keys(w.bots)))];
+    const names = [...new Set([...p.bots, ...p.windows.flatMap((w) => Object.keys(w.bots))])];
     document.getElementById(`qbots-${i}`).innerHTML =
       `<thead><tr><th class="l">bot</th>${p.windows.map((w) => `<th title="${esc(w.window)} window: this bot's share of the quota used, by tokens">${esc(w.window)} used</th>` +
         `<th>${esc(w.window)} calls</th><th>${esc(w.window)} tokens</th>`).join("")}</tr></thead><tbody>` +
