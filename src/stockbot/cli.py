@@ -23,6 +23,7 @@ from stockbot.broker.sim import SimBroker
 from stockbot.clock import RealClock, ReplayClock
 from stockbot.config import AppConfig, ConfigError, api_key, load_config
 from stockbot.daemon import Daemon
+from stockbot.dashboard import queries
 from stockbot.db import DB
 from stockbot.llm.base import make_client
 from stockbot.llm.budget import Budget
@@ -171,10 +172,10 @@ def _status(cfg: AppConfig, db: DB) -> int:
         if t := row.get("tokens"):
             print(f"{'':24} tokens {t['calls']} calls, {t['input']:,} in ({t['cached']:,} cached), "
                   f"{t['output']:,} out this month")
-    for name in cfg.models:
-        if rows := db.latest_quota(name):
-            print(f"{name:24} quota " + ", ".join(f"{r['window']} {r['used_ratio']:.0%}" for r in rows)
-                  + f"  (polled {rows[0]['ts']})")
+    for name, q in queries.quota(db, cfg).items():
+        rows = q["windows"]
+        print(f"{name:24} quota " + ", ".join(f"{r['window']} {r['used_ratio']:.0%}" for r in rows)
+              + f"  {q['state']}  (polled {rows[0]['ts']})")
     for arm in cfg.arms:
         last = db.last_decision_ts(arm.name)
         try:
