@@ -280,23 +280,21 @@ async function loadUsage() {
       label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
       borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
   } else {
-    // one stacked bar per ET day, a segment per bot; tooltip: that day's totals per bot (queries._totals)
+    // one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
     const tok = (t) => (t ? t.input + t.output : 0);
     const ds = bots.filter((b) => u.daily.some((d) => d.bots[b])).map((b) => ({
       label: nameOf(b), bot: b, data: u.daily.map((d) => tok(d.bots[b])), backgroundColor: colorOf(b),
       borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" }));
     const o = baseOptions("", kTok);
     o.scales.x.stacked = o.scales.y.stacked = true;
-    Object.assign(o.plugins.tooltip, { filter: (c) => c.parsed.y > 0, callbacks: {
+    o.interaction = { mode: "point", intersect: true };
+    Object.assign(o.plugins.tooltip, { callbacks: {
       title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
         { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
       label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
         return `${c.dataset.label}: ${kTok(tok(t))} tokens · ${t.calls} calls · ${cost(t, c.dataset.bot)}`; },
       afterLabel: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
-        return `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`; },
-      footer: (items) => { if (!items.length) return ""; const all = Object.values(u.daily[items[0].dataIndex].bots);
-        const sum = (k) => all.reduce((s, t) => s + t[k], 0);
-        return `Total: ${kTok(sum("input") + sum("output"))} tokens · ${sum("calls")} calls · $${fmt(sum("cost"), 3)} billed`; } } });
+        return `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`; } } });
     draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
   }
 
