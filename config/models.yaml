@@ -3,7 +3,7 @@
 models:
   kimi-k3.1:
     # Kimi coding plan (CN): flat subscription, so $0 prices; spend is tokens + quota, not USD.
-    # cap 1 only keeps Budget from reading the model as exhausted (cap <= 0). Probed 2026-10-27:
+    # quota_url marks flat plan: no own USD cap (llm/budget.py). Probed 2026-10-27:
     # thinking {type: disabled} -> 400 "K3.1 Pro does not support disabled thinking mode";
     # reasoning_effort none -> 0 reasoning tokens. Images + json_object work.
     adapter: openai_compat
@@ -13,7 +13,7 @@ models:
     price_in: 0
     price_in_cached: 0
     price_out: 0
-    monthly_cap_usd: 1
+    monthly_cap_usd: 0
     enabled: true
     extra_body: {reasoning_effort: none}
     quota_url: https://api.kimi.com/coding/v1/usages

@@ -31,12 +31,12 @@ class Budget:
         return level(spent, cap, self.cfg.settings.budget_warn_frac)
 
     def state(self, model: str) -> State:
-        """Worse of the model's own cap and the global cap."""
+        """Worse of the model's own cap and the global cap. Flat plan (quota_url): no own cap."""
         m = self.cfg.models[model]
-        if not m.enabled or m.monthly_cap_usd <= 0:
+        if not m.enabled or (m.monthly_cap_usd <= 0 and not m.quota_url):
             return "exhausted"
         month = self._month()
-        own = self._level(self.db.spent(model, month), m.monthly_cap_usd)
+        own = "ok" if m.quota_url else self._level(self.db.spent(model, month), m.monthly_cap_usd)
         total = self._level(self.db.spent(None, month), self.cfg.settings.global_cap_usd)
         return max(own, total, key=SEVERITY.index)
 

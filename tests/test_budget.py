@@ -1,3 +1,4 @@
+import dataclasses
 from datetime import UTC, datetime
 
 import pytest
@@ -60,6 +61,16 @@ def test_new_month_resets(setup):
 def test_disabled_or_zero_cap_model_exhausted(setup):
     _, _, b = setup
     assert b.state("claude") == "exhausted"
+
+
+def test_flat_plan_has_no_own_cap(setup):
+    """quota_url = flat plan: cap 0 is not exhausted; only the global cap binds."""
+    db, clock, _ = setup
+    flat = dataclasses.replace(CFG.models[KIMI], monthly_cap_usd=0, quota_url="https://q")
+    b = Budget(db, dataclasses.replace(CFG, models={**CFG.models, KIMI: flat}), clock)
+    assert b.state(KIMI) == "ok"
+    spend(db, DS, 100)
+    assert b.state(KIMI) == "exhausted"
 
 
 def test_record_returns_cost_and_persists(setup):
