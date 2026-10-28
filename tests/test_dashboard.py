@@ -431,7 +431,10 @@ def test_usage_per_bot(db):
     assert [p[1] for p in u["series"]["kimi-improved"]] == [110, 330]  # running total, today only
     assert u["quota"] == {}
     week = client(db).get("/api/usage?span=7d").json()
-    assert [p[1] for p in week["series"]["kimi-improved"]] == [2, 112, 332]
+    pts = week["series"]["kimi-improved"]
+    assert [p[1] for p in pts] == [2, 0, 110, 330]  # fixture call yesterday, then back to 0 at ET midnight
+    assert pts[1][0] == int(datetime(2026, 10, 21, 4, tzinfo=UTC).timestamp() * 1000)
+    assert [p[1] for p in week["series"]["analyst"]] == [55]  # no reset after today: still today
 
 
 def test_usage_quota_share(db):

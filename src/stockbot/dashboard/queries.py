@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
@@ -210,6 +210,10 @@ def _window_start(window: dict, now: datetime) -> datetime | None:
     return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
 
 
+def _midnight_after(day: date) -> datetime:
+    return et_at(day + timedelta(days=1), "00:00")
+
+
 def _plan(db: DB, model: str, info: dict, bots: list[str], rows: list[dict], now: datetime,
           start: datetime) -> dict:
     """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there.
@@ -265,13 +269,20 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
              if m in polled or ((mc := cfg.models.get(m)) and mc.enabled and mc.quota_url)}
     since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
-    series = {}
+    series = {}  # running total per ET day: back to 0 at each midnight after a day with calls
     for b, rs in by_bot.items():
-        run, pts = 0, []
+        run, day, pts = 0, None, []
         for r in rs:
             if r["ts"] >= since["start"]:
+                ts = parse_ts(r["ts"])
+                if et_date(ts) != day:
+                    if day:
+                        pts.append([_ms(_midnight_after(day)), 0])
+                    run, day = 0, et_date(ts)
                 run += _tokens(r)
-                pts.append([_ms(parse_ts(r["ts"])), run])
+                pts.append([_ms(ts), run])
+        if day and _midnight_after(day) <= now:
+            pts.append([_ms(_midnight_after(day)), 0])
         if pts:
             series[b] = _thin(pts)
     return {
