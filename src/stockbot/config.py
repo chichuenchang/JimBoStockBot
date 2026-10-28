@@ -40,7 +40,6 @@ class ArmCfg:
     search: bool = False  # may web-search before deciding: agent/research.py
     charts: bool = False  # may view price-history charts before deciding: agent/chart_tool.py
     label: str | None = None  # dashboard display name; `name` stays the DB/URL id
-    every_min: int | None = None  # own decision interval; runs on the global slots at least this far apart
 
     @property
     def uses_llm(self) -> bool:
@@ -155,8 +154,6 @@ def load_config(config_dir: Path) -> AppConfig:
             raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
-        if arm.every_min is not None and not (type(arm.every_min) is int and 1 <= arm.every_min <= 60):
-            raise ConfigError(f"arm {arm.name}: every_min must be 1..60 minutes, got {arm.every_min!r}")
         if not arm.uses_llm:
             for flag in ("search", "charts"):
                 if getattr(arm, flag):

@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 from datetime import UTC, date, datetime, timedelta
 
@@ -97,22 +96,6 @@ async def test_interval_change_takes_effect(tmp_path):
     await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=21))
     slot = session.open_utc + timedelta(minutes=20)  # 9:50 ET: on the 5-min grid only
     assert daemon.ctx.db.decision_exists("kimi-improved", slot)
-
-
-async def test_arm_every_min_skips_close_slots(tmp_path):
-    daemon, session, clock, _ = build(tmp_path)
-    slow = dataclasses.replace(CFG.arms[0], every_min=10)
-    daemon.ctx.cfg = dataclasses.replace(CFG, arms=(slow, *CFG.arms[1:]))
-    interval.set(daemon.ctx.db, 5)
-    await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=36))  # 9:45..10:05
-    db = daemon.ctx.db
-
-    def slots(arm):
-        return [r["slot_ts"] for r in db._q(
-            "SELECT slot_ts FROM decisions WHERE arm=? AND reason='scheduled' ORDER BY slot_ts", arm)]
-    at = [(session.open_utc + timedelta(minutes=m)).isoformat() for m in (15, 20, 25, 30, 35)]
-    assert slots(slow.name) == at[::2]
-    assert slots(CFG.arms[1].name) == at
 
 
 def test_cli_interval(tmp_path, capsys):
