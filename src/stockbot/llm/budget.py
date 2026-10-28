@@ -12,6 +12,14 @@ State = Literal["ok", "warn", "exhausted"]
 SEVERITY: tuple[State, ...] = ("ok", "warn", "exhausted")
 
 
+def level(used: float, cap: float, warn_frac: float) -> State:
+    if used >= cap:
+        return "exhausted"
+    if used >= warn_frac * cap:
+        return "warn"
+    return "ok"
+
+
 class Budget:
     def __init__(self, db: DB, cfg: AppConfig, clock: Clock):
         self.db, self.cfg, self.clock = db, cfg, clock
@@ -20,11 +28,7 @@ class Budget:
         return month_key(self.clock.now())
 
     def _level(self, spent: float, cap: float) -> State:
-        if spent >= cap:
-            return "exhausted"
-        if spent >= self.cfg.settings.budget_warn_frac * cap:
-            return "warn"
-        return "ok"
+        return level(spent, cap, self.cfg.settings.budget_warn_frac)
 
     def state(self, model: str) -> State:
         """Worse of the model's own cap and the global cap."""

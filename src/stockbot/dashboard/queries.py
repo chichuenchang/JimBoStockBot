@@ -8,6 +8,7 @@ from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.config import AppConfig
 from stockbot.db import DB
+from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
                               max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import BENCHMARK
@@ -172,8 +173,7 @@ def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
     for name, m in cfg.models.items():
         if m.enabled and (rows := db.latest_quota(name)):
             used = max(r["used_ratio"] for r in rows)
-            out[name] = {"windows": rows, "state": "exhausted" if used >= 1
-                         else "warn" if used >= cfg.settings.budget_warn_frac else "ok"}
+            out[name] = {"windows": rows, "state": level(used, 1, cfg.settings.budget_warn_frac)}
     return out
 
 
