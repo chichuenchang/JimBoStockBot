@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
-from stockbot.clock import et_at, et_date, month_key
+from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
@@ -226,36 +226,36 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
     start = today if days is None else min(today, now - timedelta(days=days))
+    month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model
-    rows = db.usage_since(start)
-    month = {r["arm"] or ANALYST: r for r in db.usage_by_arm(month_key(now))}
-    by_bot: dict[str, list] = defaultdict(list)
-    for r in rows:
+    by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
+    for r in db.usage_since(min(start, month_start)):
         by_bot[r["arm"] or ANALYST].append(r)
-    bots = [b for b in model_of if b != ANALYST or ANALYST in month or ANALYST in by_bot]
+    bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
     # arms gone from config still billed: model from their latest usage row
-    for b, m in [*((b, r["model"]) for b, r in month.items()), *((b, rs[-1]["model"]) for b, rs in by_bot.items())]:
+    for b, rs in by_bot.items():
         if b not in bots:
             bots.append(b)
-            model_of[b] = m
+            model_of[b] = rs[-1]["model"]
     polled = quota(db, cfg)
     # flat plan = quota_url in models.yaml; listed before its first poll so a new bot is never shown as $0 billed
     plans = {**polled, **{m: {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
                           if m not in polled and (mc := cfg.models.get(m)) and mc.enabled and mc.quota_url}}
+    since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
     series = {}
     for b, rs in by_bot.items():
         run, pts = 0, []
         for r in rs:
-            run += r["input_tokens"] + r["output_tokens"]
-            pts.append([int(parse_ts(r["ts"]).timestamp() * 1000), run])
-        series[b] = _thin(pts)
-    today_iso = iso(today)
+            if r["ts"] >= since["start"]:
+                run += r["input_tokens"] + r["output_tokens"]
+                pts.append([int(parse_ts(r["ts"]).timestamp() * 1000), run])
+        if pts:
+            series[b] = _thin(pts)
     return {
-        "start": iso(start),
+        "start": since["start"],
         "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in plans,
-                  "today": _totals([r for r in by_bot[b] if r["ts"] >= today_iso]),
-                  "month": {k: month.get(b, {}).get(k) or 0 for k in ("calls", "input", "cached", "output", "cost")}}
+                  **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
         "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], now, start)

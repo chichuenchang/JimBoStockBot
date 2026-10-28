@@ -470,3 +470,12 @@ def test_usage_follows_config(db):
     assert bots["old-bot"]["model"] == "deepseek-v4.1-flash" and bots["old-bot"]["today"]["cost"] == 0.2
     assert u["quota"]["gpt"] == {"state": None, "bots": ["new-bot"], "windows": [], "history": {}}
     assert "gpt" not in usage(db, CFG, NOW)["quota"]  # no bot on it, no card
+
+
+def test_usage_removed_bot_latest_model(db):
+    """Model of a bot gone from config = its latest row, not alphabetical max ("kimi-k3" > "deepseek...")."""
+    db.insert_usage("kimi-k3", "old-bot", "decision", NOW - timedelta(days=15), 10, 0, 5, 0)
+    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(days=10), 10, 0, 5, 0.2)
+    old = {b["bot"]: b for b in client(db).get("/api/usage").json()["bots"]}["old-bot"]
+    assert old["model"] == "deepseek-v4.1-flash" and not old["flat"]
+    assert old["today"]["calls"] == 0 and old["month"]["calls"] == 2 and old["month"]["cost"] == 0.2

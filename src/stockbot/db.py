@@ -333,12 +333,6 @@ class DB:
             "SELECT model, arm, ts, input_tokens, cached_tokens, output_tokens, cost FROM llm_usage "
             "WHERE ts>=? ORDER BY ts, id", iso(ts))]
 
-    def usage_by_arm(self, month: str) -> list[dict]:
-        return [dict(r) for r in self._q(
-            "SELECT arm, MAX(model) model, COUNT(*) calls, SUM(input_tokens) input, SUM(cached_tokens) cached, "
-            "SUM(output_tokens) output, SUM(cost) cost FROM llm_usage WHERE month=? GROUP BY arm",
-            month)]
-
     # flat-plan quota: llm/quota.py
     def insert_quota(self, model: str, ts: datetime, windows) -> None:
         with self.transaction():
