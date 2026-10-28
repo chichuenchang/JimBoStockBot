@@ -144,8 +144,9 @@ class Daemon:
             return
         ok = True
         for arm in self.ctx.cfg.arms:
-            if arm.enabled and not await self._guard(
-                    f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices)):
+            if not arm.enabled:
+                continue
+            if not await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices)):
                 ok = False
         if ok:
             self._mark("cycle", slot)
