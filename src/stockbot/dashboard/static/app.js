@@ -287,8 +287,8 @@ function initArm() {
     dragged = null;
     if (JSON.stringify(order()) === before) return;
     const r = await fetch("/api/tab_order", { method: "POST", headers: { "Content-Type": "application/json" },
-                                              body: JSON.stringify({ arms: order() }) });
-    if (!r.ok) location.reload();  // server refused (config changed?): show what it holds
+                                              body: JSON.stringify({ arms: order() }) }).catch(() => null);
+    if (!r?.ok) location.reload();  // refused (config changed?) or unreachable: show what the server holds
   });
 })();
 
