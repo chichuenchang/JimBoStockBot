@@ -228,7 +228,8 @@ def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list
 
     def share(ws: datetime | None, end: datetime, used: float) -> dict[str, dict]:
         hi = bisect_right(ts, iso(end))
-        lo = bisect_left(ts, iso(ws)) if ws else hi  # window with no length: no tokens
+        # window with no length, or starting after `end` (reset more than a window ahead): no tokens
+        lo = min(bisect_left(ts, iso(ws)), hi) if ws else hi
         got = {b: (t[hi] - t[lo], c[hi] - c[lo]) for b, (t, c) in cum.items()}
         total = sum(t for t, _ in got.values())
         return {b: {"calls": c, "tokens": t, "used_ratio": used * t / total if total else 0.0}

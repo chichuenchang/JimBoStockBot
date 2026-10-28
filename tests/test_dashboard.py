@@ -459,6 +459,14 @@ def test_usage_quota_share(db):
     assert [p[1] for p in h5["kimi-improved"]] == pytest.approx([2.5, 5])
 
 
+def test_usage_quota_window_after_poll(db):
+    """Reset more than a window ahead: window starts after the poll, so no tokens, never negative."""
+    db.insert_usage("kimi-k3", "kimi-baseline", "decision", NOW - timedelta(hours=1), 300, 0, 0, 0)
+    db.insert_quota("kimi-k3", NOW - timedelta(hours=2), [Window("1h", 0.3, NOW + timedelta(minutes=30))])
+    h = client(db).get("/api/usage").json()["quota"]["kimi-k3"]["history"]["1h"]  # call between poll and start
+    assert [p[1] for p in h["kimi-baseline"]] == [0]
+
+
 def test_usage_follows_config(db):
     """A bot added to arms.yaml (here on a flat plan not polled yet) or dropped from it needs no code change."""
     import dataclasses
