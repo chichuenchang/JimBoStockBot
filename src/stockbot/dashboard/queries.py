@@ -2,10 +2,8 @@
 from __future__ import annotations
 
 import json
-from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import datetime, timedelta
-from itertools import accumulate
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
@@ -186,7 +184,6 @@ def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
 
 
 ANALYST = "analyst"  # usage rows with no arm: the market report (report/analyst.py)
-WINDOW_UNIT = {"m": timedelta(minutes=1), "h": timedelta(hours=1), "d": timedelta(days=1)}
 
 
 def _bot(row: dict) -> str:
@@ -203,60 +200,9 @@ def _totals(rows: list[dict]) -> dict:
             "cost": sum(r["cost"] for r in rows)}
 
 
-def _window_start(window: dict, now: datetime) -> datetime | None:
-    """Quota window "5h" / "7d" ends at its reset (else now); None when the name has no length."""
-    try:
-        length = int(window["window"][:-1]) * WINDOW_UNIT[window["window"][-1:]]
-    except (ValueError, KeyError):
-        return None
-    return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
-
-
-def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list[dict], now: datetime) -> dict:
-    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there,
-    now and at each of `polls`. `rows`: usage since at least every window's start, oldest first."""
-    mine = [r for r in rows if r["model"] == model]
-    ts = [r["ts"] for r in mine]
-    # per bot, prefix sums of tokens and calls: mine[:i] at index i
-    cum = {b: (list(accumulate((_tokens(r) if _bot(r) == b else 0 for r in mine), initial=0)),
-               list(accumulate((_bot(r) == b for r in mine), initial=0)))
-           for b in dict.fromkeys([*bots, *map(_bot, mine)])}
-
-    def share(ws: datetime | None, end: datetime, used: float) -> dict[str, dict]:
-        hi = bisect_right(ts, iso(end))
-        # window with no length, or starting after `end` (reset more than a window ahead): no tokens
-        lo = min(bisect_left(ts, iso(ws)), hi) if ws else hi
-        got = {b: (t[hi] - t[lo], c[hi] - c[lo]) for b, (t, c) in cum.items()}
-        total = sum(t for t, _ in got.values())
-        return {b: {"calls": c, "tokens": t, "used_ratio": used * t / total if total else 0.0}
-                for b, (t, c) in got.items()}
-
-    windows = []
-    for w in info["windows"]:
-        ws = _window_start(w, now)
-        windows.append({**w, "start": ws and iso(ws), "bots": {
-            b: s for b, s in share(ws, now, w["used_ratio"]).items() if b in bots or s["calls"]}})
-    # window -> "used": whole plan, incl. use outside the bots; "bots": bot -> its slice. Points [ms, % of quota]
-    history: dict[str, dict] = {}
-    called = set()  # (window, bot) with calls in some poll's window: same rule as `windows`
-    for p in polls:
-        end = parse_ts(p["ts"])
-        if ws := _window_start(p, end):
-            h = history.setdefault(p["window"], {"used": [], "bots": {}})
-            h["used"].append([_ms(end), p["used_ratio"] * 100])
-            for b, s in share(ws, end, p["used_ratio"]).items():
-                h["bots"].setdefault(b, []).append([_ms(end), s["used_ratio"] * 100])
-                if s["calls"]:
-                    called.add((p["window"], b))
-    return {"state": info["state"], "bots": bots, "windows": windows,
-            "history": {w: {"used": _thin(h["used"]), "bots": {
-                b: _thin(v) for b, v in h["bots"].items() if b in bots or (w, b) in called}}
-                for w, h in history.items()}}
-
-
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
-    """Token use per bot: today (ET) and this month, a running total since today's start, totals
-    per ET day since today or `days` days back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
+    """Token use per bot: today (ET) and this month, a running total since today's start, and totals
+    per ET day since today or `days` days back. Bots, models, prices and plans all come from config + DB:
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
     # whole ET days, so the first day's total is not partial
@@ -264,28 +210,17 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model
-    first = min(start, month_start)
-    polled = quota(db, cfg)
-    polls = {m: db.quota_since(m, start) for m in polled}
-    # one fetch, back far enough for every quota window too, live and polled (_plan)
-    starts = [_window_start(w, now) for p in polled.values() for w in p["windows"]]
-    starts += [_window_start(p, parse_ts(p["ts"])) for ps in polls.values() for p in ps]
-    rows = db.usage_since(min([first, *filter(None, starts)]))
     by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
-    cut = iso(first)
-    for r in rows:
-        if r["ts"] >= cut:
-            by_bot[_bot(r)].append(r)
+    for r in db.usage_since(min(start, month_start)):
+        by_bot[_bot(r)].append(r)
     bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
     # arms gone from config still billed: model from their latest usage row
     for b, rs in by_bot.items():
         if b not in bots:
             bots.append(b)
             model_of[b] = rs[-1]["model"]
-    # card per model a bot runs on, if polled or flat plan (quota_url in models.yaml): listed before its
-    # first poll so a new bot is never shown as $0 billed
-    plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
-             if m in polled or ((mc := cfg.models.get(m)) and mc.enabled and mc.quota_url)}
+    # flat plan: polled, or quota_url in models.yaml before its first poll, so a new bot is never shown as $0 billed
+    flat = {*quota(db, cfg), *(m for m, mc in cfg.models.items() if mc.enabled and mc.quota_url)}
     since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
     series = {}  # running total since today's start
     per_day = {et_date(start) + timedelta(days=i): defaultdict(list)  # every ET day of the span, empty ones too
@@ -302,13 +237,11 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
             series[b] = _thin(pts)
     return {
         "start": since["start"],
-        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in plans,
+        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in flat,
                   **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
         "daily": [{"day": d.isoformat(), "bots": {b: _totals(rs) for b, rs in bs.items()}} for d, bs in per_day.items()],
-        "quota": {m: _plan(m, info, [b for b in bots if model_of[b] == m], rows, polls.get(m, []), now)
-                  for m, info in plans.items()},
     }
 
 

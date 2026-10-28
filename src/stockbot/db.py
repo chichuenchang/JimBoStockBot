@@ -344,11 +344,6 @@ class DB:
             "SELECT ts, window, used_ratio, reset_ts FROM llm_quota WHERE model=? AND "
             "ts=(SELECT MAX(ts) FROM llm_quota WHERE model=?) ORDER BY id", model, model)]
 
-    def quota_since(self, model: str, ts: datetime) -> list[dict]:
-        return [dict(r) for r in self._q(
-            "SELECT ts, window, used_ratio, reset_ts FROM llm_quota WHERE model=? AND ts>=? ORDER BY ts, id",
-            model, iso(ts))]
-
     # journal
     def journal_append(self, arm: str, ts: datetime, kind: str, text: str) -> None:
         self._x("INSERT INTO journal(arm,ts,kind,text) VALUES(?,?,?,?)", arm, iso(ts), kind, text)

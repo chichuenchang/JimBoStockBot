@@ -265,9 +265,8 @@ function initArm() {
   return loadArm;
 }
 
-// ---------- usage page: tokens per bot, flat-plan quota (queries.usage) ----------
+// ---------- usage page: tokens per bot (queries.usage) ----------
 let usageSpan = "today";
-const pctOf = (r) => fmt(r * 100, 1) + "%";
 async function loadUsage() {
   const span = usageSpan;
   const u = await get(`/api/usage?span=${span}`);
@@ -309,40 +308,6 @@ async function loadUsage() {
     u.bots.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b.bot)}"></span>${esc(nameOf(b.bot))}</td>` +
       `<td class="l">${esc(b.model)}</td>${["today", "month"].map((p) => cols.map((k, i) =>
         `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
-
-  // one card per flat-plan model; rebuilt only when the model/window set changes, so charts keep their canvas
-  const el = document.getElementById("quota"), plans = Object.entries(u.quota);
-  const key = JSON.stringify(plans.map(([m, p]) => [m, p.windows.map((w) => w.window)]));
-  if (el.dataset.key !== key) {
-    for (const id of Object.keys(charts)) if (id.startsWith("quota-")) { charts[id].destroy(); delete charts[id]; }
-    el.innerHTML = plans.length ? plans.map(([m], i) => `<section class="card"><h2>${esc(m)} <span id="qstate-${i}"></span></h2>` +
-      `<div class="kpis" id="qkpi-${i}"></div><div class="tablewrap" style="margin-top:12px"><table id="qbots-${i}"></table></div>` +
-      `<div class="chart short" style="margin-top:12px"><canvas id="quota-${i}"></canvas></div></section>`).join("")
-      : `<section class="card"><p class="muted">No bot runs on a flat plan (a model with quota_url in models.yaml).</p></section>`;
-    el.dataset.key = key;
-  }
-  plans.forEach(([m, p], i) => {
-    // state null: plan in models.yaml, no quota poll stored yet (daemon.QUOTA_EVERY; failures in the log)
-    document.getElementById(`qstate-${i}`).innerHTML = `<span class="dot" style="background:${p.state ? stateColor(p.state) : css("--bench")}"></span>`;
-    document.getElementById(`qkpi-${i}`).innerHTML = !p.windows.length
-      ? `<p class="muted">No quota reading yet; the running daemon polls it. Stays empty? Look for "quota ${esc(m)}" in logs/stockbot.log.</p>`
-      : p.windows.map((w) =>
-      `<div class="kpi" title="polled ${etTime(w.ts)}"><span>${esc(w.window)} window</span><b>${pctOf(w.used_ratio)}</b>` +
-      `<span class="small">${w.reset_ts ? "resets " + etTime(w.reset_ts) : "no reset time"}</span></div>`).join("");
-    const names = [...new Set([...p.bots, ...p.windows.flatMap((w) => Object.keys(w.bots))])];
-    document.getElementById(`qbots-${i}`).innerHTML =
-      `<thead><tr><th class="l">bot</th>${p.windows.map((w) => `<th title="${esc(w.window)} window: this bot's share of the quota used, by tokens">${esc(w.window)} used</th>` +
-        `<th>${esc(w.window)} calls</th><th>${esc(w.window)} tokens</th>`).join("")}</tr></thead><tbody>` +
-      names.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b)}"></span>${esc(nameOf(b))}</td>` +
-        p.windows.map((w) => { const s = w.bots[b] || { calls: 0, tokens: 0, used_ratio: 0 };
-          return `<td>${pctOf(s.used_ratio)}</td><td>${s.calls}</td><td>${kTok(s.tokens)}</td>`; }).join("") + `</tr>`).join("") + `</tbody>`;
-    // per window: whole plan in neutral ink, then one line per bot in its colour; solid for the first window, dashed after
-    const line = (label, pts, color, j) => ({ label, data: pts.map(([x, y]) => ({ x, y })), borderColor: color, backgroundColor: color,
-      borderWidth: 2, pointRadius: 0, borderDash: j ? [6, 4] : [], stepped: true });
-    const ds = Object.entries(p.history).flatMap(([w, h], j) => [line(`${w} used, all`, h.used, css("--text-secondary"), j),
-      ...Object.entries(h.bots).map(([b, pts]) => line(`${nameOf(b)} ${w} used`, pts, colorOf(b), j))]);
-    draw(`quota-${i}`, "line", { datasets: ds }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
-  });
 }
 function initUsage() {
   document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {

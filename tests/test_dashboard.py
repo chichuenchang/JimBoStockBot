@@ -429,7 +429,6 @@ def test_usage_per_bot(db):
     assert bots["analyst"]["model"] == "deepseek-v4.1-flash" and bots["analyst"]["today"]["calls"] == 1
     assert bots["kimi-baseline"]["today"]["calls"] == 0
     assert [p[1] for p in u["series"]["kimi-improved"]] == [110, 330]  # running total, today only
-    assert u["quota"] == {}
     week = client(db).get("/api/usage?span=7d").json()
     assert week["start"] == datetime(2026, 10, 14, 4, tzinfo=UTC).isoformat()  # ET midnight 7 days back
     assert week["series"] == u["series"]  # running total is today's whatever the span
@@ -440,47 +439,10 @@ def test_usage_per_bot(db):
     assert [d["day"] for d in u["daily"]] == ["2026-10-21"]
 
 
-def test_usage_quota_share(db):
-    db.insert_usage("kimi-k3", "kimi-baseline", "decision", NOW - timedelta(hours=1), 300, 0, 0, 0)
-    db.insert_usage("kimi-k3", "kimi-improved", "decision", NOW - timedelta(hours=1), 90, 0, 10, 0)
-    db.insert_usage("kimi-k3", "kimi-improved", "decision", NOW - timedelta(hours=6), 999, 0, 0, 0)  # before 5h window
-    db.insert_quota("kimi-k3", NOW - timedelta(minutes=30), [Window("5h", 0.1, NOW + timedelta(hours=1))])
-    db.insert_quota("kimi-k3", NOW, [Window("5h", 0.2, NOW + timedelta(hours=1)), Window("7d", 0.04, None),
-                                      Window("odd", 0.5, None)])
-    u = client(db).get("/api/usage").json()
-    assert {b["bot"]: b["flat"] for b in u["bots"]}["kimi-baseline"] is True
-    plan = u["quota"]["kimi-k3"]
-    w5, w7, odd = plan["windows"]
-    assert w5["start"] == (NOW - timedelta(hours=4)).isoformat()  # reset minus 5h
-    assert w5["bots"]["kimi-baseline"] == {"calls": 1, "tokens": 300, "used_ratio": pytest.approx(0.15)}
-    assert w5["bots"]["kimi-improved"] == {"calls": 1, "tokens": 100, "used_ratio": pytest.approx(0.05)}
-    assert w7["bots"]["kimi-improved"]["calls"] == 3  # trailing 7d from now: fixture call too
-    assert odd["start"] is None and odd["bots"]["kimi-baseline"]["used_ratio"] == 0
-    assert [p[1] for p in plan["history"]["5h"]["used"]] == pytest.approx([10, 20])  # whole plan
-    h5 = plan["history"]["5h"]["bots"]  # per bot: poll's used x bot's token share in that poll's window
-    assert list(h5) == ["kimi-baseline", "kimi-improved"] and "odd" not in plan["history"]
-    assert [p[1] for p in h5["kimi-baseline"]] == pytest.approx([7.5, 15])
-    assert [p[1] for p in h5["kimi-improved"]] == pytest.approx([2.5, 5])
-
-
-def test_usage_quota_window_after_poll(db):
-    """Reset more than a window ahead: window starts after the poll, so no tokens, never negative."""
-    db.insert_usage("kimi-k3", "kimi-baseline", "decision", NOW - timedelta(hours=1), 300, 0, 0, 0)
-    db.insert_quota("kimi-k3", NOW - timedelta(hours=2), [Window("1h", 0.3, NOW + timedelta(minutes=30))])
-    h = client(db).get("/api/usage").json()["quota"]["kimi-k3"]["history"]["1h"]  # call between poll and start
-    assert [p[1] for p in h["bots"]["kimi-baseline"]] == [0]
-    assert [p[1] for p in h["used"]] == pytest.approx([30])  # use outside the bots still shown
-
-
-def test_usage_quota_bot_moved_off_model(db):
-    """Bot now on another model, with a 0-token call in the window: listed in table and chart alike."""
-    db.insert_usage("kimi-k3", "kimi-baseline", "decision", NOW - timedelta(hours=1), 300, 0, 0, 0)
-    db.insert_usage("kimi-k3", "old-bot", "decision", NOW - timedelta(hours=2), 0, 0, 0, 0)
-    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(minutes=5), 10, 0, 0, 0)
-    db.insert_quota("kimi-k3", NOW, [Window("5h", 0.1, None)])
-    plan = client(db).get("/api/usage").json()["quota"]["kimi-k3"]
-    assert "old-bot" not in plan["bots"] and "old-bot" in plan["windows"][0]["bots"]
-    assert [p[1] for p in plan["history"]["5h"]["bots"]["old-bot"]] == [0]
+def test_usage_polled_model_is_flat(db):
+    """A model with quota polls counts as a flat plan even without quota_url in config."""
+    db.insert_quota("kimi-k3", NOW, [Window("5h", 0.2, None)])
+    assert {b["bot"]: b["flat"] for b in client(db).get("/api/usage").json()["bots"]}["kimi-baseline"] is True
 
 
 def test_usage_follows_config(db):
@@ -498,11 +460,6 @@ def test_usage_follows_config(db):
     bots = {b["bot"]: b for b in u["bots"]}
     assert bots["new-bot"]["flat"] and bots["new-bot"]["today"]["calls"] == 0
     assert bots["old-bot"]["model"] == "deepseek-v4.1-flash" and bots["old-bot"]["today"]["cost"] == 0.2
-    assert u["quota"]["gpt"] == {"state": None, "bots": ["new-bot"], "windows": [], "history": {}}
-    assert "gpt" not in usage(db, CFG, NOW)["quota"]  # no bot on it, no card
-    db.insert_quota("gpt", NOW, [Window("5h", 0.1, None)])
-    no_bot = dataclasses.replace(CFG, models={**CFG.models, "gpt": plan})
-    assert "gpt" not in usage(db, no_bot, NOW)["quota"]  # polled but no bot: still no card
 
 
 def test_usage_removed_bot_latest_model(db):
