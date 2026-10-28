@@ -9,7 +9,7 @@ models:
     adapter: openai_compat
     base_url: https://api.kimi.com/coding/v1
     model: k3.1-pro
-    api_key_env: MOONSHOT_API_KEY
+    api_key_env: KIMI_API_KEY
     price_in: 0
     price_in_cached: 0
     price_out: 0
