@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from itertools import accumulate
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
@@ -214,29 +216,38 @@ def _midnight_after(day: date) -> datetime:
     return et_at(day + timedelta(days=1), "00:00")
 
 
-def _plan(db: DB, model: str, info: dict, bots: list[str], rows: list[dict], now: datetime,
-          start: datetime) -> dict:
-    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there.
-    `rows`: usage since at least every window's start."""
+def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list[dict], now: datetime) -> dict:
+    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there,
+    now and at each of `polls`. `rows`: usage since at least every window's start, oldest first."""
+    mine = [r for r in rows if r["model"] == model]
+    ts = [r["ts"] for r in mine]
+    # per bot, prefix sums of tokens and calls: mine[:i] at index i
+    cum = {b: (list(accumulate((_tokens(r) if _bot(r) == b else 0 for r in mine), initial=0)),
+               list(accumulate((_bot(r) == b for r in mine), initial=0)))
+           for b in dict.fromkeys([*bots, *map(_bot, mine)])}
+
+    def share(ws: datetime | None, end: datetime, used: float) -> dict[str, dict]:
+        hi = bisect_right(ts, iso(end))
+        lo = bisect_left(ts, iso(ws)) if ws else hi  # window with no length: no tokens
+        got = {b: (t[hi] - t[lo], c[hi] - c[lo]) for b, (t, c) in cum.items()}
+        total = sum(t for t, _ in got.values())
+        return {b: {"calls": c, "tokens": t, "used_ratio": used * t / total if total else 0.0}
+                for b, (t, c) in got.items()}
+
     windows = []
     for w in info["windows"]:
         ws = _window_start(w, now)
-        cut = ws and iso(ws)
-        tokens, calls = dict.fromkeys(bots, 0), dict.fromkeys(bots, 0)
-        for r in rows if ws else []:
-            if r["model"] == model and r["ts"] >= cut:
-                b = _bot(r)
-                tokens[b] = tokens.get(b, 0) + _tokens(r)
-                calls[b] = calls.get(b, 0) + 1
-        total = sum(tokens.values())
-        windows.append({**w, "start": cut, "bots": {
-            b: {"calls": calls[b], "tokens": t, "used_ratio": w["used_ratio"] * t / total if total else 0.0}
-            for b, t in tokens.items()}})
-    history: dict[str, list] = {}
-    for r in db.quota_since(model, start):
-        history.setdefault(r["window"], []).append([_ms(parse_ts(r["ts"])), r["used_ratio"] * 100])
+        windows.append({**w, "start": ws and iso(ws), "bots": {
+            b: s for b, s in share(ws, now, w["used_ratio"]).items() if b in bots or s["calls"]}})
+    history: dict[str, dict[str, list]] = {}  # window -> bot -> [ms, % of quota]
+    for p in polls:
+        end = parse_ts(p["ts"])
+        if ws := _window_start(p, end):
+            for b, s in share(ws, end, p["used_ratio"]).items():
+                history.setdefault(p["window"], {}).setdefault(b, []).append([_ms(end), s["used_ratio"] * 100])
     return {"state": info["state"], "bots": bots, "windows": windows,
-            "history": {k: _thin(v) for k, v in history.items()}}
+            "history": {w: {b: _thin(v) for b, v in hb.items() if b in bots or any(y for _, y in v)}
+                        for w, hb in history.items()}}
 
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
@@ -250,9 +261,11 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     model_of[ANALYST] = cfg.settings.analyst_model
     first = min(start, month_start)
     polled = quota(db, cfg)
-    # one fetch, back far enough for every polled quota window too (_plan)
-    rows = db.usage_since(min([first, *filter(None, (_window_start(w, now)
-                                                     for p in polled.values() for w in p["windows"]))]))
+    polls = {m: db.quota_since(m, start) for m in polled}
+    # one fetch, back far enough for every quota window too, live and polled (_plan)
+    starts = [_window_start(w, now) for p in polled.values() for w in p["windows"]]
+    starts += [_window_start(p, parse_ts(p["ts"])) for ps in polls.values() for p in ps]
+    rows = db.usage_since(min([first, *filter(None, starts)]))
     by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
     cut = iso(first)
     for r in rows:
@@ -291,7 +304,7 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
                   **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
-        "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], rows, now, start)
+        "quota": {m: _plan(m, info, [b for b in bots if model_of[b] == m], rows, polls.get(m, []), now)
                   for m, info in plans.items()},
     }
 

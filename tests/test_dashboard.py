@@ -453,7 +453,10 @@ def test_usage_quota_share(db):
     assert w5["bots"]["kimi-improved"] == {"calls": 1, "tokens": 100, "used_ratio": pytest.approx(0.05)}
     assert w7["bots"]["kimi-improved"]["calls"] == 3  # trailing 7d from now: fixture call too
     assert odd["start"] is None and odd["bots"]["kimi-baseline"]["used_ratio"] == 0
-    assert [p[1] for p in plan["history"]["5h"]] == pytest.approx([10, 20])
+    h5 = plan["history"]["5h"]  # per bot: poll's used x bot's token share in that poll's window
+    assert list(h5) == ["kimi-baseline", "kimi-improved"] and "odd" not in plan["history"]
+    assert [p[1] for p in h5["kimi-baseline"]] == pytest.approx([7.5, 15])
+    assert [p[1] for p in h5["kimi-improved"]] == pytest.approx([2.5, 5])
 
 
 def test_usage_follows_config(db):
