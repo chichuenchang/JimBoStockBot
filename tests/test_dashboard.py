@@ -431,6 +431,7 @@ def test_usage_per_bot(db):
     assert [p[1] for p in u["series"]["kimi-improved"]] == [110, 330]  # running total, today only
     assert u["quota"] == {}
     week = client(db).get("/api/usage?span=7d").json()
+    assert week["start"] == datetime(2026, 10, 14, 4, tzinfo=UTC).isoformat()  # ET midnight 7 days back
     pts = week["series"]["kimi-improved"]
     assert [p[1] for p in pts] == [2, 0, 110, 330]  # fixture call yesterday, then back to 0 at ET midnight
     assert pts[1][0] == int(datetime(2026, 10, 21, 4, tzinfo=UTC).timestamp() * 1000)

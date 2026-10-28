@@ -259,11 +259,12 @@ def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list
 
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
-    """Token use per bot: today (ET) and this month, a running total since today's start or `days`
-    back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
+    """Token use per bot: today (ET) and this month, a running total per ET day since today's
+    start or `days` days back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
-    start = today if days is None else min(today, now - timedelta(days=days))
+    # whole ET days, so the series' first day is not a partial total
+    start = today if days is None else et_at(et_date(now) - timedelta(days=days), "00:00")
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model
