@@ -80,11 +80,6 @@ class Daemon:
     def _mark(self, kind: str, slot: datetime) -> None:
         self.ctx.db.kv_set(f"{kind}:{slot.isoformat()}", "1")
 
-    def _arm_due(self, arm, slot: datetime) -> bool:
-        """Arm with every_min: only slots at least that long after its last scheduled cycle."""
-        raw = self.ctx.db.kv_get(f"cycle_last:{arm.name}")
-        return not (arm.every_min and raw) or slot - datetime.fromisoformat(raw) >= timedelta(minutes=arm.every_min)
-
     # jobs
     async def _refresh_calendar(self, now: datetime) -> None:
         d = et_date(now)
@@ -149,11 +144,8 @@ class Daemon:
             return
         ok = True
         for arm in self.ctx.cfg.arms:
-            if not arm.enabled or not self._arm_due(arm, slot):
-                continue
-            if await self._guard(f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices)):
-                self.ctx.db.kv_set(f"cycle_last:{arm.name}", slot.isoformat())
-            else:
+            if arm.enabled and not await self._guard(
+                    f"cycle {arm.name}", run_cycle(self.ctx, arm, slot, "scheduled", prices)):
                 ok = False
         if ok:
             self._mark("cycle", slot)

@@ -1,7 +1,6 @@
 arms:
-  # every_min 10: coding-plan quota (models.yaml kimi-k3.1)
-  - {name: kimi-baseline, label: Kimi K3.1 Baseline, model: kimi-k3.1, variant: baseline, enabled: true, every_min: 10}
-  - {name: kimi-improved, label: JBSB Kimi K3.1, model: kimi-k3.1, variant: improved, enabled: true, search: true, charts: true, every_min: 10}
+  - {name: kimi-baseline, label: Kimi K3.1 Baseline, model: kimi-k3.1, variant: baseline, enabled: true}
+  - {name: kimi-improved, label: JBSB Kimi K3.1, model: kimi-k3.1, variant: improved, enabled: true, search: true, charts: true}
   - {name: deepseek-improved, label: Jimbo StockBot, model: deepseek-v4.1-flash, variant: improved, enabled: true, search: true, charts: true}
   - {name: deepseek-baseline, model: deepseek-v4.1-flash, variant: baseline, enabled: true}
   # controls, no LLM: src/stockbot/agent/control.py
