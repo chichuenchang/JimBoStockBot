@@ -88,11 +88,15 @@ def _thin(points: list) -> list:
     return out
 
 
+def _ms(ts: datetime) -> int:  # chart x: epoch ms
+    return int(ts.timestamp() * 1000)
+
+
 def equity(db: DB, mode: str = "usd") -> dict[str, list]:
     out = {}
     for a in db.accounts():
         start = db.start_cash(a)
-        pts = [[int(ts.timestamp() * 1000), nav if mode == "usd" else (nav / start - 1) * 100]
+        pts = [[_ms(ts), nav if mode == "usd" else (nav / start - 1) * 100]
                for ts, nav in db.equity_series(a)]
         out[a] = _thin(pts)
     return out
@@ -104,7 +108,7 @@ def drawdown(db: DB) -> dict[str, list]:
         peak, pts = db.start_cash(a), []  # same base as the leaderboard's worst drop
         for ts, nav in db.equity_series(a):
             peak = max(peak, nav)
-            pts.append([int(ts.timestamp() * 1000), (nav / peak - 1) * 100 if peak > 0 else 0.0])
+            pts.append([_ms(ts), (nav / peak - 1) * 100 if peak > 0 else 0.0])
         out[a] = _thin(pts)
     return out
 
@@ -183,6 +187,14 @@ ANALYST = "analyst"  # usage rows with no arm: the market report (report/analyst
 WINDOW_UNIT = {"m": timedelta(minutes=1), "h": timedelta(hours=1), "d": timedelta(days=1)}
 
 
+def _bot(row: dict) -> str:
+    return row["arm"] or ANALYST
+
+
+def _tokens(row: dict) -> int:
+    return row["input_tokens"] + row["output_tokens"]
+
+
 def _totals(rows: list[dict]) -> dict:
     return {"calls": len(rows), "input": sum(r["input_tokens"] for r in rows),
             "cached": sum(r["cached_tokens"] for r in rows), "output": sum(r["output_tokens"] for r in rows),
@@ -206,8 +218,8 @@ def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start:
         tokens, calls = dict.fromkeys(bots, 0), dict.fromkeys(bots, 0)
         for r in db.usage_since(ws) if ws else []:
             if r["model"] == model:
-                b = r["arm"] or ANALYST
-                tokens[b] = tokens.get(b, 0) + r["input_tokens"] + r["output_tokens"]
+                b = _bot(r)
+                tokens[b] = tokens.get(b, 0) + _tokens(r)
                 calls[b] = calls.get(b, 0) + 1
         total = sum(tokens.values())
         windows.append({**w, "start": ws and iso(ws), "bots": {
@@ -215,7 +227,7 @@ def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start:
             for b, t in tokens.items()}})
     history: dict[str, list] = {}
     for r in db.quota_since(model, start):
-        history.setdefault(r["window"], []).append([int(parse_ts(r["ts"]).timestamp() * 1000), r["used_ratio"] * 100])
+        history.setdefault(r["window"], []).append([_ms(parse_ts(r["ts"])), r["used_ratio"] * 100])
     return {"state": info["state"], "bots": bots, "windows": windows,
             "history": {k: _thin(v) for k, v in history.items()}}
 
@@ -231,7 +243,7 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     model_of[ANALYST] = cfg.settings.analyst_model
     by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
     for r in db.usage_since(min(start, month_start)):
-        by_bot[r["arm"] or ANALYST].append(r)
+        by_bot[_bot(r)].append(r)
     bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
     # arms gone from config still billed: model from their latest usage row
     for b, rs in by_bot.items():
@@ -248,8 +260,8 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
         run, pts = 0, []
         for r in rs:
             if r["ts"] >= since["start"]:
-                run += r["input_tokens"] + r["output_tokens"]
-                pts.append([int(parse_ts(r["ts"]).timestamp() * 1000), run])
+                run += _tokens(r)
+                pts.append([_ms(parse_ts(r["ts"])), run])
         if pts:
             series[b] = _thin(pts)
     return {
