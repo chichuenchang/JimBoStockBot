@@ -4,12 +4,16 @@
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const isBench = (s) => s.startsWith("benchmark");
+const ANALYST = "analyst";  // usage rows with no arm (queries.ANALYST)
+const gone = [];  // arms in the DB but not in config: slots after config arms, in first-seen order
 function colorOf(series) {
-  if (isBench(series)) return css("--bench");
-  const i = window.SERIES.filter((s) => !isBench(s)).indexOf(series);
+  if (isBench(series) || series === ANALYST) return css("--bench");  // not a bot: neutral
+  const arms = window.SERIES.filter((s) => !isBench(s));
+  let i = arms.indexOf(series);
+  if (i < 0) i = arms.length + (gone.includes(series) ? gone.indexOf(series) : gone.push(series) - 1);
   return css(`--series-${(i % 8) + 1}`);
 }
-const nameOf = (s) => window.NAMES[s] || s;
+const nameOf = (s) => (s === ANALYST ? "market report" : window.NAMES[s] || s);
 const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
@@ -260,6 +264,72 @@ function initArm() {
   return loadArm;
 }
 
+// ---------- usage page: tokens per bot, flat-plan quota (queries.usage) ----------
+let usageSpan = "today";
+const pctOf = (r) => fmt(r * 100, 1) + "%";
+async function loadUsage() {
+  const span = usageSpan;
+  const u = await get(`/api/usage?span=${span}`);
+  if (span !== usageSpan) return;  // span clicked while in flight: the click's own load draws
+  const bots = u.bots.map((b) => b.bot);
+  draw("tokens", "line", { datasets: bots.filter((b) => u.series[b]?.length).map((b) => ({
+    label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
+    borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
+
+  const cols = ["calls", "input", "cached", "output", "cost"];
+  const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
+                output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
+  const cell = (t, k, b) => k === "cost" ? (b.flat ? `<span class="muted">plan</span>` : "$" + fmt(t[k], 3)) : k === "calls" ? t[k] : kTok(t[k]);
+  document.getElementById("usage").innerHTML =
+    `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
+    `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
+      `<th title="${tip[k]}" class="${i ? "" : "gstart"}">${k}</th>`).join("")).join("")}</tr></thead><tbody>` +
+    u.bots.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b.bot)}"></span>${esc(nameOf(b.bot))}</td>` +
+      `<td class="l">${esc(b.model)}</td>${["today", "month"].map((p) => cols.map((k, i) =>
+        `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
+
+  // one card per flat-plan model; rebuilt only when the model/window set changes, so charts keep their canvas
+  const el = document.getElementById("quota"), plans = Object.entries(u.quota);
+  const key = JSON.stringify(plans.map(([m, p]) => [m, p.windows.map((w) => w.window)]));
+  if (el.dataset.key !== key) {
+    for (const id of Object.keys(charts)) if (id.startsWith("quota-")) { charts[id].destroy(); delete charts[id]; }
+    el.innerHTML = plans.length ? plans.map(([m], i) => `<section class="card"><h2>${esc(m)} <span id="qstate-${i}"></span></h2>` +
+      `<div class="kpis" id="qkpi-${i}"></div><div class="tablewrap" style="margin-top:12px"><table id="qbots-${i}"></table></div>` +
+      `<div class="chart short" style="margin-top:12px"><canvas id="quota-${i}"></canvas></div></section>`).join("")
+      : `<section class="card"><p class="muted">No bot runs on a flat plan (a model with quota_url in models.yaml).</p></section>`;
+    el.dataset.key = key;
+  }
+  plans.forEach(([m, p], i) => {
+    // state null: plan in models.yaml, no quota poll stored yet (daemon.QUOTA_EVERY; failures in the log)
+    document.getElementById(`qstate-${i}`).innerHTML = `<span class="dot" style="background:${p.state ? stateColor(p.state) : css("--bench")}"></span>`;
+    document.getElementById(`qkpi-${i}`).innerHTML = !p.windows.length
+      ? `<p class="muted">No quota reading yet; the running daemon polls it. Stays empty? Look for "quota ${esc(m)}" in logs/stockbot.log.</p>`
+      : p.windows.map((w) =>
+      `<div class="kpi" title="polled ${etTime(w.ts)}"><span>${esc(w.window)} window</span><b>${pctOf(w.used_ratio)}</b>` +
+      `<span class="small">${w.reset_ts ? "resets " + etTime(w.reset_ts) : "no reset time"}</span></div>`).join("");
+    const names = [...new Set([...p.bots, ...p.windows.flatMap((w) => Object.keys(w.bots))])];
+    document.getElementById(`qbots-${i}`).innerHTML =
+      `<thead><tr><th class="l">bot</th>${p.windows.map((w) => `<th title="${esc(w.window)} window: this bot's share of the quota used, by tokens">${esc(w.window)} used</th>` +
+        `<th>${esc(w.window)} calls</th><th>${esc(w.window)} tokens</th>`).join("")}</tr></thead><tbody>` +
+      names.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b)}"></span>${esc(nameOf(b))}</td>` +
+        p.windows.map((w) => { const s = w.bots[b] || { calls: 0, tokens: 0, used_ratio: 0 };
+          return `<td>${pctOf(s.used_ratio)}</td><td>${s.calls}</td><td>${kTok(s.tokens)}</td>`; }).join("") + `</tr>`).join("") + `</tbody>`;
+    // windows are not bots: neutral ink, solid for the first window, dashed after
+    const ds = Object.entries(p.history).map(([w, pts], j) => ({ label: `${w} used`, data: pts.map(([x, y]) => ({ x, y })),
+      borderColor: css(j ? "--bench" : "--text-secondary"), backgroundColor: css(j ? "--bench" : "--text-secondary"),
+      borderWidth: 2, pointRadius: 0, borderDash: j ? [6, 4] : [], stepped: true }));
+    draw(`quota-${i}`, "line", { datasets: ds }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
+  });
+}
+function initUsage() {
+  document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {
+    usageSpan = b.dataset.span;
+    document.querySelectorAll("button[data-span]").forEach((x) => x.classList.toggle("on", x === b));
+    loadUsage();
+  });
+  return loadUsage;
+}
+
 // ---------- bot tabs: drag to reorder, saved server-side (dashboard/tab_order.py) ----------
 (function initTabDrag() {
   const nav = document.querySelector("nav.tabs");
@@ -296,7 +366,7 @@ function initArm() {
 // ---------- polling: 5 s while the market is open, else 60 s ----------
 (async function main() {
   const page = document.body.dataset.page;
-  const refresh = page === "index" ? initIndex() : page === "arm" ? initArm() : async () => {};
+  const refresh = page === "index" ? initIndex() : page === "arm" ? initArm() : page === "usage" ? initUsage() : async () => {};
   async function tick() {
     try { await refresh(await loadStatus()); } catch (e) { console.error(e); }
     setTimeout(tick, marketOpen ? 5000 : 60000);
