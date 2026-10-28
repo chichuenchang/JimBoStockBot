@@ -210,19 +210,22 @@ def _window_start(window: dict, now: datetime) -> datetime | None:
     return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
 
 
-def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start: datetime) -> dict:
-    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there."""
+def _plan(db: DB, model: str, info: dict, bots: list[str], rows: list[dict], now: datetime,
+          start: datetime) -> dict:
+    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there.
+    `rows`: usage since at least every window's start."""
     windows = []
     for w in info["windows"]:
         ws = _window_start(w, now)
+        cut = ws and iso(ws)
         tokens, calls = dict.fromkeys(bots, 0), dict.fromkeys(bots, 0)
-        for r in db.usage_since(ws) if ws else []:
-            if r["model"] == model:
+        for r in rows if ws else []:
+            if r["model"] == model and r["ts"] >= cut:
                 b = _bot(r)
                 tokens[b] = tokens.get(b, 0) + _tokens(r)
                 calls[b] = calls.get(b, 0) + 1
         total = sum(tokens.values())
-        windows.append({**w, "start": ws and iso(ws), "bots": {
+        windows.append({**w, "start": cut, "bots": {
             b: {"calls": calls[b], "tokens": t, "used_ratio": w["used_ratio"] * t / total if total else 0.0}
             for b, t in tokens.items()}})
     history: dict[str, list] = {}
@@ -241,16 +244,22 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model
+    first = min(start, month_start)
+    polled = quota(db, cfg)
+    # one fetch, back far enough for every polled quota window too (_plan)
+    rows = db.usage_since(min([first, *filter(None, (_window_start(w, now)
+                                                     for p in polled.values() for w in p["windows"]))]))
     by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
-    for r in db.usage_since(min(start, month_start)):
-        by_bot[_bot(r)].append(r)
+    cut = iso(first)
+    for r in rows:
+        if r["ts"] >= cut:
+            by_bot[_bot(r)].append(r)
     bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
     # arms gone from config still billed: model from their latest usage row
     for b, rs in by_bot.items():
         if b not in bots:
             bots.append(b)
             model_of[b] = rs[-1]["model"]
-    polled = quota(db, cfg)
     # card per model a bot runs on, if polled or flat plan (quota_url in models.yaml): listed before its
     # first poll so a new bot is never shown as $0 billed
     plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
@@ -271,7 +280,7 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
                   **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
-        "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], now, start)
+        "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], rows, now, start)
                   for m, info in plans.items()},
     }
 
