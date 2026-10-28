@@ -314,10 +314,11 @@ async function loadUsage() {
       names.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b)}"></span>${esc(nameOf(b))}</td>` +
         p.windows.map((w) => { const s = w.bots[b] || { calls: 0, tokens: 0, used_ratio: 0 };
           return `<td>${pctOf(s.used_ratio)}</td><td>${s.calls}</td><td>${kTok(s.tokens)}</td>`; }).join("") + `</tr>`).join("") + `</tbody>`;
-    // one line per bot per window, in the bot's colour: solid for the first window, dashed after
-    const ds = Object.entries(p.history).flatMap(([w, hb], j) => Object.entries(hb).map(([b, pts]) => ({
-      label: `${nameOf(b)} ${w} used`, data: pts.map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
-      borderWidth: 2, pointRadius: 0, borderDash: j ? [6, 4] : [], stepped: true })));
+    // per window: whole plan in neutral ink, then one line per bot in its colour; solid for the first window, dashed after
+    const line = (label, pts, color, j) => ({ label, data: pts.map(([x, y]) => ({ x, y })), borderColor: color, backgroundColor: color,
+      borderWidth: 2, pointRadius: 0, borderDash: j ? [6, 4] : [], stepped: true });
+    const ds = Object.entries(p.history).flatMap(([w, h], j) => [line(`${w} used, all`, h.used, css("--text-secondary"), j),
+      ...Object.entries(h.bots).map(([b, pts]) => line(`${nameOf(b)} ${w} used`, pts, colorOf(b), j))]);
     draw(`quota-${i}`, "line", { datasets: ds }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
   });
 }

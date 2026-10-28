@@ -240,18 +240,22 @@ def _plan(model: str, info: dict, bots: list[str], rows: list[dict], polls: list
         ws = _window_start(w, now)
         windows.append({**w, "start": ws and iso(ws), "bots": {
             b: s for b, s in share(ws, now, w["used_ratio"]).items() if b in bots or s["calls"]}})
-    history: dict[str, dict[str, list]] = {}  # window -> bot -> [ms, % of quota]
+    # window -> "used": whole plan, incl. use outside the bots; "bots": bot -> its slice. Points [ms, % of quota]
+    history: dict[str, dict] = {}
     called = set()  # (window, bot) with calls in some poll's window: same rule as `windows`
     for p in polls:
         end = parse_ts(p["ts"])
         if ws := _window_start(p, end):
+            h = history.setdefault(p["window"], {"used": [], "bots": {}})
+            h["used"].append([_ms(end), p["used_ratio"] * 100])
             for b, s in share(ws, end, p["used_ratio"]).items():
-                history.setdefault(p["window"], {}).setdefault(b, []).append([_ms(end), s["used_ratio"] * 100])
+                h["bots"].setdefault(b, []).append([_ms(end), s["used_ratio"] * 100])
                 if s["calls"]:
                     called.add((p["window"], b))
     return {"state": info["state"], "bots": bots, "windows": windows,
-            "history": {w: {b: _thin(v) for b, v in hb.items() if b in bots or (w, b) in called}
-                        for w, hb in history.items()}}
+            "history": {w: {"used": _thin(h["used"]), "bots": {
+                b: _thin(v) for b, v in h["bots"].items() if b in bots or (w, b) in called}}
+                for w, h in history.items()}}
 
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
