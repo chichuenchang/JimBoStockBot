@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
+from stockbot.clock import et_at, et_date, month_key
 from stockbot.config import AppConfig
-from stockbot.db import DB
+from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
                               max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
@@ -175,6 +177,81 @@ def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
             used = max(r["used_ratio"] for r in rows)
             out[name] = {"windows": rows, "state": level(used, 1, cfg.settings.budget_warn_frac)}
     return out
+
+
+ANALYST = "analyst"  # usage rows with no arm: the market report (report/analyst.py)
+WINDOW_UNIT = {"m": timedelta(minutes=1), "h": timedelta(hours=1), "d": timedelta(days=1)}
+
+
+def _totals(rows: list[dict]) -> dict:
+    return {"calls": len(rows), "input": sum(r["input_tokens"] for r in rows),
+            "cached": sum(r["cached_tokens"] for r in rows), "output": sum(r["output_tokens"] for r in rows),
+            "cost": sum(r["cost"] for r in rows)}
+
+
+def _window_start(window: dict, now: datetime) -> datetime | None:
+    """Quota window "5h" / "7d" ends at its reset (else now); None when the name has no length."""
+    try:
+        length = int(window["window"][:-1]) * WINDOW_UNIT[window["window"][-1:]]
+    except (ValueError, KeyError):
+        return None
+    return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
+
+
+def _plan(db: DB, model: str, info: dict, bots: list[str], now: datetime, start: datetime) -> dict:
+    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there."""
+    windows = []
+    for w in info["windows"]:
+        ws = _window_start(w, now)
+        tokens, calls = dict.fromkeys(bots, 0), dict.fromkeys(bots, 0)
+        for r in db.usage_since(ws) if ws else []:
+            if r["model"] == model:
+                b = r["arm"] or ANALYST
+                tokens[b] = tokens.get(b, 0) + r["input_tokens"] + r["output_tokens"]
+                calls[b] = calls.get(b, 0) + 1
+        total = sum(tokens.values())
+        windows.append({**w, "start": ws and iso(ws), "bots": {
+            b: {"calls": calls[b], "tokens": t, "used_ratio": w["used_ratio"] * t / total if total else 0.0}
+            for b, t in tokens.items()}})
+    history: dict[str, list] = {}
+    for r in db.quota_since(model, start):
+        history.setdefault(r["window"], []).append([int(parse_ts(r["ts"]).timestamp() * 1000), r["used_ratio"] * 100])
+    return {"state": info["state"], "windows": windows, "history": {k: _thin(v) for k, v in history.items()}}
+
+
+def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
+    """Token use per bot: today (ET) and this month, a running total since today's start or `days`
+    back, and quota per flat-plan model."""
+    today = et_at(et_date(now), "00:00")
+    start = today if days is None else min(today, now - timedelta(days=days))
+    model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
+    model_of[ANALYST] = cfg.settings.analyst_model
+    rows = db.usage_since(start)
+    month = {r["arm"] or ANALYST: r for r in db.usage_by_arm(month_key(now))}
+    bots = [b for b in model_of if b != ANALYST or ANALYST in month]
+    bots += [b for b in month if b not in bots]  # arms gone from config still billed this month
+    by_bot: dict[str, list] = defaultdict(list)
+    for r in rows:
+        by_bot[r["arm"] or ANALYST].append(r)
+    plans = quota(db, cfg)
+    series = {}
+    for b, rs in by_bot.items():
+        run, pts = 0, []
+        for r in rs:
+            run += r["input_tokens"] + r["output_tokens"]
+            pts.append([int(parse_ts(r["ts"]).timestamp() * 1000), run])
+        series[b] = _thin(pts)
+    today_iso = iso(today)
+    return {
+        "start": iso(start),
+        "bots": [{"bot": b, "model": model_of.get(b) or month[b]["model"], "flat": model_of.get(b) in plans,
+                  "today": _totals([r for r in by_bot[b] if r["ts"] >= today_iso]),
+                  "month": {k: month.get(b, {}).get(k) or 0 for k in ("calls", "input", "cached", "output", "cost")}}
+                 for b in bots],
+        "series": series,
+        "quota": {m: _plan(db, m, info, [b for b in bots if model_of.get(b) == m], now, start)
+                  for m, info in plans.items()},
+    }
 
 
 def status(db: DB, cfg: AppConfig, budget) -> dict:
