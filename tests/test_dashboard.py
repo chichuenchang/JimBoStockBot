@@ -451,3 +451,22 @@ def test_usage_quota_share(db):
     assert w7["bots"]["kimi-improved"]["calls"] == 3  # trailing 7d from now: fixture call too
     assert odd["start"] is None and odd["bots"]["kimi-baseline"]["used_ratio"] == 0
     assert [p[1] for p in plan["history"]["5h"]] == pytest.approx([10, 20])
+
+
+def test_usage_follows_config(db):
+    """A bot added to arms.yaml (here on a flat plan not polled yet) or dropped from it needs no code change."""
+    import dataclasses
+
+    from stockbot.config import ArmCfg
+    from stockbot.dashboard.queries import usage
+
+    plan = dataclasses.replace(CFG.models["gpt"], enabled=True, quota_url="https://q")
+    cfg = dataclasses.replace(CFG, models={**CFG.models, "gpt": plan},
+                              arms=(*CFG.arms, ArmCfg("new-bot", "gpt", "baseline", True)))
+    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(hours=1), 10, 0, 5, 0.2)
+    u = usage(db, cfg, NOW)
+    bots = {b["bot"]: b for b in u["bots"]}
+    assert bots["new-bot"]["flat"] and bots["new-bot"]["today"]["calls"] == 0
+    assert bots["old-bot"]["model"] == "deepseek-v4.1-flash" and bots["old-bot"]["today"]["cost"] == 0.2
+    assert u["quota"]["gpt"] == {"state": None, "bots": ["new-bot"], "windows": [], "history": {}}
+    assert "gpt" not in usage(db, CFG, NOW)["quota"]  # no bot on it, no card
