@@ -324,10 +324,9 @@ class DB:
         return self._q("SELECT COALESCE(SUM(cost),0) s FROM llm_usage WHERE arm=?", arm)[0]["s"]
 
     def tokens(self, model: str, month: str) -> dict:
-        r = self._q("SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input, COALESCE(SUM(cached_tokens),0) "
-                    "cached, COALESCE(SUM(output_tokens),0) output FROM llm_usage WHERE month=? AND model=?",
-                    month, model)[0]
-        return dict(r)
+        return dict(self._q(
+            "SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input, COALESCE(SUM(cached_tokens),0) cached, "
+            "COALESCE(SUM(output_tokens),0) output FROM llm_usage WHERE month=? AND model=?", month, model)[0])
 
     # flat-plan quota: llm/quota.py
     def insert_quota(self, model: str, ts: datetime, windows) -> None:

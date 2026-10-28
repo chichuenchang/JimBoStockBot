@@ -12,6 +12,7 @@ function colorOf(series) {
 const nameOf = (s) => window.NAMES[s] || s;
 const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
+const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
 const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York",
@@ -52,7 +53,6 @@ async function loadStatus() {
   const why = hot.map(([name, b]) => `${name === "_total" ? "total" : esc(name)} ${b.state}`).join(", ");
   chips.push(`<span class="chip"><span class="dot" style="background:${stateColor(worst)}"></span>LLM budget <b>$${fmt(t.spent)} / $${fmt(t.cap, 0)}</b>${why ? " " + why : ""}</span>`);
   // flat-plan models (llm/quota.py): quota used per window, tokens this month
-  const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
   for (const [name, q] of Object.entries(st.quota)) {
     const used = q.windows.map((w) => `${esc(w.window)} ${fmt(w.used_ratio * 100, 0)}%`).join(" · ");
     const tk = st.budget[name]?.tokens;
