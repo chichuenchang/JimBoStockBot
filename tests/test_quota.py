@@ -80,7 +80,7 @@ async def test_daemon_polls_every_ten_minutes(tmp_path, monkeypatch, caplog):
         await run_day(daemon, session, clock, until=session.open_utc - timedelta(minutes=5))  # 26 passes
     assert polls == ["kimi-k3"] * 3
     assert len(daemon.ctx.db._q("SELECT id FROM llm_quota")) == 3
-    assert "kimi-k3 quota 5h window 90% used" in caplog.text
+    assert caplog.text.count("kimi-k3 quota 5h window 90% used") == 1  # once per window reset, not per poll
 
 
 async def test_daemon_quota_off_by_default(tmp_path, monkeypatch):

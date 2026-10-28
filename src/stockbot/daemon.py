@@ -32,6 +32,7 @@ class Daemon:
         self.serve_dashboard = serve_dashboard
         self.poll_quota = poll_quota  # live runs only: replay must not hit provider endpoints
         self._quota_next = datetime.min.replace(tzinfo=UTC)
+        self._quota_warned: set[tuple] = set()  # (model, window, reset): warn once per window
         self.sessions: list[Session] = []
         self._calendar_day = None
         self._data_failed = False
@@ -206,7 +207,8 @@ class Daemon:
                 continue
             self.ctx.db.insert_quota(m.name, now, windows)
             for w in windows:
-                if w.used >= warn:
+                if w.used >= warn and (key := (m.name, w.name, w.reset)) not in self._quota_warned:
+                    self._quota_warned.add(key)
                     log.warning("%s quota %s window %.0f%% used, resets %s", m.name, w.name, w.used * 100,
                                 w.reset.astimezone(ET).strftime("%m-%d %H:%M ET") if w.reset else "?")
 
