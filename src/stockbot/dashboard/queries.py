@@ -229,11 +229,15 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     model_of[ANALYST] = cfg.settings.analyst_model
     rows = db.usage_since(start)
     month = {r["arm"] or ANALYST: r for r in db.usage_by_arm(month_key(now))}
-    bots = [b for b in model_of if b != ANALYST or ANALYST in month]
-    bots += [b for b in month if b not in bots]  # arms gone from config still billed this month
     by_bot: dict[str, list] = defaultdict(list)
     for r in rows:
         by_bot[r["arm"] or ANALYST].append(r)
+    bots = [b for b in model_of if b != ANALYST or ANALYST in month or ANALYST in by_bot]
+    # arms gone from config still billed: model from their latest usage row
+    for b, m in [*((b, r["model"]) for b, r in month.items()), *((b, rs[-1]["model"]) for b, rs in by_bot.items())]:
+        if b not in bots:
+            bots.append(b)
+            model_of[b] = m
     plans = quota(db, cfg)
     series = {}
     for b, rs in by_bot.items():
@@ -245,12 +249,12 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     today_iso = iso(today)
     return {
         "start": iso(start),
-        "bots": [{"bot": b, "model": model_of.get(b) or month[b]["model"], "flat": model_of.get(b) in plans,
+        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in plans,
                   "today": _totals([r for r in by_bot[b] if r["ts"] >= today_iso]),
                   "month": {k: month.get(b, {}).get(k) or 0 for k in ("calls", "input", "cached", "output", "cost")}}
                  for b in bots],
         "series": series,
-        "quota": {m: _plan(db, m, info, [b for b in bots if model_of.get(b) == m], now, start)
+        "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], now, start)
                   for m, info in plans.items()},
     }
 
