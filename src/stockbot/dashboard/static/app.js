@@ -4,11 +4,16 @@
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const isBench = (s) => s.startsWith("benchmark");
+const ANALYST = "analyst";  // usage rows with no arm (queries.ANALYST)
+const gone = [];  // arms in the DB but not in config: slots after config arms, in first-seen order
 function colorOf(series) {
-  const i = window.SERIES.filter((s) => !isBench(s)).indexOf(series);
-  return i < 0 ? css("--bench") : css(`--series-${(i % 8) + 1}`);  // benchmark, market report: neutral
+  if (isBench(series) || series === ANALYST) return css("--bench");  // not a bot: neutral
+  const arms = window.SERIES.filter((s) => !isBench(s));
+  let i = arms.indexOf(series);
+  if (i < 0) i = arms.length + (gone.includes(series) ? gone.indexOf(series) : gone.push(series) - 1);
+  return css(`--series-${(i % 8) + 1}`);
 }
-const nameOf = (s) => (s === "analyst" ? "market report" : window.NAMES[s] || s);
+const nameOf = (s) => (s === ANALYST ? "market report" : window.NAMES[s] || s);
 const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
