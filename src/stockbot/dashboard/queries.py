@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from datetime import datetime, timedelta
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
+from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
-from stockbot.db import DB
+from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
                               max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
@@ -86,11 +88,15 @@ def _thin(points: list) -> list:
     return out
 
 
+def _ms(ts: datetime) -> int:  # chart x: epoch ms
+    return int(ts.timestamp() * 1000)
+
+
 def equity(db: DB, mode: str = "usd") -> dict[str, list]:
     out = {}
     for a in db.accounts():
         start = db.start_cash(a)
-        pts = [[int(ts.timestamp() * 1000), nav if mode == "usd" else (nav / start - 1) * 100]
+        pts = [[_ms(ts), nav if mode == "usd" else (nav / start - 1) * 100]
                for ts, nav in db.equity_series(a)]
         out[a] = _thin(pts)
     return out
@@ -102,7 +108,7 @@ def drawdown(db: DB) -> dict[str, list]:
         peak, pts = db.start_cash(a), []  # same base as the leaderboard's worst drop
         for ts, nav in db.equity_series(a):
             peak = max(peak, nav)
-            pts.append([int(ts.timestamp() * 1000), (nav / peak - 1) * 100 if peak > 0 else 0.0])
+            pts.append([_ms(ts), (nav / peak - 1) * 100 if peak > 0 else 0.0])
         out[a] = _thin(pts)
     return out
 
@@ -175,6 +181,71 @@ def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
             used = max(r["used_ratio"] for r in rows)
             out[name] = {"windows": rows, "state": level(used, 1, cfg.settings.budget_warn_frac)}
     return out
+
+
+ANALYST = "analyst"  # usage rows with no arm: the market report (report/analyst.py)
+
+
+def _bot(row: dict) -> str:
+    return row["arm"] or ANALYST
+
+
+def _tokens(row: dict) -> int:
+    return row["input_tokens"] + row["output_tokens"]
+
+
+def _totals(rows: list[dict]) -> dict:
+    return {"calls": len(rows), "input": sum(r["input_tokens"] for r in rows),
+            "cached": sum(r["cached_tokens"] for r in rows), "output": sum(r["output_tokens"] for r in rows),
+            "cost": sum(r["cost"] for r in rows)}
+
+
+def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
+    """Token use per bot: today (ET) and this month, a running total since today's start, and totals
+    per ET day over the last `days` days, today included. Bots, models, prices and plans all come from config + DB:
+    a new arm in arms.yaml shows up with no change here."""
+    today = et_at(et_date(now), "00:00")
+    # whole ET days, so the first day's total is not partial
+    start = today if days is None else et_at(et_date(now) - timedelta(days=days - 1), "00:00")
+    month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
+    model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
+    model_of[ANALYST] = cfg.settings.analyst_model
+    by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
+    for r in db.usage_since(min(start, month_start)):
+        by_bot[_bot(r)].append(r)
+    bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
+    # arms gone from config still billed: model from their latest usage row
+    for b, rs in by_bot.items():
+        if b not in bots:
+            bots.append(b)
+            model_of[b] = rs[-1]["model"]
+    # flat plan: polled, or quota_url in models.yaml before its first poll, so a new bot is never shown as $0 billed
+    flat = {*quota(db, cfg), *(m for m, mc in cfg.models.items() if mc.enabled and mc.quota_url)}
+    since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
+    series = {}  # running total since today's start
+    per_day = {et_date(start) + timedelta(days=i): defaultdict(list)  # every ET day of the span, empty ones too
+               for i in range((et_date(now) - et_date(start)).days + 1)}
+    for b, rs in by_bot.items():
+        run, pts = 0, []
+        for r in rs:
+            if r["ts"] < since["start"]:
+                continue
+            ts = parse_ts(r["ts"])
+            if (day := et_date(ts)) in per_day:
+                per_day[day][b].append(r)
+            if r["ts"] >= since["today"]:
+                run += _tokens(r)
+                pts.append([_ms(ts), run])
+        if pts:
+            series[b] = _thin(pts)
+    return {
+        "start": since["start"],
+        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in flat,
+                  **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
+                 for b in bots],
+        "series": series,
+        "daily": [{"day": d.isoformat(), "bots": {b: _totals(rs) for b, rs in bs.items()}} for d, bs in per_day.items()],
+    }
 
 
 def status(db: DB, cfg: AppConfig, budget) -> dict:

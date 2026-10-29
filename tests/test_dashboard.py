@@ -402,3 +402,70 @@ def test_candles_history_through_today_skips_live(db):
     r = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
         "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()
     assert r["error"] is None and [b["close"] for b in r["bars"]] == [1.5]
+
+
+NOW = T0 + timedelta(days=1)  # client() clock: 10:00 ET
+
+
+def test_usage_page_in_nav(db):
+    c = client(db)
+    assert '<a href="/usage" class="">Usage</a>' in c.get("/").text
+    page = c.get("/usage").text
+    assert '<a href="/usage" class="on">Usage</a>' in page and 'data-page="usage"' in page
+    assert tab_arms(page) == [a.name for a in CFG.arms if a.enabled]  # Usage tab is not draggable
+
+
+def test_usage_per_bot(db):
+    db.insert_usage("kimi-k3", "kimi-improved", "decision", NOW - timedelta(hours=1), 100, 40, 10, 0.5)
+    db.insert_usage("kimi-k3", "kimi-improved", "decision", NOW - timedelta(minutes=5), 200, 0, 20, 0.5)
+    db.insert_usage("deepseek-v4.1-flash", None, "analyst", NOW - timedelta(hours=2), 50, 0, 5, 0.1)
+    u = client(db).get("/api/usage").json()
+    bots = {b["bot"]: b for b in u["bots"]}
+    assert list(bots)[:4] == ["kimi-baseline", "kimi-improved", "deepseek-baseline", "deepseek-improved"]
+    assert "rules-trend" not in bots  # no model, no tokens
+    k = bots["kimi-improved"]
+    assert k["today"] == {"calls": 2, "input": 300, "cached": 40, "output": 30, "cost": 1.0}
+    assert k["month"]["calls"] == 3 and k["month"]["cost"] == pytest.approx(21.0)  # fixture call: yesterday
+    assert bots["analyst"]["model"] == "deepseek-v4.1-flash" and bots["analyst"]["today"]["calls"] == 1
+    assert bots["kimi-baseline"]["today"]["calls"] == 0
+    assert [p[1] for p in u["series"]["kimi-improved"]] == [110, 330]  # running total, today only
+    week = client(db).get("/api/usage?span=7d").json()
+    assert week["start"] == datetime(2026, 10, 15, 4, tzinfo=UTC).isoformat()  # ET midnight 6 days back: 7 days
+    assert week["series"] == u["series"]  # running total is today's whatever the span
+    daily = week["daily"]  # every ET day of the span, empty ones too
+    assert [d["day"] for d in daily] == [f"2026-10-{d}" for d in range(15, 22)]
+    assert daily[0]["bots"] == {} and daily[-2]["bots"]["kimi-improved"]["calls"] == 1  # fixture call yesterday
+    assert daily[-1]["bots"]["kimi-improved"] == k["today"] and daily[-1]["bots"]["analyst"]["calls"] == 1
+    assert [d["day"] for d in u["daily"]] == ["2026-10-21"]
+
+
+def test_usage_polled_model_is_flat(db):
+    """A model with quota polls counts as a flat plan even without quota_url in config."""
+    db.insert_quota("kimi-k3", NOW, [Window("5h", 0.2, None)])
+    assert {b["bot"]: b["flat"] for b in client(db).get("/api/usage").json()["bots"]}["kimi-baseline"] is True
+
+
+def test_usage_follows_config(db):
+    """A bot added to arms.yaml (here on a flat plan not polled yet) or dropped from it needs no code change."""
+    import dataclasses
+
+    from stockbot.config import ArmCfg
+    from stockbot.dashboard.queries import usage
+
+    plan = dataclasses.replace(CFG.models["gpt"], enabled=True, quota_url="https://q")
+    cfg = dataclasses.replace(CFG, models={**CFG.models, "gpt": plan},
+                              arms=(*CFG.arms, ArmCfg("new-bot", "gpt", "baseline", True)))
+    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(hours=1), 10, 0, 5, 0.2)
+    u = usage(db, cfg, NOW)
+    bots = {b["bot"]: b for b in u["bots"]}
+    assert bots["new-bot"]["flat"] and bots["new-bot"]["today"]["calls"] == 0
+    assert bots["old-bot"]["model"] == "deepseek-v4.1-flash" and bots["old-bot"]["today"]["cost"] == 0.2
+
+
+def test_usage_removed_bot_latest_model(db):
+    """Model of a bot gone from config = its latest row, not alphabetical max ("kimi-k3" > "deepseek...")."""
+    db.insert_usage("kimi-k3", "old-bot", "decision", NOW - timedelta(days=15), 10, 0, 5, 0)
+    db.insert_usage("deepseek-v4.1-flash", "old-bot", "decision", NOW - timedelta(days=10), 10, 0, 5, 0.2)
+    old = {b["bot"]: b for b in client(db).get("/api/usage").json()["bots"]}["old-bot"]
+    assert old["model"] == "deepseek-v4.1-flash" and not old["flat"]
+    assert old["today"]["calls"] == 0 and old["month"]["calls"] == 2 and old["month"]["cost"] == 0.2

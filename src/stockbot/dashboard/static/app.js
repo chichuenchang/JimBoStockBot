@@ -4,12 +4,16 @@
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const isBench = (s) => s.startsWith("benchmark");
+const ANALYST = "analyst";  // usage rows with no arm (queries.ANALYST)
+const gone = [];  // arms in the DB but not in config: slots after config arms, in first-seen order
 function colorOf(series) {
-  if (isBench(series)) return css("--bench");
-  const i = window.SERIES.filter((s) => !isBench(s)).indexOf(series);
+  if (isBench(series) || series === ANALYST) return css("--bench");  // not a bot: neutral
+  const arms = window.SERIES.filter((s) => !isBench(s));
+  let i = arms.indexOf(series);
+  if (i < 0) i = arms.length + (gone.includes(series) ? gone.indexOf(series) : gone.push(series) - 1);
   return css(`--series-${(i % 8) + 1}`);
 }
-const nameOf = (s) => window.NAMES[s] || s;
+const nameOf = (s) => (s === ANALYST ? "market report" : window.NAMES[s] || s);
 const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
@@ -111,9 +115,12 @@ function timeLinear(opts) {
 }
 const charts = {};
 function draw(id, type, data, opts) {
-  if (charts[id]) { charts[id].data = data; charts[id].options = opts; charts[id].update(); return; }
+  if (charts[id]?.config.type === type) { charts[id].data = data; charts[id].options = opts; charts[id].update(); return; }
+  charts[id]?.destroy();  // type changed (usage: line today, bars over days): update cannot switch it
   charts[id] = new Chart(document.getElementById(id), { type, data, options: opts });
 }
+const barStyle = (s) => ({ backgroundColor: colorOf(s), borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4,
+                           borderSkipped: "start" });
 
 // ---------- index page ----------
 let equityMode = "usd";
@@ -131,8 +138,7 @@ async function loadIndex() {
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
     const m = Object.fromEntries(daily[s]);
-    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
-             borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
+    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), ...barStyle(s) };
   });
   draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
 
@@ -260,6 +266,58 @@ function initArm() {
   return loadArm;
 }
 
+// ---------- usage page: tokens per bot (queries.usage) ----------
+let usageSpan = "today";
+async function loadUsage() {
+  const span = usageSpan;
+  const u = await get(`/api/usage?span=${span}`);
+  if (span !== usageSpan) return;  // span clicked while in flight: the click's own load draws
+  const bots = u.bots.map((b) => b.bot), flat = Object.fromEntries(u.bots.map((b) => [b.bot, b.flat]));
+  const cost = (t, b) => (flat[b] ? "plan" : "$" + fmt(t.cost, 3));
+  document.getElementById("tokens-note").textContent = span === "today" ? "running total today" : "per ET day · hover a bar for detail";
+  if (span === "today") {
+    draw("tokens", "line", { datasets: bots.filter((b) => u.series[b]?.length).map((b) => ({
+      label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
+      borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
+  } else {
+    // one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
+    const tok = (t) => t.input + t.output;
+    // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
+    const ds = bots.filter((b) => u.daily.some((d) => d.bots[b])).map((b) => ({
+      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), ...barStyle(b) }));
+    const o = baseOptions("", kTok);
+    o.scales.x.stacked = o.scales.y.stacked = true;
+    o.interaction = { mode: "point", intersect: true };
+    Object.assign(o.plugins.tooltip, { callbacks: {
+      title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
+        { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
+      label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
+        return [`${c.dataset.label}: ${kTok(tok(t))} tokens · ${t.calls} calls · ${cost(t, c.dataset.bot)}`,
+                `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`]; } } });
+    draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
+  }
+
+  const cols = ["calls", "input", "cached", "output", "cost"];
+  const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
+                output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
+  const cell = (t, k, b) => k === "cost" ? `<span class="${b.flat ? "muted" : ""}">${cost(t, b.bot)}</span>` : k === "calls" ? t[k] : kTok(t[k]);
+  document.getElementById("usage").innerHTML =
+    `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
+    `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
+      `<th title="${tip[k]}" class="${i ? "" : "gstart"}">${k}</th>`).join("")).join("")}</tr></thead><tbody>` +
+    u.bots.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b.bot)}"></span>${esc(nameOf(b.bot))}</td>` +
+      `<td class="l">${esc(b.model)}</td>${["today", "month"].map((p) => cols.map((k, i) =>
+        `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
+}
+function initUsage() {
+  document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {
+    usageSpan = b.dataset.span;
+    document.querySelectorAll("button[data-span]").forEach((x) => x.classList.toggle("on", x === b));
+    loadUsage();
+  });
+  return loadUsage;
+}
+
 // ---------- bot tabs: drag to reorder, saved server-side (dashboard/tab_order.py) ----------
 (function initTabDrag() {
   const nav = document.querySelector("nav.tabs");
@@ -296,7 +354,7 @@ function initArm() {
 // ---------- polling: 5 s while the market is open, else 60 s ----------
 (async function main() {
   const page = document.body.dataset.page;
-  const refresh = page === "index" ? initIndex() : page === "arm" ? initArm() : async () => {};
+  const refresh = page === "index" ? initIndex() : page === "arm" ? initArm() : page === "usage" ? initUsage() : async () => {};
   async function tick() {
     try { await refresh(await loadStatus()); } catch (e) { console.error(e); }
     setTimeout(tick, marketOpen ? 5000 : 60000);

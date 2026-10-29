@@ -125,9 +125,10 @@ a { color: var(--series-1); }
     <a class="brand" href="/">JBSB Dashboard</a>
     <div class="strip" id="status"></div>
   </div>
-  {% set active = arm if arm is defined else "" %}
+  {% set active = arm if arm is defined else tab if tab is defined else "" %}
   <nav class="tabs">
     <a href="/" class="{{ 'on' if not active }}">Overview</a>
+    <a href="/usage" class="{{ 'on' if active == 'usage' }}">Usage</a>
     {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}" draggable="true" title="drag to reorder"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
 </header>

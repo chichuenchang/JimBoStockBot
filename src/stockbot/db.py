@@ -328,6 +328,11 @@ class DB:
             "SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input, COALESCE(SUM(cached_tokens),0) cached, "
             "COALESCE(SUM(output_tokens),0) output FROM llm_usage WHERE month=? AND model=?", month, model)[0])
 
+    def usage_since(self, ts: datetime) -> list[dict]:
+        return [dict(r) for r in self._q(
+            "SELECT model, arm, ts, input_tokens, cached_tokens, output_tokens, cost FROM llm_usage "
+            "WHERE ts>=? ORDER BY ts, id", iso(ts))]
+
     # flat-plan quota: llm/quota.py
     def insert_quota(self, model: str, ts: datetime, windows) -> None:
         with self.transaction():
