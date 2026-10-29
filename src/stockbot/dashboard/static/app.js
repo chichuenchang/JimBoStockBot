@@ -292,9 +292,8 @@ async function loadUsage() {
       title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
         { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
       label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
-        return `${c.dataset.label}: ${kTok(tok(t))} tokens · ${t.calls} calls · ${cost(t, c.dataset.bot)}`; },
-      afterLabel: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
-        return `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`; } } });
+        return [`${c.dataset.label}: ${kTok(tok(t))} tokens · ${t.calls} calls · ${cost(t, c.dataset.bot)}`,
+                `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`]; } } });
     draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
   }
 

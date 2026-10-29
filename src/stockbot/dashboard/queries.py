@@ -228,11 +228,14 @@ def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dic
     for b, rs in by_bot.items():
         run, pts = 0, []
         for r in rs:
-            if r["ts"] >= since["start"] and (day := et_date(parse_ts(r["ts"]))) in per_day:
+            if r["ts"] < since["start"]:
+                continue
+            ts = parse_ts(r["ts"])
+            if (day := et_date(ts)) in per_day:
                 per_day[day][b].append(r)
             if r["ts"] >= since["today"]:
                 run += _tokens(r)
-                pts.append([_ms(parse_ts(r["ts"])), run])
+                pts.append([_ms(ts), run])
         if pts:
             series[b] = _thin(pts)
     return {
