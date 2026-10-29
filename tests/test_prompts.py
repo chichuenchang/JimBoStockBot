@@ -18,7 +18,7 @@ def journal():
 
 
 def test_baseline_has_aa_headings():
-    text = render_state("baseline", STATE, PRICES, 9830.0, NOW, None, S)
+    text = render_state("baseline", STATE, PRICES, 9830.0, NOW, None, S, regime_gate=True)
     for h in AA_HEADINGS:
         assert h in text
     assert "# YOUR JOURNAL" not in text
@@ -26,7 +26,7 @@ def test_baseline_has_aa_headings():
 
 
 def test_improved_has_journal_and_rules():
-    text = render_state("improved", STATE, PRICES, 9830.0, NOW, journal(), S)
+    text = render_state("improved", STATE, PRICES, 9830.0, NOW, journal(), S, regime_gate=True)
     assert "# YOUR JOURNAL" in text and "# HARNESS RULES" in text
     assert "1.5" in text and "25%" in text
     assert "avoid chasing" in text and "NVDA" in text and "stop" in text
@@ -40,11 +40,12 @@ def test_report_comes_first():
 def test_no_leaderboard():
     for v in ("baseline", "improved"):
         assert "STATE OF COMPETITION" not in system_prompt(v, S)
-        assert "STATE OF COMPETITION" not in render_state(v, STATE, PRICES, 9830.0, NOW, journal(), S)
+        text = render_state(v, STATE, PRICES, 9830.0, NOW, journal(), S, regime_gate=True)
+        assert "STATE OF COMPETITION" not in text
 
 
 def test_state_shows_et_time():
-    assert "10:00 am ET" in render_state("baseline", STATE, PRICES, 9830.0, NOW, None, S)
+    assert "10:00 am ET" in render_state("baseline", STATE, PRICES, 9830.0, NOW, None, S, regime_gate=True)
 
 
 def test_system_prompts_differ_on_sizing():

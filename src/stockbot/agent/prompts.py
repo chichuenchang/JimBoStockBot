@@ -88,7 +88,7 @@ def _rules(s: Settings, regime_gate: bool) -> str:
         "- No re-entry in a symbol on the day you exited it",
         f"- New entries frozen for the day once the account is down {s.daily_loss_freeze:.0%} today",
         *([f"- No new entries while {s.benchmark_symbol} is below its 50-day average (see Market Regime)"]
-          if s.regime_gate and regime_gate else []),
+          if regime_gate else []),
         *([f"- No entries in a symbol from {s.earnings_blackout_days} session(s) before its earnings through earnings day"]
           if s.earnings_blackout_days >= 0 else []),
         *([f"- Stops trail automatically: to entry once price gains {s.trail_breakeven_r:g}R"]
@@ -100,7 +100,7 @@ def _rules(s: Settings, regime_gate: bool) -> str:
 
 
 def render_state(variant: Variant, state: AccountState, prices: dict[str, float], nav: float,
-                 now: datetime, journal: JournalView | None, s: Settings, regime_gate: bool = True) -> str:
+                 now: datetime, journal: JournalView | None, s: Settings, *, regime_gate: bool) -> str:
     lines = [f"# CURRENT TIME\nIt is {_et(now)}.", "",
              f"# CURRENT AVAILABLE CAPITAL\n{state.cash:.2f}", "",
              f"# CURRENT NAV\n{nav:.2f}", "",
