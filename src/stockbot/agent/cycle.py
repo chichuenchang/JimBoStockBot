@@ -18,7 +18,7 @@ from stockbot.agent.rules import Proposal, RuleContext, check_entry, check_stop_
 from stockbot.agent.schema import Decision, ParseError, SymbolDecision, parse_decision
 from stockbot.broker.sim import SimBroker, buy_price
 from stockbot.clock import ET, Clock, et_date
-from stockbot.config import AppConfig, ArmCfg
+from stockbot.config import AppConfig, ArmCfg, Settings
 from stockbot.data.base import MarketData
 from stockbot.data.fundamentals import FundamentalsSource, business_days_until, with_earnings
 from stockbot.db import DB
@@ -168,7 +168,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
     pics = chart_tool.Session(db, s, now) if arm.charts else None
     images: tuple[bytes, ...] = ()  # chart PNGs, re-sent with every later step (stateless calls)
     system = system_prompt(arm.variant, s, search=web is not None, charts=pics is not None)
-    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
+    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s,
+                                                         regime_gate=_regime_gated(s, arm)))
     client = ctx.clients[arm.model]
 
     async def ask(prompt: str, purpose: str) -> str:
@@ -234,6 +235,11 @@ async def _control_decision(ctx: AppContext, arm: ArmCfg, slot_ts: datetime, sta
     return random_decision(rng, state.positions, prices, feats, universe)
 
 
+def _regime_gated(s: Settings, arm: ArmCfg) -> bool:
+    """Arm obeys the regime rule. One check for both enforcement and the prompt's rule line."""
+    return s.regime_gate and arm.regime_gate
+
+
 def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
                   now: datetime, prices: dict[str, float]) -> RuleContext:
     db, s = ctx.db, ctx.cfg.settings
@@ -242,7 +248,7 @@ def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
     prev = db.last_snapshot_before(arm.name, midnight) or db.start_cash(arm.name)
     feats = db.latest_report_features()
     bench = s.benchmark_symbol
-    risk_off = s.regime_gate and regime(prices.get(bench), (feats.get(bench) or {}).get("sma50_1d")) == "risk_off"
+    risk_off = _regime_gated(s, arm) and regime(prices.get(bench), (feats.get(bench) or {}).get("sma50_1d")) == "risk_off"
     return RuleContext(
         nav=nav, cash=state.cash, positions=state.positions,
         entries_today=sum(1 for o in today if o["side"] == "buy"),
