@@ -338,6 +338,14 @@ async def test_entry_allowed_when_benchmark_above_sma50(tmp_path):
     assert r.orders == 1
 
 
+async def test_regime_exempt_arm_enters_below_sma50(tmp_path):
+    ctx, llm = make_ctx(tmp_path, [buy()])
+    set_features(ctx, {"MSFT": {"atr14_1h": 1.0}, "QQQ": {"sma50_1d": 700.0}})
+    arm = dataclasses.replace(ARMS["kimi-improved"], regime_gate=False)
+    r = await run_cycle(ctx, arm, SLOT, "scheduled")
+    assert r.orders == 1 and "50-day average" not in llm.calls[0][1]
+
+
 async def test_improved_prompt_states_regime_rule(tmp_path):
     ctx, llm = make_ctx(tmp_path, ['{}'])
     await run_cycle(ctx, ARMS["kimi-improved"], SLOT, "scheduled")

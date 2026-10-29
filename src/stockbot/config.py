@@ -40,6 +40,7 @@ class ArmCfg:
     search: bool = False  # may web-search before deciding: agent/research.py
     charts: bool = False  # may view price-history charts before deciding: agent/chart_tool.py
     label: str | None = None  # dashboard display name; `name` stays the DB/URL id
+    regime_gate: bool = True  # false = exempt from settings.regime_gate
 
     @property
     def uses_llm(self) -> bool:

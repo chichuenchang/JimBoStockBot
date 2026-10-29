@@ -168,7 +168,8 @@ async def _llm_decision(ctx: AppContext, arm: ArmCfg, ex: _Exchange, report_text
     pics = chart_tool.Session(db, s, now) if arm.charts else None
     images: tuple[bytes, ...] = ()  # chart PNGs, re-sent with every later step (stateless calls)
     system = system_prompt(arm.variant, s, search=web is not None, charts=pics is not None)
-    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s))
+    user = build_user_prompt(report_text, render_state(arm.variant, state, prices, nav, now, journal, s,
+                                                         regime_gate=arm.regime_gate))
     client = ctx.clients[arm.model]
 
     async def ask(prompt: str, purpose: str) -> str:
@@ -242,7 +243,7 @@ def _rule_context(ctx: AppContext, arm: ArmCfg, state: AccountState, nav: float,
     prev = db.last_snapshot_before(arm.name, midnight) or db.start_cash(arm.name)
     feats = db.latest_report_features()
     bench = s.benchmark_symbol
-    risk_off = s.regime_gate and regime(prices.get(bench), (feats.get(bench) or {}).get("sma50_1d")) == "risk_off"
+    risk_off = s.regime_gate and arm.regime_gate and regime(prices.get(bench), (feats.get(bench) or {}).get("sma50_1d")) == "risk_off"
     return RuleContext(
         nav=nav, cash=state.cash, positions=state.positions,
         entries_today=sum(1 for o in today if o["side"] == "buy"),

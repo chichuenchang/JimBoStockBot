@@ -116,6 +116,10 @@ def test_charts_flag_only_on_jimbo():
     assert CFG.settings.chart_max_per_decision == 3
 
 
+def test_regime_gate_off_only_on_jimbo():
+    assert [a.name for a in load_config(REPO_CONFIG).arms if not a.regime_gate] == ["kimi-improved", "deepseek-improved"]
+
+
 def test_charts_on_control_arm_rejected(tmp_path):
     d = copy_config(tmp_path)
     (d / "arms.yaml").write_text("arms:\n  - {name: r, variant: rules, enabled: true, charts: true}\n")
