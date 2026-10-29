@@ -280,9 +280,10 @@ async function loadUsage() {
       borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
   } else {
     // one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
-    const tok = (t) => (t ? t.input + t.output : 0);
+    const tok = (t) => t.input + t.output;
+    // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
     const ds = bots.filter((b) => u.daily.some((d) => d.bots[b])).map((b) => ({
-      label: nameOf(b), bot: b, data: u.daily.map((d) => tok(d.bots[b])), backgroundColor: colorOf(b),
+      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), backgroundColor: colorOf(b),
       borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" }));
     const o = baseOptions("", kTok);
     o.scales.x.stacked = o.scales.y.stacked = true;
