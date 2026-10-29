@@ -120,6 +120,13 @@ def test_regime_gate_off_only_on_jimbo():
     assert [a.name for a in load_config(REPO_CONFIG).arms if not a.regime_gate] == ["kimi-improved", "deepseek-improved"]
 
 
+def test_regime_gate_on_unruled_arm_rejected(tmp_path):
+    d = copy_config(tmp_path)
+    (d / "arms.yaml").write_text("arms:\n  - {name: m, variant: momentum, enabled: true, regime_gate: false}\n")
+    with pytest.raises(ConfigError, match="regime_gate needs a ruled arm"):
+        load_config(d)
+
+
 def test_charts_on_control_arm_rejected(tmp_path):
     d = copy_config(tmp_path)
     (d / "arms.yaml").write_text("arms:\n  - {name: r, variant: rules, enabled: true, charts: true}\n")

@@ -155,6 +155,8 @@ def load_config(config_dir: Path) -> AppConfig:
             raise ConfigError(f"arm {a.get('name', '?')}: {e}") from e
         if arm.variant not in VARIANTS:
             raise ConfigError(f"arm {arm.name}: variant {arm.variant!r} not in {VARIANTS}")
+        if not arm.regime_gate and not arm.ruled:
+            raise ConfigError(f"arm {arm.name}: regime_gate needs a ruled arm")
         if not arm.uses_llm:
             for flag in ("search", "charts"):
                 if getattr(arm, flag):
