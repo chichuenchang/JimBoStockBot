@@ -301,7 +301,7 @@ async function loadUsage() {
   const cols = ["calls", "input", "cached", "output", "cost"];
   const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
                 output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
-  const cell = (t, k, b) => k === "cost" ? (b.flat ? `<span class="muted">plan</span>` : "$" + fmt(t[k], 3)) : k === "calls" ? t[k] : kTok(t[k]);
+  const cell = (t, k, b) => k === "cost" ? `<span class="${b.flat ? "muted" : ""}">${cost(t, b.bot)}</span>` : k === "calls" ? t[k] : kTok(t[k]);
   document.getElementById("usage").innerHTML =
     `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
     `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
