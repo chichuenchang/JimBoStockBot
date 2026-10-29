@@ -115,9 +115,12 @@ function timeLinear(opts) {
 }
 const charts = {};
 function draw(id, type, data, opts) {
-  if (charts[id]) { charts[id].data = data; charts[id].options = opts; charts[id].update(); return; }
+  if (charts[id]?.config.type === type) { charts[id].data = data; charts[id].options = opts; charts[id].update(); return; }
+  charts[id]?.destroy();  // type changed (usage: line today, bars over days): update cannot switch it
   charts[id] = new Chart(document.getElementById(id), { type, data, options: opts });
 }
+const barStyle = (s) => ({ backgroundColor: colorOf(s), borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4,
+                           borderSkipped: "start" });
 
 // ---------- index page ----------
 let equityMode = "usd";
@@ -135,8 +138,7 @@ async function loadIndex() {
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
     const m = Object.fromEntries(daily[s]);
-    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
-             borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
+    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), ...barStyle(s) };
   });
   draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
 
@@ -264,22 +266,41 @@ function initArm() {
   return loadArm;
 }
 
-// ---------- usage page: tokens per bot, flat-plan quota (queries.usage) ----------
+// ---------- usage page: tokens per bot (queries.usage) ----------
 let usageSpan = "today";
-const pctOf = (r) => fmt(r * 100, 1) + "%";
 async function loadUsage() {
   const span = usageSpan;
   const u = await get(`/api/usage?span=${span}`);
   if (span !== usageSpan) return;  // span clicked while in flight: the click's own load draws
-  const bots = u.bots.map((b) => b.bot);
-  draw("tokens", "line", { datasets: bots.filter((b) => u.series[b]?.length).map((b) => ({
-    label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
-    borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
+  const bots = u.bots.map((b) => b.bot), flat = Object.fromEntries(u.bots.map((b) => [b.bot, b.flat]));
+  const cost = (t, b) => (flat[b] ? "plan" : "$" + fmt(t.cost, 3));
+  document.getElementById("tokens-note").textContent = span === "today" ? "running total today" : "per ET day · hover a bar for detail";
+  if (span === "today") {
+    draw("tokens", "line", { datasets: bots.filter((b) => u.series[b]?.length).map((b) => ({
+      label: nameOf(b), data: u.series[b].map(([x, y]) => ({ x, y })), borderColor: colorOf(b), backgroundColor: colorOf(b),
+      borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, stepped: true })) }, timeLinear(baseOptions("", kTok)));
+  } else {
+    // one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
+    const tok = (t) => t.input + t.output;
+    // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
+    const ds = bots.filter((b) => u.daily.some((d) => d.bots[b])).map((b) => ({
+      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), ...barStyle(b) }));
+    const o = baseOptions("", kTok);
+    o.scales.x.stacked = o.scales.y.stacked = true;
+    o.interaction = { mode: "point", intersect: true };
+    Object.assign(o.plugins.tooltip, { callbacks: {
+      title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
+        { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
+      label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
+        return [`${c.dataset.label}: ${kTok(tok(t))} tokens · ${t.calls} calls · ${cost(t, c.dataset.bot)}`,
+                `  ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`]; } } });
+    draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
+  }
 
   const cols = ["calls", "input", "cached", "output", "cost"];
   const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
                 output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
-  const cell = (t, k, b) => k === "cost" ? (b.flat ? `<span class="muted">plan</span>` : "$" + fmt(t[k], 3)) : k === "calls" ? t[k] : kTok(t[k]);
+  const cell = (t, k, b) => k === "cost" ? `<span class="${b.flat ? "muted" : ""}">${cost(t, b.bot)}</span>` : k === "calls" ? t[k] : kTok(t[k]);
   document.getElementById("usage").innerHTML =
     `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
     `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
@@ -287,39 +308,6 @@ async function loadUsage() {
     u.bots.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b.bot)}"></span>${esc(nameOf(b.bot))}</td>` +
       `<td class="l">${esc(b.model)}</td>${["today", "month"].map((p) => cols.map((k, i) =>
         `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
-
-  // one card per flat-plan model; rebuilt only when the model/window set changes, so charts keep their canvas
-  const el = document.getElementById("quota"), plans = Object.entries(u.quota);
-  const key = JSON.stringify(plans.map(([m, p]) => [m, p.windows.map((w) => w.window)]));
-  if (el.dataset.key !== key) {
-    for (const id of Object.keys(charts)) if (id.startsWith("quota-")) { charts[id].destroy(); delete charts[id]; }
-    el.innerHTML = plans.length ? plans.map(([m], i) => `<section class="card"><h2>${esc(m)} <span id="qstate-${i}"></span></h2>` +
-      `<div class="kpis" id="qkpi-${i}"></div><div class="tablewrap" style="margin-top:12px"><table id="qbots-${i}"></table></div>` +
-      `<div class="chart short" style="margin-top:12px"><canvas id="quota-${i}"></canvas></div></section>`).join("")
-      : `<section class="card"><p class="muted">No bot runs on a flat plan (a model with quota_url in models.yaml).</p></section>`;
-    el.dataset.key = key;
-  }
-  plans.forEach(([m, p], i) => {
-    // state null: plan in models.yaml, no quota poll stored yet (daemon.QUOTA_EVERY; failures in the log)
-    document.getElementById(`qstate-${i}`).innerHTML = `<span class="dot" style="background:${p.state ? stateColor(p.state) : css("--bench")}"></span>`;
-    document.getElementById(`qkpi-${i}`).innerHTML = !p.windows.length
-      ? `<p class="muted">No quota reading yet; the running daemon polls it. Stays empty? Look for "quota ${esc(m)}" in logs/stockbot.log.</p>`
-      : p.windows.map((w) =>
-      `<div class="kpi" title="polled ${etTime(w.ts)}"><span>${esc(w.window)} window</span><b>${pctOf(w.used_ratio)}</b>` +
-      `<span class="small">${w.reset_ts ? "resets " + etTime(w.reset_ts) : "no reset time"}</span></div>`).join("");
-    const names = [...new Set([...p.bots, ...p.windows.flatMap((w) => Object.keys(w.bots))])];
-    document.getElementById(`qbots-${i}`).innerHTML =
-      `<thead><tr><th class="l">bot</th>${p.windows.map((w) => `<th title="${esc(w.window)} window: this bot's share of the quota used, by tokens">${esc(w.window)} used</th>` +
-        `<th>${esc(w.window)} calls</th><th>${esc(w.window)} tokens</th>`).join("")}</tr></thead><tbody>` +
-      names.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b)}"></span>${esc(nameOf(b))}</td>` +
-        p.windows.map((w) => { const s = w.bots[b] || { calls: 0, tokens: 0, used_ratio: 0 };
-          return `<td>${pctOf(s.used_ratio)}</td><td>${s.calls}</td><td>${kTok(s.tokens)}</td>`; }).join("") + `</tr>`).join("") + `</tbody>`;
-    // windows are not bots: neutral ink, solid for the first window, dashed after
-    const ds = Object.entries(p.history).map(([w, pts], j) => ({ label: `${w} used`, data: pts.map(([x, y]) => ({ x, y })),
-      borderColor: css(j ? "--bench" : "--text-secondary"), backgroundColor: css(j ? "--bench" : "--text-secondary"),
-      borderWidth: 2, pointRadius: 0, borderDash: j ? [6, 4] : [], stepped: true }));
-    draw(`quota-${i}`, "line", { datasets: ds }, timeLinear(baseOptions("", (v) => fmt(v, 1) + "%")));
-  });
 }
 function initUsage() {
   document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {

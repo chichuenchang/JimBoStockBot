@@ -184,7 +184,6 @@ def quota(db: DB, cfg: AppConfig) -> dict[str, dict]:
 
 
 ANALYST = "analyst"  # usage rows with no arm: the market report (report/analyst.py)
-WINDOW_UNIT = {"m": timedelta(minutes=1), "h": timedelta(hours=1), "d": timedelta(days=1)}
 
 
 def _bot(row: dict) -> str:
@@ -201,87 +200,51 @@ def _totals(rows: list[dict]) -> dict:
             "cost": sum(r["cost"] for r in rows)}
 
 
-def _window_start(window: dict, now: datetime) -> datetime | None:
-    """Quota window "5h" / "7d" ends at its reset (else now); None when the name has no length."""
-    try:
-        length = int(window["window"][:-1]) * WINDOW_UNIT[window["window"][-1:]]
-    except (ValueError, KeyError):
-        return None
-    return (parse_ts(window["reset_ts"]) if window["reset_ts"] else now) - length
-
-
-def _plan(db: DB, model: str, info: dict, bots: list[str], rows: list[dict], now: datetime,
-          start: datetime) -> dict:
-    """Plan quota plus each bot's estimated slice: window used x its share of the model's tokens there.
-    `rows`: usage since at least every window's start."""
-    windows = []
-    for w in info["windows"]:
-        ws = _window_start(w, now)
-        cut = ws and iso(ws)
-        tokens, calls = dict.fromkeys(bots, 0), dict.fromkeys(bots, 0)
-        for r in rows if ws else []:
-            if r["model"] == model and r["ts"] >= cut:
-                b = _bot(r)
-                tokens[b] = tokens.get(b, 0) + _tokens(r)
-                calls[b] = calls.get(b, 0) + 1
-        total = sum(tokens.values())
-        windows.append({**w, "start": cut, "bots": {
-            b: {"calls": calls[b], "tokens": t, "used_ratio": w["used_ratio"] * t / total if total else 0.0}
-            for b, t in tokens.items()}})
-    history: dict[str, list] = {}
-    for r in db.quota_since(model, start):
-        history.setdefault(r["window"], []).append([_ms(parse_ts(r["ts"])), r["used_ratio"] * 100])
-    return {"state": info["state"], "bots": bots, "windows": windows,
-            "history": {k: _thin(v) for k, v in history.items()}}
-
-
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
-    """Token use per bot: today (ET) and this month, a running total since today's start or `days`
-    back, and quota per flat-plan model. Bots, models, prices and plans all come from config + DB:
+    """Token use per bot: today (ET) and this month, a running total since today's start, and totals
+    per ET day over the last `days` days, today included. Bots, models, prices and plans all come from config + DB:
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
-    start = today if days is None else min(today, now - timedelta(days=days))
+    # whole ET days, so the first day's total is not partial
+    start = today if days is None else et_at(et_date(now) - timedelta(days=days - 1), "00:00")
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model
-    first = min(start, month_start)
-    polled = quota(db, cfg)
-    # one fetch, back far enough for every polled quota window too (_plan)
-    rows = db.usage_since(min([first, *filter(None, (_window_start(w, now)
-                                                     for p in polled.values() for w in p["windows"]))]))
     by_bot: dict[str, list] = defaultdict(list)  # rows since span or month start, oldest first
-    cut = iso(first)
-    for r in rows:
-        if r["ts"] >= cut:
-            by_bot[_bot(r)].append(r)
+    for r in db.usage_since(min(start, month_start)):
+        by_bot[_bot(r)].append(r)
     bots = [b for b in model_of if b != ANALYST or ANALYST in by_bot]
     # arms gone from config still billed: model from their latest usage row
     for b, rs in by_bot.items():
         if b not in bots:
             bots.append(b)
             model_of[b] = rs[-1]["model"]
-    # card per model a bot runs on, if polled or flat plan (quota_url in models.yaml): listed before its
-    # first poll so a new bot is never shown as $0 billed
-    plans = {m: polled.get(m) or {"state": None, "windows": []} for m in dict.fromkeys(model_of[b] for b in bots)
-             if m in polled or ((mc := cfg.models.get(m)) and mc.enabled and mc.quota_url)}
+    # flat plan: polled, or quota_url in models.yaml before its first poll, so a new bot is never shown as $0 billed
+    flat = {*quota(db, cfg), *(m for m, mc in cfg.models.items() if mc.enabled and mc.quota_url)}
     since = {k: iso(v) for k, v in (("start", start), ("today", today), ("month", month_start))}
-    series = {}
+    series = {}  # running total since today's start
+    per_day = {et_date(start) + timedelta(days=i): defaultdict(list)  # every ET day of the span, empty ones too
+               for i in range((et_date(now) - et_date(start)).days + 1)}
     for b, rs in by_bot.items():
         run, pts = 0, []
         for r in rs:
-            if r["ts"] >= since["start"]:
+            if r["ts"] < since["start"]:
+                continue
+            ts = parse_ts(r["ts"])
+            if (day := et_date(ts)) in per_day:
+                per_day[day][b].append(r)
+            if r["ts"] >= since["today"]:
                 run += _tokens(r)
-                pts.append([_ms(parse_ts(r["ts"])), run])
+                pts.append([_ms(ts), run])
         if pts:
             series[b] = _thin(pts)
     return {
         "start": since["start"],
-        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in plans,
+        "bots": [{"bot": b, "model": model_of[b], "flat": model_of[b] in flat,
                   **{p: _totals([r for r in by_bot[b] if r["ts"] >= since[p]]) for p in ("today", "month")}}
                  for b in bots],
         "series": series,
-        "quota": {m: _plan(db, m, info, [b for b in bots if model_of[b] == m], rows, now, start)
-                  for m, info in plans.items()},
+        "daily": [{"day": d.isoformat(), "bots": {b: _totals(rs) for b, rs in bs.items()}} for d, bs in per_day.items()],
     }
 
 

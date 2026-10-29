@@ -4,12 +4,9 @@
 {% block body %}
 <h2 class="section">Token usage <span class="muted">per bot · updates live</span></h2>
 <section class="card">
-  <h2>Tokens used, running total <span class="strip" style="display:inline-flex;margin-left:8px">
+  <h2>Tokens used <span class="muted" id="tokens-note"></span> <span class="strip" style="display:inline-flex;margin-left:8px">
     <button data-span="today" class="on">Today</button><button data-span="7d">7 days</button></span></h2>
   <div class="chart"><canvas id="tokens"></canvas></div>
 </section>
 <section class="card"><h2>Per bot</h2><div class="tablewrap"><table id="usage" class="stats"></table></div></section>
-
-<h2 class="section">Plan quota <span class="muted">flat-plan models · a bot's share is estimated from its tokens in the window</span></h2>
-<div id="quota"></div>
 {% endblock %}
