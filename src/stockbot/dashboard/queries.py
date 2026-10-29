@@ -202,11 +202,11 @@ def _totals(rows: list[dict]) -> dict:
 
 def usage(db: DB, cfg: AppConfig, now: datetime, days: int | None = None) -> dict:
     """Token use per bot: today (ET) and this month, a running total since today's start, and totals
-    per ET day since today or `days` days back. Bots, models, prices and plans all come from config + DB:
+    per ET day over the last `days` days, today included. Bots, models, prices and plans all come from config + DB:
     a new arm in arms.yaml shows up with no change here."""
     today = et_at(et_date(now), "00:00")
     # whole ET days, so the first day's total is not partial
-    start = today if days is None else et_at(et_date(now) - timedelta(days=days), "00:00")
+    start = today if days is None else et_at(et_date(now) - timedelta(days=days - 1), "00:00")
     month_start = et_at(et_date(now).replace(day=1), "00:00")  # ET, as month_key
     model_of = {a.name: a.model for a in cfg.arms if a.enabled and a.model}
     model_of[ANALYST] = cfg.settings.analyst_model

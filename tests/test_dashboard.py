@@ -430,10 +430,10 @@ def test_usage_per_bot(db):
     assert bots["kimi-baseline"]["today"]["calls"] == 0
     assert [p[1] for p in u["series"]["kimi-improved"]] == [110, 330]  # running total, today only
     week = client(db).get("/api/usage?span=7d").json()
-    assert week["start"] == datetime(2026, 10, 14, 4, tzinfo=UTC).isoformat()  # ET midnight 7 days back
+    assert week["start"] == datetime(2026, 10, 15, 4, tzinfo=UTC).isoformat()  # ET midnight 6 days back: 7 days
     assert week["series"] == u["series"]  # running total is today's whatever the span
     daily = week["daily"]  # every ET day of the span, empty ones too
-    assert [d["day"] for d in daily] == [f"2026-10-{d}" for d in range(14, 22)]
+    assert [d["day"] for d in daily] == [f"2026-10-{d}" for d in range(15, 22)]
     assert daily[0]["bots"] == {} and daily[-2]["bots"]["kimi-improved"]["calls"] == 1  # fixture call yesterday
     assert daily[-1]["bots"]["kimi-improved"] == k["today"] and daily[-1]["bots"]["analyst"]["calls"] == 1
     assert [d["day"] for d in u["daily"]] == ["2026-10-21"]
