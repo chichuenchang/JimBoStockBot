@@ -119,6 +119,8 @@ function draw(id, type, data, opts) {
   charts[id]?.destroy();  // type changed (usage: line today, bars over days): update cannot switch it
   charts[id] = new Chart(document.getElementById(id), { type, data, options: opts });
 }
+const barStyle = (s) => ({ backgroundColor: colorOf(s), borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4,
+                           borderSkipped: "start" });
 
 // ---------- index page ----------
 let equityMode = "usd";
@@ -136,8 +138,7 @@ async function loadIndex() {
   const days = [...new Set(Object.values(daily).flat().map(([d]) => d))].sort();
   const ds = window.SERIES.filter((s) => daily[s]).map((s) => {
     const m = Object.fromEntries(daily[s]);
-    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), backgroundColor: colorOf(s),
-             borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" };
+    return { label: nameOf(s), data: days.map((d) => m[d] ?? null), ...barStyle(s) };
   });
   draw("daily", "bar", { labels: days, datasets: ds }, noLegend(baseOptions("", (v) => signed(v, 0))));
 
@@ -283,8 +284,7 @@ async function loadUsage() {
     const tok = (t) => t.input + t.output;
     // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
     const ds = bots.filter((b) => u.daily.some((d) => d.bots[b])).map((b) => ({
-      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), backgroundColor: colorOf(b),
-      borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4, borderSkipped: "start" }));
+      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), ...barStyle(b) }));
     const o = baseOptions("", kTok);
     o.scales.x.stacked = o.scales.y.stacked = true;
     o.interaction = { mode: "point", intersect: true };
