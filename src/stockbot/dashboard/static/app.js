@@ -19,6 +19,8 @@ const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toF
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+const tri = (v) => (v > 0 ? "▲" : v < 0 ? "▼" : "");
+const dollars = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York",
   month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) + " ET";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -27,6 +29,20 @@ const get = (url) => fetch(url).then((r) => r.json());
 const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").forEach((el) => {
   el.style.background = colorOf(el.dataset.series); });
 paintSwatches(document);
+
+// segmented buttons (data-<key>="value"): a click marks that one on and hands its value to pick
+function segmented(key, pick) {
+  const bs = document.querySelectorAll(`button[data-${key}]`);
+  bs.forEach((b) => b.onclick = () => { bs.forEach((x) => x.classList.toggle("on", x === b)); pick(b.dataset[key]); });
+}
+
+// light / dark: base.html applies the saved choice before paint; charts read colors once, so reload
+document.getElementById("theme").onclick = () => {
+  const next = css("color-scheme") === "dark" ? "light" : "dark";
+  try { localStorage.setItem("theme", next); } catch (e) { /* private window: this page only */ }
+  document.documentElement.dataset.theme = next;
+  location.reload();
+};
 
 // server-rendered stats (tiles, stats table, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
 async function refreshRendered(selectors) {
@@ -122,15 +138,139 @@ function draw(id, type, data, opts) {
 const barStyle = (s) => ({ backgroundColor: colorOf(s), borderColor: css("--surface-1"), borderWidth: 1, borderRadius: 4,
                            borderSkipped: "start" });
 
-// ---------- index page ----------
+// ---------- index page: treemap (kaito.ai mindshare-arena layout) ----------
+// Squarified treemap: areas in descending order -> rects filling w x h.
+function squarify(areas, w, h) {
+  const out = [];
+  let x = 0, y = 0, row = [];
+  const worst = (r, side) => {
+    const s = r.reduce((a, b) => a + b, 0);
+    return Math.max((side * side * Math.max(...r)) / (s * s), (s * s) / (side * side * Math.min(...r)));
+  };
+  const flush = () => {
+    const s = row.reduce((a, b) => a + b, 0);
+    if (w >= h) {  // strip down the left edge
+      const cw = s / h; let yy = y;
+      for (const a of row) { out.push({ x, y: yy, w: cw, h: a / cw }); yy += a / cw; }
+      x += cw; w -= cw;
+    } else {  // strip along the top
+      const rh = s / w; let xx = x;
+      for (const a of row) { out.push({ x: xx, y, w: a / rh, h: rh }); xx += a / rh; }
+      y += rh; h -= rh;
+    }
+    row = [];
+  };
+  for (const a of areas) {
+    if (row.length && worst([...row, a], Math.min(w, h)) > worst(row, Math.min(w, h))) flush();
+    row.push(a);
+  }
+  if (row.length) flush();
+  return out;
+}
+// Place box's .tile children (biggest first) by size; tint each by its change, strongest = most saturated.
+// cap: change that gets full color; default = biggest change on the map.
+function layoutTiles(box, sizes, rets, cap) {
+  const tiles = [...box.querySelectorAll(".tile")];
+  if (!tiles.length) return;
+  const W = box.clientWidth, H = box.clientHeight;
+  sizes = sizes.map((v) => Math.max(1e-9, v));
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const maxAbs = cap || Math.max(1e-9, ...rets.map(Math.abs));
+  const [up, down, base] = ["--tile-up", "--tile-down", "--surface-0"].map(css);  // once per layout, not per tile
+  squarify(sizes.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
+    const t = tiles[i], gap = 2;  // px each side, so neighbours sit 4px apart
+    const tint = rets[i] ? Math.round(18 + 52 * Math.min(1, Math.abs(rets[i]) / maxAbs)) : 0;  // flat bot: no tint
+    Object.assign(t.style, { left: `${r.x + gap}px`, top: `${r.y + gap}px`, width: `${r.w - 2 * gap}px`, height: `${r.h - 2 * gap}px`,
+      background: `color-mix(in oklab, ${rets[i] >= 0 ? up : down} ${tint}%, ${base})` });
+    t.classList.toggle("sm", r.w < 150 || r.h < 110);
+    t.classList.toggle("xs", r.w < 70 || r.h < 50);
+  });
+}
+function layoutTreemap() {  // bots: server sends tiles ranked by account value
+  const tiles = [...document.querySelectorAll("#treemap .tile")];
+  layoutTiles(document.getElementById("treemap"), tiles.map((t) => Number(t.dataset.nav)),
+              tiles.map((t) => Number(t.dataset.ret) || 0));
+}
+
+// Stocks: size = share of dollar volume over the span, color = price change (queries.market).
+const CROWN = `<svg class="crown" viewBox="0 0 24 24"><path d="M3 18h18l-1.6-11-4.6 4.4L12 4l-2.8 7.4L4.6 7z" fill="currentColor"/></svg>`;
+let marketSessions = 1, lastMarket = [];
+function layoutStocks() {
+  // fixed scale (3% a day, widening like volatility with sqrt of span), so one outlier does not wash out the rest
+  layoutTiles(document.getElementById("stockmap"), lastMarket.map((m) => m.dollar_volume), lastMarket.map((m) => m.change_pct),
+              3 * Math.sqrt(marketSessions));
+}
+function drawMovers() {
+  const by = [...lastMarket].sort((a, b) => b.change_pct - a.change_pct);
+  const li = (s) => `<li><span>${esc(s.symbol)}</span><span class="${cls(s.change_pct)}">${signed(s.change_pct)}%</span></li>`;
+  document.getElementById("moversup").innerHTML = by.filter((s) => s.change_pct > 0).slice(0, 3).map(li).join("") || `<li class="muted">none</li>`;
+  document.getElementById("moversdown").innerHTML = by.filter((s) => s.change_pct < 0).slice(-3).reverse().map(li).join("") || `<li class="muted">none</li>`;
+  const span = document.querySelector("button[data-sessions].on").textContent;  // label lives in index.html only
+  document.querySelectorAll(".moverspan").forEach((el) => { el.textContent = `(${span})`; });
+}
+async function loadMarket() {
+  const span = marketSessions;
+  const m = await get(`/api/market?sessions=${span}`);
+  if (span !== marketSessions) return;  // span clicked while in flight
+  lastMarket = m;
+  const box = document.getElementById("stockmap");
+  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" title="${esc(s.symbol)}: ${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
+      <div class="tile-head"><b>${esc(s.symbol)}</b>${i < 3 ? CROWN : ""}</div>
+      <div class="big"><span class="${cls(s.change_pct)}">${tri(s.change_pct)}${fmt(Math.abs(s.change_pct))}%</span></div>
+      <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
+      <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
+    : `<p class="muted">${marketOpen ? "No live prices from the feed yet." : "No daily price history yet (daemon syncs it)."}</p>`;
+  layoutStocks();
+  drawMovers();
+}
+const sparkSvg = (pts, up) => {
+  if (pts.length < 2) return "";
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const yOf = (py) => (y1 === y0 ? 15 : 30 - ((py - y0) / (y1 - y0)) * 28 - 1);  // flat series: mid-line
+  const d = pts.map(([px, py]) => `${(((px - x0) / (x1 - x0 || 1)) * 100).toFixed(2)},${yOf(py).toFixed(2)}`).join(" ");
+  return `<svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="${css(up ? "--good" : "--critical")}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
+};
+
+// Top gainer: change in account value over the last 1 / 7 / 30 days, $ or %.
+let gainMode = "usd", lastUsd = {};
+const GAIN_DAYS = [1, 7, 30];
+function drawGainers() {
+  const tiles = [...document.querySelectorAll("#treemap .tile")];
+  const rows = tiles.map((t) => {
+    const arm = t.dataset.arm, nav = Number(t.dataset.nav), start = nav / (1 + (Number(t.dataset.ret) || 0) / 100);
+    const pts = lastUsd[arm] || [];
+    const endTs = pts.length ? pts[pts.length - 1][0] : 0;
+    // value at the cutoff: last snapshot at or before it, else start cash (bot younger than the window)
+    const then = (days) => pts.findLast(([ts]) => ts <= endTs - days * 864e5)?.[1] ?? start;
+    const delta = (days) => (gainMode === "usd" ? nav - then(days) : (nav / then(days) - 1) * 100);
+    return { arm, now: gainMode === "usd" ? nav : (nav / start - 1) * 100, d: GAIN_DAYS.map(delta) };
+  }).sort((a, b) => b.d[0] - a.d[0]);
+  const num = (v) => (gainMode === "usd" ? dollars(v) : signed(v, 2) + "%");
+  const arrow = (v) => `<span class="${cls(v)}">${tri(v)}${gainMode === "usd" ? "$" + Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2) + "%"}</span>`;
+  document.getElementById("gainers").innerHTML = rows.length
+    ? `<thead><tr><th class="l">bot</th><th title="${gainMode === "usd" ? esc(window.TIPS.nav) : esc(window.TIPS.return_pct)}">now</th>${GAIN_DAYS.map((d) =>
+        `<th title="Change in account value over the last ${d} day${d > 1 ? "s" : ""}">Δ${d}D</th>`).join("")}</tr></thead><tbody>` +
+      rows.map((r) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(r.arm)}"></span><a href="/arm/${encodeURIComponent(r.arm)}" style="color:inherit;text-decoration:none">${esc(nameOf(r.arm))}</a></td>` +
+        `<td>${num(r.now)}</td>${r.d.map((v) => `<td>${arrow(v)}</td>`).join("")}</tr>`).join("") + `</tbody>`
+    : `<tr><td class="l muted">No bots yet.</td></tr>`;
+}
+
 let equityMode = "usd";
 async function loadIndex() {
-  const [eq, dd, daily, heat] = await Promise.all([
-    get(`/api/equity?mode=${equityMode}`), get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
-    refreshRendered([".tiles", "#leaderboard"])]);
-  const money = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const [usd, pctEq, dd, daily, heat] = await Promise.all([
+    get("/api/equity?mode=usd"), equityMode === "pct" ? get("/api/equity?mode=pct") : null,
+    get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
+    refreshRendered(["#treemap", "#benchnote", "#boards", "#leaderboard"]), loadMarket()]);
+  lastUsd = usd;
+  layoutTreemap();
+  document.querySelectorAll("#treemap .tile").forEach((t) => {
+    t.querySelector(".spark").innerHTML = sparkSvg(usd[t.dataset.arm] || [], Number(t.dataset.ret) >= 0);
+  });
+  drawGainers();
+  const eq = pctEq || usd;
   const pct = (v) => signed(v, 2) + "%";
-  draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? money : pct)));
+  draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? dollars : pct)));
   // the small charts share the account-value legend above them
   const noLegend = (o) => { o.plugins.legend.display = false; return o; };
   draw("drawdown", "line", { datasets: lineDatasets(dd) }, noLegend(timeLinear(baseOptions("", (v) => fmt(v, 1) + "%"))));
@@ -146,7 +286,7 @@ async function loadIndex() {
   const maxAbs = Math.max(1, ...Object.values(heat).flatMap((r) => Object.values(r).map(Math.abs)));
   const shade = (v) => {
     const t = Math.min(1, Math.abs(v) / maxAbs);
-    const pole = v >= 0 ? css("--div-pos") : css("--div-neg");
+    const pole = v >= 0 ? css("--tile-up") : css("--tile-down");  // same up/down colors as the treemaps
     return `color-mix(in oklab, ${pole} ${Math.round(t * 85)}%, ${css("--div-mid")})`;
   };
   const rows = window.SERIES.filter((s) => heat[s]).map((s) =>
@@ -160,11 +300,11 @@ async function loadIndex() {
     : `<tr><td class="l muted">No closed trades yet.</td></tr>`;
 }
 function initIndex() {
-  document.querySelectorAll("button[data-mode]").forEach((b) => b.onclick = () => {
-    equityMode = b.dataset.mode;
-    document.querySelectorAll("button[data-mode]").forEach((x) => x.classList.toggle("on", x === b));
-    loadIndex();
-  });
+  segmented("mode", (v) => { equityMode = v; loadIndex(); });
+  segmented("gain", (v) => { gainMode = v; drawGainers(); });
+  segmented("sessions", (v) => { marketSessions = Number(v); loadMarket(); });
+  new ResizeObserver(layoutTreemap).observe(document.getElementById("treemap"));
+  new ResizeObserver(layoutStocks).observe(document.getElementById("stockmap"));
   return loadIndex;
 }
 
@@ -310,11 +450,7 @@ async function loadUsage() {
         `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
 }
 function initUsage() {
-  document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {
-    usageSpan = b.dataset.span;
-    document.querySelectorAll("button[data-span]").forEach((x) => x.classList.toggle("on", x === b));
-    loadUsage();
-  });
+  segmented("span", (v) => { usageSpan = v; loadUsage(); });
   return loadUsage;
 }
 
@@ -336,7 +472,10 @@ function initUsage() {
     const over = e.target.closest?.("a[data-arm]");
     if (!over || over === dragged) return;
     const r = over.getBoundingClientRect();
-    nav.insertBefore(dragged, e.clientX < r.left + r.width / 2 ? over : over.nextSibling);
+    // sidebar stacks bots vertically; on narrow screens it folds into a sideways row
+    const first = getComputedStyle(nav).flexDirection === "column" ? e.clientY < r.top + r.height / 2
+                                                                     : e.clientX < r.left + r.width / 2;
+    nav.insertBefore(dragged, first ? over : over.nextSibling);
   });
   nav.addEventListener("drop", (e) => e.preventDefault());
   nav.addEventListener("dragend", async () => {

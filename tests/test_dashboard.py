@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
-from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
-from stockbot.dashboard.queries import LEADERBOARD_KEYS, daily_pnl, drawdown, leaderboard
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, TIPS
+from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard, market
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.quota import Window
@@ -285,6 +285,23 @@ def test_index_renders(db):
     assert client(db).get("/arm/nope").status_code == 404
 
 
+def test_boards_rank_bots_only_nulls_last(db):
+    rows = leaderboard(db, CFG)
+    bs = boards(rows, BOARDS)
+    assert [b["key"] for b in bs] == [k for _, k, _ in BOARDS]
+    for b in bs:
+        assert BENCHMARK not in [r["arm"] for r in b["rows"]]
+        vals = [r[b["key"]] for r in b["rows"]]
+        known = [v for v in vals if v is not None]
+        assert vals[:len(known)] == sorted(known, reverse=True)  # None (too few days) sinks
+
+
+def test_index_layout(db):
+    html = client(db).get("/").text
+    assert '<aside class="side">' in html and 'id="treemap"' in html and 'id="gainers"' in html
+    assert "Full leaderboard" in html and html.count('class="board"') == len(BOARDS)
+
+
 def test_arm_label_shown_id_kept(db):
     r = client(db).get("/")
     assert '<a href="/arm/deepseek-improved"' in r.text and "Jimbo StockBot</a>" in r.text
@@ -325,6 +342,57 @@ def seed_daily(db):
 
     from tests.test_history import days
     db.upsert_daily(days("MSFT", date(2026, 1, 26), [10, 12, 9, 11, 13, 20]))  # Mon..Fri + next Mon
+
+
+def test_market_closed_uses_last_session(db):
+    from datetime import date
+    seed_daily(db)  # MSFT closes 10,12,9,11,13 (Mon-Fri 01-26..30), 20 (Mon 02-02); volume 100 each
+    [m] = market(db, ["MSFT", "NOPE"], date(2026, 2, 3), {}, 1, is_open=False)
+    assert m["symbol"] == "MSFT" and m["price"] == 20
+    assert m["change_pct"] == pytest.approx((20 / 13 - 1) * 100)
+    assert m["dollar_volume"] == 2000 and m["share_pct"] == 100
+    assert m["spark"] == [10, 12, 9, 11, 13, 20]
+    [w] = market(db, ["MSFT"], date(2026, 2, 3), {}, 5, is_open=False)
+    assert w["change_pct"] == pytest.approx((20 / 10 - 1) * 100) and w["dollar_volume"] == 100 * (12 + 9 + 11 + 13 + 20)
+
+
+def test_market_open_uses_live_price(db):
+    from datetime import date
+    seed_daily(db)
+    [m] = market(db, ["MSFT"], date(2026, 2, 2), {"MSFT": 26.0}, 1, is_open=True)  # 02-02 bar not final yet
+    assert m["price"] == 26 and m["change_pct"] == pytest.approx(100.0)  # vs Fri close 13
+    assert m["spark"] == [10, 12, 9, 11, 13, 26]
+
+
+def test_api_market(db):
+    seed_daily(db)
+    r = client(db).get("/api/market?sessions=5").json()
+    assert [m["symbol"] for m in r] == ["MSFT"]
+
+
+def test_api_market_one_feed_call_for_concurrent_polls(db):
+    import asyncio
+
+    import httpx
+
+    class Feed:
+        calls = 0
+
+        async def latest_prices(self, symbols):
+            Feed.calls += 1
+            await asyncio.sleep(0.01)  # still in flight when the other polls arrive
+            return {"MSFT": 26.0}
+
+    seed_daily(db)
+    db.kv_set("market_open", "1")
+    app = create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Feed())
+
+    async def poll_all():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+            return await asyncio.gather(*(c.get("/api/market") for _ in range(3)))
+
+    assert all(r.status_code == 200 for r in asyncio.run(poll_all()))
+    assert Feed.calls == 1
 
 
 def test_candles_week_from_history(db):

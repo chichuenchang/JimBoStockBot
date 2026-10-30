@@ -4,65 +4,137 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}JBSB Dashboard{% endblock %}</title>
+<script>try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+/* Layout after kaito.ai Mindshare Arena: left sidebar, treemap + gainer panel, three ranked boards. */
 :root {
   color-scheme: light;
-  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --border: #e3e2de;
+  --surface-0: #f4f3f0; --surface-1: #fcfcfb; --side: #fcfcfb; --border: #e3e2de;
   --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
-  --grid: #ecebe7;
+  --grid: #ecebe7; --accent: #0d8f80;
   --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
   --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
   --bench: #7a7974;
-  --div-neg: #e34948; --div-mid: #f0efec; --div-pos: #2a78d6;
+  --div-mid: #f0efec;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --tile-up: #1baf7a; --tile-down: #e34948;
+  --gold: #d4a514; --silver: #9a9a9a; --bronze: #c77a45;
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
     color-scheme: dark;
-    --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2c;
-    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-    --grid: #262624;
+    --surface-0: #0d0f12; --surface-1: #13161b; --side: #101317; --border: #1e293b;
+    --text-primary: #f8fafc; --text-secondary: #c9ccd1; --text-muted: #6e7279;
+    --grid: #1a1f27; --accent: #2dd4bf;
     --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
     --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
     --bench: #8f8e86;
-    --div-neg: #e66767; --div-mid: #383835; --div-pos: #3987e5;
+    --div-mid: #20242b;
+    --good: #34d399; --critical: #f05d6c;
+    --tile-up: #1f8f63; --tile-down: #c2344d;
+    --gold: #f5d77a; --silver: #d9d9d9; --bronze: #f0b48a;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --surface-0: #121211; --surface-1: #1a1a19; --border: #2e2e2c;
-  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
-  --grid: #262624;
+  --surface-0: #0d0f12; --surface-1: #13161b; --side: #101317; --border: #1e293b;
+  --text-primary: #f8fafc; --text-secondary: #c9ccd1; --text-muted: #6e7279;
+  --grid: #1a1f27; --accent: #2dd4bf;
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
   --bench: #8f8e86;
-  --div-neg: #e66767; --div-mid: #383835; --div-pos: #3987e5;
+  --div-mid: #20242b;
+  --good: #34d399; --critical: #f05d6c;
+  --tile-up: #1f8f63; --tile-down: #c2344d;
+  --gold: #f5d77a; --silver: #d9d9d9; --bronze: #f0b48a;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface-0); color: var(--text-primary);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { background: var(--surface-1); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
-.topbar { display: flex; align-items: center; gap: 16px; padding: 10px 20px 6px; flex-wrap: wrap; }
-.brand { font-size: 16px; font-weight: 700; color: var(--text-primary); text-decoration: none; margin-right: auto; }
-.tabs { display: flex; gap: 4px; padding: 0 14px; overflow-x: auto; scrollbar-width: none; }
-.tabs a { color: var(--text-secondary); text-decoration: none; padding: 8px 10px; white-space: nowrap;
-  border-bottom: 2px solid transparent; }
-.tabs a:hover { color: var(--text-primary); }
-.tabs a.on { color: var(--text-primary); border-bottom-color: var(--text-primary); font-weight: 600; }
+  font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; min-height: 100vh; }
+
+/* sidebar */
+.side { width: 216px; flex: none; background: var(--side); border-right: 1px solid var(--border);
+  position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 18px 12px; }
+.brand { font-size: 16px; font-weight: 700; letter-spacing: .06em; color: var(--text-primary); text-decoration: none;
+  padding: 0 8px 18px; display: flex; align-items: center; gap: 8px; }
+.brand::before { content: ""; width: 14px; height: 14px; border-radius: 3px; background: var(--accent); }
+.tabs { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; scrollbar-width: none; flex: 1; }
+.navgroup { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); padding: 14px 8px 6px; }
+.navgroup:first-child { padding-top: 0; }
+.tabs a { color: var(--text-secondary); text-decoration: none; padding: 7px 10px; border-radius: 6px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.tabs a:hover { color: var(--text-primary); background: var(--surface-1); }
+.tabs a.on { color: var(--text-primary); background: var(--surface-1); font-weight: 600; box-shadow: inset 0 0 0 1px var(--border); }
 .tabs a.dragging { opacity: .4; }
-h2.section { font-size: 15px; margin: 22px 0 10px; }
+.side-foot { padding: 12px 8px 0; border-top: 1px solid var(--border); }
+
+/* content column */
+.page { flex: 1; min-width: 0; }
+.topbar { display: flex; align-items: center; gap: 16px; padding: 10px 24px; flex-wrap: wrap; background: var(--surface-0);
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+main { padding: 20px 24px; max-width: 1480px; margin: 0 auto; }
+h1.pagetitle { font-size: 20px; margin: 0 0 16px; font-weight: 700; }
+h1.pagetitle .muted { font-size: 13px; font-weight: 400; margin-left: 8px; }
+h2.section { font-size: 16px; margin: 28px 0 12px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; }
 h2.section:first-child { margin-top: 4px; }
 h2 .muted, h2.section .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .small { font-size: 12px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: 8px; }
-.tile { display: block; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
-  padding: 12px 14px; color: inherit; text-decoration: none; }
-a.tile:hover { border-color: var(--text-muted); }
-.tile.bench { border-style: dashed; background: transparent; }
-.tile-head { display: flex; align-items: center; gap: 2px; }
-.tile-head b { overflow-wrap: anywhere; }
-.rank { font-size: 12px; color: var(--text-muted); min-width: 30px; }
-.big { font-size: 24px; font-weight: 650; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+.accent { color: var(--accent); }
+
+/* hero: treemap + top gainer */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 14px; min-width: 0; }
+.panelhead { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.panelhead b { font-weight: 600; }
+.panelhead .seg { margin-left: auto; }
+.seg { display: inline-flex; background: var(--surface-0); border: 1px solid var(--border); border-radius: 6px; padding: 2px; }
+.seg button { border: none; background: transparent; padding: 3px 10px; font-size: 12px; color: var(--text-muted); }
+.seg button.on { background: var(--surface-1); color: var(--accent); box-shadow: inset 0 0 0 1px var(--border); }
+.treemap { position: relative; height: 460px; }
+.tile { position: absolute; display: flex; flex-direction: column; overflow: hidden; border-radius: 6px; padding: 10px 12px;
+  color: var(--text-primary); text-decoration: none; border: 1px solid transparent; background: var(--surface-0); }
+a.tile:hover { filter: brightness(1.15); }
+.tile.r1 { border: 2px solid var(--gold); } .tile.r2 { border: 2px solid var(--silver); } .tile.r3 { border: 2px solid var(--bronze); }
+.tile-head { display: flex; align-items: flex-start; gap: 6px; }
+.tile-head b { font-size: 18px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .rank { margin-left: auto; font-size: 18px; font-weight: 700; color: var(--text-secondary); }
+.tile.r1 .rank { color: var(--gold); } .tile.r2 .rank { color: var(--silver); } .tile.r3 .rank { color: var(--bronze); }
+.tile .big { font-size: 15px; font-weight: 600; margin: 2px 0; }
+.tile .big .pos, .tile .big .neg { color: inherit; }
+.tile .sub { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .spark { margin-top: auto; height: 40%; min-height: 24px; }
+.tile .spark svg { width: 100%; height: 100%; display: block; }
+.tile.sm { padding: 6px 8px; } .tile.sm .tile-head b, .tile.sm .rank { font-size: 13px; } .tile.sm .sub { display: none; }
+.tile.xs { padding: 3px 5px; } .tile.xs .tile-head b { font-size: 11px; } .tile.xs .big { font-size: 10px; } .tile.xs .spark { display: none; }
+.treemap.stocks { height: 520px; }
+.crown { width: 18px; height: 18px; margin-left: auto; flex: none; }
+.tile.r1 .crown { color: var(--gold); } .tile.r2 .crown { color: var(--silver); } .tile.r3 .crown { color: var(--bronze); }
+.tile.sm .crown { width: 13px; height: 13px; }
+#benchnote { margin-top: 10px; }
+table.gain { font-size: 13px; }
+table.gain td, table.gain th { padding: 7px 4px; }
+table.gain td.l { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.movers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.movers ol { list-style: none; margin: 6px 0 0; padding: 0; }
+.movers li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* full leaderboard: three ranked boards */
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.board { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; min-width: 0; }
+.boardhead { padding: 12px 14px; font-weight: 600; border-bottom: 1px solid var(--border); }
+.board th, .board td { padding: 8px 10px; }
+.board td.n { color: var(--text-muted); width: 28px; text-align: left; }
+.board tr.r1 td { background: color-mix(in oklab, var(--gold) 10%, transparent); } .board tr.r1 td.n { color: var(--gold); }
+.board tr.r2 td { background: color-mix(in oklab, var(--silver) 8%, transparent); } .board tr.r2 td.n { color: var(--silver); }
+.board tr.r3 td { background: color-mix(in oklab, var(--bronze) 8%, transparent); } .board tr.r3 td.n { color: var(--bronze); }
+.who { display: flex; flex-direction: column; line-height: 1.25; }
+.who a { color: var(--text-primary); text-decoration: none; font-weight: 500; }
+.who a:hover { text-decoration: underline; }
+.who .muted { font-size: 11px; }
+
+/* shared pieces (bot + usage pages too) */
 .kpi { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 2px 0; cursor: help; }
 .kpi > span { color: var(--text-secondary); }
 .kpi b { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -82,15 +154,14 @@ table.stats tr.groups th { font-size: 11px; text-transform: uppercase; letter-sp
 table.stats .gstart { border-left: 1px solid var(--border); }
 table.stats th { white-space: normal; vertical-align: bottom; }
 table.stats td:first-child, table.stats th:first-child { position: sticky; left: 0; background: var(--surface-1); }
-main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px 16px; margin-bottom: 16px; }
+  padding: 14px 16px; margin-bottom: 16px; min-width: 0; }
 .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--text-secondary); font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
 .tablewrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
-th { color: var(--text-secondary); font-weight: 600; font-size: 12px; cursor: help; }
+th { color: var(--text-muted); font-weight: 500; font-size: 12px; cursor: help; }
 th:first-child, td:first-child, td.l, th.l { text-align: left; }
 td.wrap { white-space: normal; text-align: left; min-width: 240px; }
 .pos { color: var(--good); } .neg { color: var(--critical); }
@@ -99,7 +170,8 @@ td.wrap { white-space: normal; text-align: left; min-width: 240px; }
   border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
 .chip b { color: var(--text-primary); font-weight: 600; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-.swatch { width: 14px; height: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+.swatch { width: 14px; height: 3px; display: inline-block; vertical-align: middle; margin-right: 6px; border-radius: 2px; flex: none; }
+.tile-head .swatch { margin-top: 10px; }
 button { font: inherit; background: var(--surface-0); color: var(--text-primary);
   border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
 button:hover { border-color: var(--text-muted); }
@@ -114,25 +186,43 @@ details summary { cursor: pointer; }
 pre { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
   background: var(--surface-0); padding: 10px; border-radius: 6px; font-size: 12px; }
 a { color: var(--series-1); }
-@media (max-width: 600px) { main { padding: 12px 16px; } .grid2 { grid-template-columns: 1fr; } header { position: static; } }
+
+@media (max-width: 1200px) { .hero, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+/* phone/tablet: sidebar folds into a top bar, bot links scroll sideways */
+@media (max-width: 900px) {
+  body { display: block; }
+  .side { width: auto; height: auto; position: relative; padding: 10px 16px; border-right: none; border-bottom: 1px solid var(--border); }
+  .brand { padding: 0 0 8px; }
+  .tabs { flex-direction: row; overflow-x: auto; }
+  .tabs a { flex: none; }
+  .navgroup { display: none; }
+  .side-foot { position: absolute; top: 10px; right: 16px; padding: 0; border: none; }
+  .topbar { position: static; padding: 10px 16px; }
+  main { padding: 12px 16px; }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .treemap { height: 360px; } .treemap.stocks { height: 420px; }
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 {% block head %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">
-<header>
-  <div class="topbar">
-    <a class="brand" href="/">JBSB Dashboard</a>
-    <div class="strip" id="status"></div>
-  </div>
-  {% set active = arm if arm is defined else tab if tab is defined else "" %}
+{% set active = arm if arm is defined else tab if tab is defined else "" %}
+<aside class="side">
+  <a class="brand" href="/">JBSB</a>
   <nav class="tabs">
+    <div class="navgroup">Arena</div>
     <a href="/" class="{{ 'on' if not active }}">Overview</a>
     <a href="/usage" class="{{ 'on' if active == 'usage' }}">Usage</a>
+    <div class="navgroup">Bots <span title="drag to reorder">⇅</span></div>
     {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}" draggable="true" title="drag to reorder"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
-</header>
-<main>{% block body %}{% endblock %}</main>
+  <div class="side-foot muted small strip"><span>Paper money only</span><button id="theme" title="switch light / dark">◐</button></div>
+</aside>
+<div class="page">
+  <header class="topbar"><div class="strip" id="status"></div></header>
+  <main>{% block body %}{% endblock %}</main>
+</div>
 <script>window.SERIES = {{ series | tojson }}; window.NAMES = {{ names | tojson }}; window.TIPS = {{ tips | tojson }};</script>
 <script src="/static/app.js?v={{ js_version }}"></script>
 </body>
