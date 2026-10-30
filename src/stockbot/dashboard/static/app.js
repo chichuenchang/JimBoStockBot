@@ -175,9 +175,9 @@ function layoutTiles(box, sizes, rets, cap) {
   const total = sizes.reduce((a, b) => a + b, 0);
   const maxAbs = cap || Math.max(1e-9, ...rets.map(Math.abs));
   squarify(sizes.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
-    const t = tiles[i], g = 2;
+    const t = tiles[i], gap = 2;  // px each side, so neighbours sit 4px apart
     const tint = rets[i] ? Math.round(18 + 52 * Math.min(1, Math.abs(rets[i]) / maxAbs)) : 0;  // flat bot: no tint
-    Object.assign(t.style, { left: `${r.x + g}px`, top: `${r.y + g}px`, width: `${r.w - 2 * g}px`, height: `${r.h - 2 * g}px`,
+    Object.assign(t.style, { left: `${r.x + gap}px`, top: `${r.y + gap}px`, width: `${r.w - 2 * gap}px`, height: `${r.h - 2 * gap}px`,
       background: `color-mix(in oklab, ${css(rets[i] >= 0 ? "--tile-up" : "--tile-down")} ${tint}%, ${css("--surface-0")})` });
     t.classList.toggle("sm", r.w < 150 || r.h < 110);
     t.classList.toggle("xs", r.w < 70 || r.h < 50);
