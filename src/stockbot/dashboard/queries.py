@@ -87,14 +87,14 @@ def market(db: DB, universe: list[str], today: date, live: dict[str, float], ses
     Open: live price vs closes before today (today's stored bar, if any, is not final); volume is
     the last `sessions` finished sessions, so 1D sizes by yesterday's.
     Closed: last stored session vs the ones before it; a weekend live price is just Friday's close."""
-    out = []
+    out, n = [], max(sessions, SPARK_SESSIONS)
     for sym in universe:
         if is_open:
-            past = db.recent_daily(sym, today, max(sessions, SPARK_SESSIONS))
+            past = db.recent_daily(sym, today, n)
             now = live.get(sym)
             vol_bars = past[-sessions:]
         else:
-            bars = db.recent_daily(sym, today + timedelta(days=1), max(sessions, SPARK_SESSIONS) + 1)
+            bars = db.recent_daily(sym, today + timedelta(days=1), n + 1)
             past, now = bars[:-1], bars[-1].close if bars else None
             vol_bars = bars[-sessions:]
         if now is None or not past:

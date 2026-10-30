@@ -112,7 +112,6 @@ a.tile:hover { filter: brightness(1.15); }
 .crown { width: 18px; height: 18px; margin-left: auto; flex: none; }
 .tile.r1 .crown { color: var(--gold); } .tile.r2 .crown { color: var(--silver); } .tile.r3 .crown { color: var(--bronze); }
 .tile.sm .crown { width: 13px; height: 13px; }
-.rank { font-size: 12px; color: var(--text-muted); }
 #benchnote { margin-top: 10px; }
 table.gain { font-size: 13px; }
 table.gain td, table.gain th { padding: 7px 4px; }
@@ -192,13 +191,12 @@ a { color: var(--series-1); }
 /* phone/tablet: sidebar folds into a top bar, bot links scroll sideways */
 @media (max-width: 900px) {
   body { display: block; }
-  .side { width: auto; height: auto; position: static; padding: 10px 16px; border-right: none; border-bottom: 1px solid var(--border); }
+  .side { width: auto; height: auto; position: relative; padding: 10px 16px; border-right: none; border-bottom: 1px solid var(--border); }
   .brand { padding: 0 0 8px; }
   .tabs { flex-direction: row; overflow-x: auto; }
   .tabs a { flex: none; }
   .navgroup { display: none; }
   .side-foot { position: absolute; top: 10px; right: 16px; padding: 0; border: none; }
-  .side { position: relative; }
   .topbar { position: static; padding: 10px 16px; }
   main { padding: 12px 16px; }
   .grid2 { grid-template-columns: minmax(0, 1fr); }

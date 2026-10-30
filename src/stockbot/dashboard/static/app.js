@@ -19,6 +19,8 @@ const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toF
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
 const cls = (v) => (v > 0 ? "pos" : v < 0 ? "neg" : "");
+const tri = (v) => (v > 0 ? "▲" : v < 0 ? "▼" : "");
+const dollars = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
 const etTime = (iso) => new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York",
   month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }) + " ET";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -174,11 +176,12 @@ function layoutTiles(box, sizes, rets, cap) {
   sizes = sizes.map((v) => Math.max(1e-9, v));
   const total = sizes.reduce((a, b) => a + b, 0);
   const maxAbs = cap || Math.max(1e-9, ...rets.map(Math.abs));
+  const [up, down, base] = ["--tile-up", "--tile-down", "--surface-0"].map(css);  // once per layout, not per tile
   squarify(sizes.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
     const t = tiles[i], gap = 2;  // px each side, so neighbours sit 4px apart
     const tint = rets[i] ? Math.round(18 + 52 * Math.min(1, Math.abs(rets[i]) / maxAbs)) : 0;  // flat bot: no tint
     Object.assign(t.style, { left: `${r.x + gap}px`, top: `${r.y + gap}px`, width: `${r.w - 2 * gap}px`, height: `${r.h - 2 * gap}px`,
-      background: `color-mix(in oklab, ${css(rets[i] >= 0 ? "--tile-up" : "--tile-down")} ${tint}%, ${css("--surface-0")})` });
+      background: `color-mix(in oklab, ${rets[i] >= 0 ? up : down} ${tint}%, ${base})` });
     t.classList.toggle("sm", r.w < 150 || r.h < 110);
     t.classList.toggle("xs", r.w < 70 || r.h < 50);
   });
@@ -213,7 +216,7 @@ async function loadMarket() {
   const box = document.getElementById("stockmap");
   box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" title="${esc(s.symbol)}: ${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
       <div class="tile-head"><b>${esc(s.symbol)}</b>${i < 3 ? CROWN : ""}</div>
-      <div class="big"><span class="${cls(s.change_pct)}">${s.change_pct > 0 ? "▲" : s.change_pct < 0 ? "▼" : ""}${fmt(Math.abs(s.change_pct))}%</span></div>
+      <div class="big"><span class="${cls(s.change_pct)}">${tri(s.change_pct)}${fmt(Math.abs(s.change_pct))}%</span></div>
       <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
       <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
     : `<p class="muted">${marketOpen ? "No live prices from the feed yet." : "No daily price history yet (daemon syncs it)."}</p>`;
@@ -239,12 +242,12 @@ function drawGainers() {
     const pts = lastUsd[arm] || [];
     const endTs = pts.length ? pts[pts.length - 1][0] : 0;
     // value at the cutoff: last snapshot at or before it, else start cash (bot younger than the window)
-    const then = (days) => [...pts].reverse().find(([ts]) => ts <= endTs - days * 864e5)?.[1] ?? start;
+    const then = (days) => pts.findLast(([ts]) => ts <= endTs - days * 864e5)?.[1] ?? start;
     const delta = (days) => (gainMode === "usd" ? nav - then(days) : (nav / then(days) - 1) * 100);
     return { arm, now: gainMode === "usd" ? nav : (nav / start - 1) * 100, d: GAIN_DAYS.map(delta) };
   }).sort((a, b) => b.d[0] - a.d[0]);
-  const num = (v) => (gainMode === "usd" ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 }) : signed(v, 2) + "%");
-  const arrow = (v) => `<span class="${cls(v)}">${v > 0 ? "▲" : v < 0 ? "▼" : ""}${gainMode === "usd" ? "$" + Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2) + "%"}</span>`;
+  const num = (v) => (gainMode === "usd" ? dollars(v) : signed(v, 2) + "%");
+  const arrow = (v) => `<span class="${cls(v)}">${tri(v)}${gainMode === "usd" ? "$" + Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2) + "%"}</span>`;
   document.getElementById("gainers").innerHTML = rows.length
     ? `<thead><tr><th class="l">bot</th><th title="${gainMode === "usd" ? esc(window.TIPS.nav) : esc(window.TIPS.return_pct)}">now</th>${GAIN_DAYS.map((d) =>
         `<th title="Change in account value over the last ${d} day${d > 1 ? "s" : ""}">Δ${d}D</th>`).join("")}</tr></thead><tbody>` +
@@ -266,9 +269,8 @@ async function loadIndex() {
   });
   drawGainers();
   const eq = pctEq || usd;
-  const money = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
   const pct = (v) => signed(v, 2) + "%";
-  draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? money : pct)));
+  draw("equity", "line", { datasets: lineDatasets(eq) }, timeLinear(baseOptions("", equityMode === "usd" ? dollars : pct)));
   // the small charts share the account-value legend above them
   const noLegend = (o) => { o.plugins.legend.display = false; return o; };
   draw("drawdown", "line", { datasets: lineDatasets(dd) }, noLegend(timeLinear(baseOptions("", (v) => fmt(v, 1) + "%"))));
