@@ -287,7 +287,7 @@ def test_index_renders(db):
 
 def test_boards_rank_bots_only_nulls_last(db):
     rows = leaderboard(db, CFG)
-    bs = boards(rows)
+    bs = boards(rows, BOARDS)
     assert [b["key"] for b in bs] == [k for _, k, _ in BOARDS]
     for b in bs:
         assert BENCHMARK not in [r["arm"] for r in b["rows"]]

@@ -11,7 +11,6 @@ from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
-from stockbot.dashboard.glossary import BOARDS
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
                               max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import BENCHMARK
@@ -112,11 +111,11 @@ def market(db: DB, universe: list[str], today: date, live: dict[str, float], ses
     return out
 
 
-def boards(rows: list[dict]) -> list[dict]:
-    """Leaderboard rows re-ranked per BOARDS panel; None (e.g. Sharpe before 20 days) ranks last."""
+def boards(rows: list[dict], panels: list[tuple[str, str, str]]) -> list[dict]:
+    """Leaderboard rows re-ranked per (title, key, side) panel; None (e.g. Sharpe before 20 days) ranks last."""
     bots = [r for r in rows if r["variant"] != "benchmark"]
     return [{"title": t, "key": k, "side": s,
-             "rows": sorted(bots, key=lambda r: (r[k] is None, -(r[k] or 0)))} for t, k, s in BOARDS]
+             "rows": sorted(bots, key=lambda r: (r[k] is None, -(r[k] or 0)))} for t, k, s in panels]
 
 
 def _thin(points: list) -> list:

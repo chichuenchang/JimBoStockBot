@@ -20,7 +20,7 @@ from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard import tab_order
-from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, LABELS, TIPS
 from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -68,7 +68,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         rows = q.leaderboard(db, cfg)
-        return page(request, "index.html", rows=rows, groups=COLUMN_GROUPS, boards=q.boards(rows),
+        return page(request, "index.html", rows=rows, groups=COLUMN_GROUPS, boards=q.boards(rows, BOARDS),
                     universe=list(cfg.settings.universe))
 
     @app.get("/arm/{arm}", response_class=HTMLResponse)
