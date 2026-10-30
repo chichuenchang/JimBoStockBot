@@ -197,13 +197,13 @@ function layoutStocks() {
   layoutTiles(document.getElementById("stockmap"), lastMarket.map((m) => m.dollar_volume), lastMarket.map((m) => m.change_pct),
               3 * Math.sqrt(marketSessions));
 }
-const SPAN_LABEL = { 1: "1D", 5: "7D", 21: "30D" };
 function drawMovers() {
   const by = [...lastMarket].sort((a, b) => b.change_pct - a.change_pct);
   const li = (s) => `<li><span>${esc(s.symbol)}</span><span class="${cls(s.change_pct)}">${signed(s.change_pct)}%</span></li>`;
   document.getElementById("moversup").innerHTML = by.filter((s) => s.change_pct > 0).slice(0, 3).map(li).join("") || `<li class="muted">none</li>`;
   document.getElementById("moversdown").innerHTML = by.filter((s) => s.change_pct < 0).slice(-3).reverse().map(li).join("") || `<li class="muted">none</li>`;
-  document.querySelectorAll(".moverspan").forEach((el) => { el.textContent = `(${SPAN_LABEL[marketSessions]})`; });
+  const span = document.querySelector("button[data-sessions].on").textContent;  // label lives in index.html only
+  document.querySelectorAll(".moverspan").forEach((el) => { el.textContent = `(${span})`; });
 }
 async function loadMarket() {
   const span = marketSessions;
