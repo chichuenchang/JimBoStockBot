@@ -20,6 +20,7 @@ LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmar
                     "expectancy", "pnl_ex_best",
                     "sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown", "trades", "invested_pct"]
 MAX_POINTS = 2000
+SPARK_SESSIONS = 30
 
 
 def _broker(db: DB, cfg: AppConfig) -> SimBroker:
@@ -80,13 +81,11 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
     return rows
 
 
-SPARK_SESSIONS = 30
-
-
 def market(db: DB, universe: list[str], today: date, live: dict[str, float], sessions: int,
            is_open: bool) -> list[dict]:
     """Per stock: change over the last `sessions` sessions and dollar volume share (treemap size).
-    Open: live price vs closes before today (today's stored bar, if any, is not final).
+    Open: live price vs closes before today (today's stored bar, if any, is not final); volume is
+    the last `sessions` finished sessions, so 1D sizes by yesterday's.
     Closed: last stored session vs the ones before it; a weekend live price is just Friday's close."""
     out = []
     for sym in universe:
