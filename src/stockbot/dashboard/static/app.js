@@ -151,22 +151,48 @@ function squarify(areas, w, h) {
   if (row.length) flush();
   return out;
 }
-function layoutTreemap() {
-  const box = document.getElementById("treemap");
-  const tiles = [...box.querySelectorAll(".tile")];  // server sends them ranked by value, biggest first
+// Place box's .tile children (biggest first) by size; tint each by its change, strongest = most saturated.
+function layoutTiles(box, sizes, rets) {
+  const tiles = [...box.querySelectorAll(".tile")];
   if (!tiles.length) return;
   const W = box.clientWidth, H = box.clientHeight;
-  const navs = tiles.map((t) => Math.max(1, Number(t.dataset.nav)));
-  const total = navs.reduce((a, b) => a + b, 0);
-  const rets = tiles.map((t) => Number(t.dataset.ret) || 0);
-  const maxAbs = Math.max(1, ...rets.map(Math.abs));
-  squarify(navs.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
+  sizes = sizes.map((v) => Math.max(1e-9, v));
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const maxAbs = Math.max(1e-9, ...rets.map(Math.abs));
+  squarify(sizes.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
     const t = tiles[i], g = 2;
     const tint = rets[i] ? Math.round(18 + 52 * Math.min(1, Math.abs(rets[i]) / maxAbs)) : 0;  // flat bot: no tint
     Object.assign(t.style, { left: `${r.x + g}px`, top: `${r.y + g}px`, width: `${r.w - 2 * g}px`, height: `${r.h - 2 * g}px`,
       background: `color-mix(in oklab, ${css(rets[i] >= 0 ? "--tile-up" : "--tile-down")} ${tint}%, ${css("--surface-0")})` });
     t.classList.toggle("sm", r.w < 150 || r.h < 110);
+    t.classList.toggle("xs", r.w < 70 || r.h < 50);
   });
+}
+function layoutTreemap() {  // bots: server sends tiles ranked by account value
+  const tiles = [...document.querySelectorAll("#treemap .tile")];
+  layoutTiles(document.getElementById("treemap"), tiles.map((t) => Number(t.dataset.nav)),
+              tiles.map((t) => Number(t.dataset.ret) || 0));
+}
+
+// Stocks: size = share of dollar volume over the span, color = price change (queries.market).
+const CROWN = `<svg class="crown" viewBox="0 0 24 24"><path d="M3 18h18l-1.6-11-4.6 4.4L12 4l-2.8 7.4L4.6 7z" fill="currentColor"/></svg>`;
+let marketSessions = 1, lastMarket = [];
+function layoutStocks() {
+  layoutTiles(document.getElementById("stockmap"), lastMarket.map((m) => m.dollar_volume), lastMarket.map((m) => m.change_pct));
+}
+async function loadMarket() {
+  const span = marketSessions;
+  const m = await get(`/api/market?sessions=${span}`);
+  if (span !== marketSessions) return;  // span clicked while in flight
+  lastMarket = m;
+  const box = document.getElementById("stockmap");
+  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" title="${esc(s.symbol)}: ${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
+      <div class="tile-head"><b>${esc(s.symbol)}</b>${i < 3 ? CROWN : ""}</div>
+      <div class="big"><span class="${cls(s.change_pct)}">${s.change_pct > 0 ? "▲" : s.change_pct < 0 ? "▼" : ""}${fmt(Math.abs(s.change_pct))}%</span></div>
+      <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
+      <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
+    : `<p class="muted">No daily price history yet (daemon syncs it).</p>`;
+  layoutStocks();
 }
 const sparkSvg = (pts, up) => {
   if (pts.length < 2) return "";
@@ -205,7 +231,7 @@ async function loadIndex() {
   const [usd, pctEq, dd, daily, heat] = await Promise.all([
     get("/api/equity?mode=usd"), equityMode === "pct" ? get("/api/equity?mode=pct") : null,
     get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
-    refreshRendered(["#treemap", "#benchnote", "#boards", "#leaderboard"])]);
+    refreshRendered(["#treemap", "#benchnote", "#boards", "#leaderboard"]), loadMarket()]);
   lastUsd = usd;
   layoutTreemap();
   document.querySelectorAll("#treemap .tile").forEach((t) => {
@@ -255,7 +281,13 @@ function initIndex() {
     document.querySelectorAll("button[data-gain]").forEach((x) => x.classList.toggle("on", x === b));
     drawGainers();
   });
+  document.querySelectorAll("button[data-sessions]").forEach((b) => b.onclick = () => {
+    marketSessions = Number(b.dataset.sessions);
+    document.querySelectorAll("button[data-sessions]").forEach((x) => x.classList.toggle("on", x === b));
+    loadMarket();
+  });
   new ResizeObserver(layoutTreemap).observe(document.getElementById("treemap"));
+  new ResizeObserver(layoutStocks).observe(document.getElementById("stockmap"));
   return loadIndex;
 }
 

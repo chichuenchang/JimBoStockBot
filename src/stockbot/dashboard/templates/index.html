@@ -27,6 +27,13 @@
   </section>
 </div>
 
+<h2 class="section">Market <span class="muted">the {{ universe | length }} stocks the bots trade · tile size = share of dollar volume · color = price change</span></h2>
+<section class="panel">
+  <div class="panelhead"><b class="accent">● Stocks</b><span class="muted small">daily closes; live price while the market is open</span>
+    <span class="seg"><button data-sessions="1" class="on">1D</button><button data-sessions="5">7D</button><button data-sessions="21">30D</button></span></div>
+  <div class="treemap stocks" id="stockmap"></div>
+</section>
+
 <h2 class="section">Full leaderboard <span class="muted">bots only · best first · hover a column name for what it means</span></h2>
 <div class="grid3" id="boards">
   {% for b in boards %}

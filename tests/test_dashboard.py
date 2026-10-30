@@ -10,7 +10,7 @@ from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, TIPS
-from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard
+from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard, market
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.quota import Window
@@ -342,6 +342,32 @@ def seed_daily(db):
 
     from tests.test_history import days
     db.upsert_daily(days("MSFT", date(2026, 1, 26), [10, 12, 9, 11, 13, 20]))  # Mon..Fri + next Mon
+
+
+def test_market_closed_uses_last_session(db):
+    from datetime import date
+    seed_daily(db)  # MSFT closes 10,12,9,11,13 (Mon-Fri 01-26..30), 20 (Mon 02-02); volume 100 each
+    [m] = market(db, ["MSFT", "NOPE"], date(2026, 2, 3), {}, 1, is_open=False)
+    assert m["symbol"] == "MSFT" and m["price"] == 20
+    assert m["change_pct"] == pytest.approx((20 / 13 - 1) * 100)
+    assert m["dollar_volume"] == 2000 and m["share_pct"] == 100
+    assert m["spark"] == [10, 12, 9, 11, 13, 20]
+    [w] = market(db, ["MSFT"], date(2026, 2, 3), {}, 5, is_open=False)
+    assert w["change_pct"] == pytest.approx((20 / 10 - 1) * 100) and w["dollar_volume"] == 100 * (12 + 9 + 11 + 13 + 20)
+
+
+def test_market_open_uses_live_price(db):
+    from datetime import date
+    seed_daily(db)
+    [m] = market(db, ["MSFT"], date(2026, 2, 2), {"MSFT": 26.0}, 1, is_open=True)  # 02-02 bar not final yet
+    assert m["price"] == 26 and m["change_pct"] == pytest.approx(100.0)  # vs Fri close 13
+    assert m["spark"] == [10, 12, 9, 11, 13, 26]
+
+
+def test_api_market(db):
+    seed_daily(db)
+    r = client(db).get("/api/market?sessions=5").json()
+    assert [m["symbol"] for m in r] == ["MSFT"]
 
 
 def test_candles_week_from_history(db):
