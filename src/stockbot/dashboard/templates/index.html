@@ -1,24 +1,48 @@
 {% extends "base.html" %}
-{% from "_cells.html" import cell, kpi with context %}
+{% from "_cells.html" import cell with context %}
 {% block page %}index{% endblock %}
 {% block body %}
-<h2 class="section">Leaderboard <span class="muted">ranked by account value · click a bot for its trades</span></h2>
-<section class="tiles">
-  {% set rank = namespace(n=0) %}
-  {% for r in rows %}
-  {% set bench = r.variant == "benchmark" %}{% if not bench %}{% set rank.n = rank.n + 1 %}{% endif %}
-  <{{ 'div' if bench else 'a' }} class="tile{{ ' bench' if bench }}"{% if not bench %} href="/arm/{{ r.arm }}"{% endif %}>
-    <div class="tile-head">
-      <span class="rank">{{ 'ref' if bench else '#%d' % rank.n }}</span>
-      <span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b>
+<h1 class="pagetitle">Bot Arena <span class="muted">paper money · click a bot for its trades</span></h1>
+
+<div class="hero">
+  <section class="panel">
+    <div class="panelhead"><b class="accent">● Leaderboard</b><span class="muted small">tile size = account value · color = return</span></div>
+    <div class="treemap" id="treemap">
+      {% set rank = namespace(n=0) %}
+      {% for r in rows if r.variant != "benchmark" %}{% set rank.n = rank.n + 1 %}
+      <a class="tile{{ ' r%d' % rank.n if rank.n <= 3 }}" href="/arm/{{ r.arm }}" data-arm="{{ r.arm }}" data-nav="{{ r.nav }}" data-ret="{{ r.return_pct }}">
+        <div class="tile-head"><span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b><span class="rank">#{{ rank.n }}</span></div>
+        <div class="big" title="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
+        <div class="sub">${{ cell("nav", r.nav) }} · {{ (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
+        <div class="spark"></div>
+      </a>
+      {% endfor %}
     </div>
-    <div class="muted small">{{ 'buy QQQ once and hold' if bench else (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
-    <div class="big" title="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
-    {{ kpi("nav", r) }}
-    {% if not bench %}{{ kpi("vs_benchmark_pct", r) }}{{ kpi("net_after_llm", r) }}{% endif %}
-  </{{ 'div' if bench else 'a' }}>
+    <div class="muted small" id="benchnote">{% for r in rows if r.variant == "benchmark" %}Reference: buy QQQ once and hold {{ cell("return_pct", r.return_pct) }}, value ${{ cell("nav", r.nav) }}{% endfor %}</div>
+  </section>
+  <section class="panel">
+    <div class="panelhead"><b>Top gainer</b>
+      <span class="seg"><button data-gain="usd" class="on">Absolute ($)</button><button data-gain="pct">Relative (%)</button></span></div>
+    <div class="tablewrap"><table id="gainers" class="gain"></table></div>
+  </section>
+</div>
+
+<h2 class="section">Full leaderboard <span class="muted">bots only · best first · hover a column name for what it means</span></h2>
+<div class="grid3" id="boards">
+  {% for b in boards %}
+  <section class="board">
+    <div class="boardhead">{{ b.title }}</div>
+    <div class="tablewrap"><table>
+      <thead><tr><th class="l">#</th><th class="l">bot</th><th title="{{ tips.get(b.key, '') }}">{{ labels.get(b.key, b.key) }}</th><th title="{{ tips.get(b.side, '') }}">{{ labels.get(b.side, b.side) }}</th></tr></thead>
+      <tbody>{% for r in b.rows %}<tr class="{{ 'r%d' % loop.index if loop.index <= 3 }}">
+        <td class="n">{{ loop.index }}</td>
+        <td class="l"><div class="who"><span><span class="swatch" data-series="{{ r.arm }}"></span><a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a></span><span class="muted">{{ r.model if r.model != '-' else 'no AI' }}</span></div></td>
+        <td>{{ cell(b.key, r[b.key]) }}</td><td>{{ cell(b.side, r[b.side]) }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
   {% endfor %}
-</section>
+</div>
 
 <h2 class="section">Over time</h2>
 <section class="card">

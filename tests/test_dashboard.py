@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
-from stockbot.dashboard.glossary import COLUMN_GROUPS, TIPS
-from stockbot.dashboard.queries import LEADERBOARD_KEYS, daily_pnl, drawdown, leaderboard
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, TIPS
+from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.quota import Window
@@ -283,6 +283,23 @@ def test_index_renders(db):
     assert '<span class="rank">#1</span>' in r.text
     assert client(db).get("/arm/kimi-improved").status_code == 200
     assert client(db).get("/arm/nope").status_code == 404
+
+
+def test_boards_rank_bots_only_nulls_last(db):
+    rows = leaderboard(db, CFG)
+    bs = boards(rows)
+    assert [b["key"] for b in bs] == [k for _, k, _ in BOARDS]
+    for b in bs:
+        assert BENCHMARK not in [r["arm"] for r in b["rows"]]
+        vals = [r[b["key"]] for r in b["rows"]]
+        known = [v for v in vals if v is not None]
+        assert vals[:len(known)] == sorted(known, reverse=True)  # None (too few days) sinks
+
+
+def test_index_layout(db):
+    html = client(db).get("/").text
+    assert '<aside class="side">' in html and 'id="treemap"' in html and 'id="gainers"' in html
+    assert "Full leaderboard" in html and html.count('class="board"') == len(BOARDS)
 
 
 def test_arm_label_shown_id_kept(db):

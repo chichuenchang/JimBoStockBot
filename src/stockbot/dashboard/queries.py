@@ -11,6 +11,7 @@ from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
+from stockbot.dashboard.glossary import BOARDS
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
                               max_drawdown, sharpe, sharpe_ci, trade_stats, with_start)
 from stockbot.models import BENCHMARK
@@ -78,6 +79,13 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
         ])))
     rows.sort(key=lambda r: r["nav"], reverse=True)
     return rows
+
+
+def boards(rows: list[dict]) -> list[dict]:
+    """Leaderboard rows re-ranked per BOARDS panel; None (e.g. Sharpe before 20 days) ranks last."""
+    bots = [r for r in rows if r["variant"] != "benchmark"]
+    return [{"title": t, "key": k, "side": s,
+             "rows": sorted(bots, key=lambda r: (r[k] is None, -(r[k] or 0)))} for t, k, s in BOARDS]
 
 
 def _thin(points: list) -> list:

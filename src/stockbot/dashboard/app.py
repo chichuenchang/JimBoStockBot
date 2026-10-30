@@ -65,7 +65,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
-        return page(request, "index.html", rows=q.leaderboard(db, cfg), groups=COLUMN_GROUPS)
+        rows = q.leaderboard(db, cfg)
+        return page(request, "index.html", rows=rows, groups=COLUMN_GROUPS, boards=q.boards(rows))
 
     @app.get("/arm/{arm}", response_class=HTMLResponse)
     def arm_page(request: Request, arm: str):
