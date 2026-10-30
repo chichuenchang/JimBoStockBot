@@ -216,7 +216,7 @@ async function loadMarket() {
       <div class="big"><span class="${cls(s.change_pct)}">${s.change_pct > 0 ? "▲" : s.change_pct < 0 ? "▼" : ""}${fmt(Math.abs(s.change_pct))}%</span></div>
       <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
       <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
-    : `<p class="muted">No daily price history yet (daemon syncs it).</p>`;
+    : `<p class="muted">${marketOpen ? "No live prices from the feed yet." : "No daily price history yet (daemon syncs it)."}</p>`;
   layoutStocks();
   drawMovers();
 }
