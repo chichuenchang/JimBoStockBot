@@ -105,16 +105,19 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return q.heatmap(db)
 
     live = {"ts": 0.0, "prices": {}}  # one feed call per LIVE_TTL, however many tabs poll
+    live_lock = asyncio.Lock()  # tabs polling at once wait for the one fetch in flight
 
     @app.get("/api/market")
     async def api_market(sessions: int = 1):
         is_open = db.kv_get("market_open") == "1"  # daemon keeps it current
-        if is_open and data is not None and time.monotonic() - live["ts"] > LIVE_TTL:
-            try:
-                live["prices"] = await data.latest_prices(list(cfg.settings.universe))
-            except DataError:
-                pass  # keep the last prices; stocks without one drop out
-            live["ts"] = time.monotonic()
+        if is_open and data is not None:
+            async with live_lock:
+                if time.monotonic() - live["ts"] > LIVE_TTL:
+                    try:
+                        live["prices"] = await data.latest_prices(list(cfg.settings.universe))
+                    except DataError:
+                        pass  # keep the last prices; stocks without one drop out
+                    live["ts"] = time.monotonic()
         return q.market(db, list(cfg.settings.universe), et_date(budget.clock.now()), live["prices"],
                         max(1, min(sessions, 250)), is_open)
 
