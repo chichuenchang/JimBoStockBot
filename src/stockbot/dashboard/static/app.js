@@ -28,6 +28,12 @@ const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").fo
   el.style.background = colorOf(el.dataset.series); });
 paintSwatches(document);
 
+// segmented buttons (data-<key>="value"): a click marks that one on and hands its value to pick
+function segmented(key, pick) {
+  const bs = document.querySelectorAll(`button[data-${key}]`);
+  bs.forEach((b) => b.onclick = () => { bs.forEach((x) => x.classList.toggle("on", x === b)); pick(b.dataset[key]); });
+}
+
 // light / dark: base.html applies the saved choice before paint; charts read colors once, so reload
 document.getElementById("theme").onclick = () => {
   const next = css("color-scheme") === "dark" ? "light" : "dark";
@@ -292,21 +298,9 @@ async function loadIndex() {
     : `<tr><td class="l muted">No closed trades yet.</td></tr>`;
 }
 function initIndex() {
-  document.querySelectorAll("button[data-mode]").forEach((b) => b.onclick = () => {
-    equityMode = b.dataset.mode;
-    document.querySelectorAll("button[data-mode]").forEach((x) => x.classList.toggle("on", x === b));
-    loadIndex();
-  });
-  document.querySelectorAll("button[data-gain]").forEach((b) => b.onclick = () => {
-    gainMode = b.dataset.gain;
-    document.querySelectorAll("button[data-gain]").forEach((x) => x.classList.toggle("on", x === b));
-    drawGainers();
-  });
-  document.querySelectorAll("button[data-sessions]").forEach((b) => b.onclick = () => {
-    marketSessions = Number(b.dataset.sessions);
-    document.querySelectorAll("button[data-sessions]").forEach((x) => x.classList.toggle("on", x === b));
-    loadMarket();
-  });
+  segmented("mode", (v) => { equityMode = v; loadIndex(); });
+  segmented("gain", (v) => { gainMode = v; drawGainers(); });
+  segmented("sessions", (v) => { marketSessions = Number(v); loadMarket(); });
   new ResizeObserver(layoutTreemap).observe(document.getElementById("treemap"));
   new ResizeObserver(layoutStocks).observe(document.getElementById("stockmap"));
   return loadIndex;
@@ -454,11 +448,7 @@ async function loadUsage() {
         `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
 }
 function initUsage() {
-  document.querySelectorAll("button[data-span]").forEach((b) => b.onclick = () => {
-    usageSpan = b.dataset.span;
-    document.querySelectorAll("button[data-span]").forEach((x) => x.classList.toggle("on", x === b));
-    loadUsage();
-  });
+  segmented("span", (v) => { usageSpan = v; loadUsage(); });
   return loadUsage;
 }
 
