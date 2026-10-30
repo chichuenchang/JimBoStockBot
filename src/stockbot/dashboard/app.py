@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -19,7 +20,7 @@ from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard import tab_order
-from stockbot.dashboard.glossary import COLUMN_GROUPS, LABELS, TIPS
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, LABELS, TIPS
 from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -27,6 +28,7 @@ from stockbot.models import BENCHMARK, Session
 
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
+LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
 CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
 
 
@@ -65,7 +67,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
-        return page(request, "index.html", rows=q.leaderboard(db, cfg), groups=COLUMN_GROUPS)
+        rows = q.leaderboard(db, cfg)
+        return page(request, "index.html", rows=rows, groups=COLUMN_GROUPS, boards=q.boards(rows, BOARDS),
+                    universe=list(cfg.settings.universe))
 
     @app.get("/arm/{arm}", response_class=HTMLResponse)
     def arm_page(request: Request, arm: str):
@@ -99,6 +103,23 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     @app.get("/api/heatmap")
     def api_heatmap():
         return q.heatmap(db)
+
+    live = {"ts": 0.0, "prices": {}}  # one feed call per LIVE_TTL, however many tabs poll
+    live_lock = asyncio.Lock()  # tabs polling at once wait for the one fetch in flight
+
+    @app.get("/api/market")
+    async def api_market(sessions: int = 1):
+        is_open = db.kv_get("market_open") == "1"  # daemon keeps it current
+        if is_open and data is not None:
+            async with live_lock:
+                if time.monotonic() - live["ts"] > LIVE_TTL:
+                    try:
+                        live["prices"] = await data.latest_prices(list(cfg.settings.universe))
+                    except DataError:
+                        pass  # keep the last prices; stocks without one drop out
+                    live["ts"] = time.monotonic()
+        return q.market(db, list(cfg.settings.universe), et_date(budget.clock.now()), live["prices"],
+                        max(1, min(sessions, 250)), is_open)
 
     @app.get("/api/status")
     def api_status():

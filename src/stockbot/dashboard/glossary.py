@@ -38,6 +38,12 @@ COLUMN_GROUPS = [
                  "invested_pct"]),
     ("Risk", ["sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown"]),
 ]
+# Full-leaderboard panels: (title, rank by, side column). Bots only, best first.
+BOARDS = [
+    ("Return", "return_pct", "vs_benchmark_pct"),
+    ("Net after AI cost", "net_after_llm", "llm_spend"),
+    ("Risk-adjusted", "sharpe", "max_drawdown"),
+]
 LABELS = {
     "arm": "bot", "nav": "value", "return_pct": "return", "vs_benchmark_pct": "vs QQQ",
     "pnl": "P&L", "costs": "costs", "llm_spend": "AI cost", "net_after_llm": "net after AI",

@@ -369,6 +369,11 @@ class DB:
         return self._daily(self._q("SELECT * FROM daily_bars WHERE symbol=? AND day>=? AND day<? ORDER BY day",
                                    symbol, start.isoformat(), end.isoformat()))
 
+    def recent_daily(self, symbol: str, before: date, n: int) -> list[Bar]:
+        """Last n bars with day < before, oldest first."""
+        return self._daily(self._q("SELECT * FROM daily_bars WHERE symbol=? AND day<? ORDER BY day DESC LIMIT ?",
+                                   symbol, before.isoformat(), n))[::-1]
+
     def last_daily(self, symbol: str) -> Bar | None:
         rows = self._daily(self._q("SELECT * FROM daily_bars WHERE symbol=? ORDER BY day DESC LIMIT 1", symbol))
         return rows[0] if rows else None

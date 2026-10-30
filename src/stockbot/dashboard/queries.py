@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
@@ -20,6 +20,7 @@ LEADERBOARD_KEYS = ["arm", "model", "variant", "nav", "return_pct", "vs_benchmar
                     "expectancy", "pnl_ex_best",
                     "sharpe", "sharpe_ci", "alpha_pct", "beta", "max_drawdown", "trades", "invested_pct"]
 MAX_POINTS = 2000
+SPARK_SESSIONS = 30
 
 
 def _broker(db: DB, cfg: AppConfig) -> SimBroker:
@@ -78,6 +79,42 @@ def leaderboard(db: DB, cfg: AppConfig, only: str | None = None) -> list[dict]:
         ])))
     rows.sort(key=lambda r: r["nav"], reverse=True)
     return rows
+
+
+def market(db: DB, universe: list[str], today: date, live: dict[str, float], sessions: int,
+           is_open: bool) -> list[dict]:
+    """Per stock: change over the last `sessions` sessions and dollar volume share (treemap size).
+    Open: live price vs closes before today (today's stored bar, if any, is not final); volume is
+    the last `sessions` finished sessions, so 1D sizes by yesterday's.
+    Closed: last stored session vs the ones before it; a weekend live price is just Friday's close."""
+    out, n = [], max(sessions, SPARK_SESSIONS)
+    for sym in universe:
+        if is_open:
+            past = db.recent_daily(sym, today, n)
+            now = live.get(sym)
+            vol_bars = past[-sessions:]
+        else:
+            bars = db.recent_daily(sym, today + timedelta(days=1), n + 1)
+            past, now = bars[:-1], bars[-1].close if bars else None
+            vol_bars = bars[-sessions:]
+        if now is None or not past:
+            continue
+        ref = past[-sessions].close if len(past) >= sessions else past[0].close
+        out.append({"symbol": sym, "price": now, "change_pct": (now / ref - 1) * 100 if ref else 0.0,
+                    "dollar_volume": sum(b.close * b.volume for b in vol_bars),
+                    "spark": [b.close for b in past[-SPARK_SESSIONS:]] + [now]})
+    total = sum(m["dollar_volume"] for m in out) or 1
+    for m in out:
+        m["share_pct"] = m["dollar_volume"] / total * 100
+    out.sort(key=lambda m: m["dollar_volume"], reverse=True)
+    return out
+
+
+def boards(rows: list[dict], panels: list[tuple[str, str, str]]) -> list[dict]:
+    """Leaderboard rows re-ranked per (title, key, side) panel; None (e.g. Sharpe before 20 days) ranks last."""
+    bots = [r for r in rows if r["variant"] != "benchmark"]
+    return [{"title": t, "key": k, "side": s,
+             "rows": sorted(bots, key=lambda r: (r[k] is None, -(r[k] or 0)))} for t, k, s in panels]
 
 
 def _thin(points: list) -> list:
