@@ -32,6 +32,13 @@ def test_improved_has_journal_and_rules():
     assert "avoid chasing" in text and "NVDA" in text and "stop" in text
 
 
+def test_regime_rule_or_info_note():
+    gated = render_state("improved", STATE, PRICES, 9830.0, NOW, journal(), S, regime_gate=True)
+    free = render_state("improved", STATE, PRICES, 9830.0, NOW, journal(), S, regime_gate=False)
+    assert "No new entries while" in gated and "information only" not in gated
+    assert "No new entries while" not in free and "information only" in free
+
+
 def test_report_comes_first():
     p = build_user_prompt("REPORT", "STATE")
     assert p.index("REPORT") < p.index("STATE")
