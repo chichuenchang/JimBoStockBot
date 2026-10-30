@@ -176,7 +176,7 @@ class Daemon:
         end = min(et_at(done + timedelta(days=1), "00:00"), now - HISTORY_LAG)
         try:
             n = await history.sync(self.ctx.db, source, list(s.universe), s.history_start, end)
-        except Exception as e:  # a down feed must not retry 22 fetches every 20 s pass
+        except Exception as e:  # a down feed must not retry 23 fetches every 20 s pass
             self._history_retry = now + HISTORY_RETRY
             log.error("history sync failed (retry in 30 min): %s", e)
             return
