@@ -28,6 +28,14 @@ const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").fo
   el.style.background = colorOf(el.dataset.series); });
 paintSwatches(document);
 
+// light / dark: base.html applies the saved choice before paint; charts read colors once, so reload
+document.getElementById("theme").onclick = () => {
+  const next = css("color-scheme") === "dark" ? "light" : "dark";
+  try { localStorage.setItem("theme", next); } catch (e) { /* private window: this page only */ }
+  document.documentElement.dataset.theme = next;
+  location.reload();
+};
+
 // server-rendered stats (tiles, stats table, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
 async function refreshRendered(selectors) {
   const doc = new DOMParser().parseFromString(await fetch(location.pathname).then((r) => r.text()), "text/html");
@@ -152,13 +160,14 @@ function squarify(areas, w, h) {
   return out;
 }
 // Place box's .tile children (biggest first) by size; tint each by its change, strongest = most saturated.
-function layoutTiles(box, sizes, rets) {
+// cap: change that gets full color; default = biggest change on the map.
+function layoutTiles(box, sizes, rets, cap) {
   const tiles = [...box.querySelectorAll(".tile")];
   if (!tiles.length) return;
   const W = box.clientWidth, H = box.clientHeight;
   sizes = sizes.map((v) => Math.max(1e-9, v));
   const total = sizes.reduce((a, b) => a + b, 0);
-  const maxAbs = Math.max(1e-9, ...rets.map(Math.abs));
+  const maxAbs = cap || Math.max(1e-9, ...rets.map(Math.abs));
   squarify(sizes.map((v) => (v / total) * W * H), W, H).forEach((r, i) => {
     const t = tiles[i], g = 2;
     const tint = rets[i] ? Math.round(18 + 52 * Math.min(1, Math.abs(rets[i]) / maxAbs)) : 0;  // flat bot: no tint
@@ -178,7 +187,17 @@ function layoutTreemap() {  // bots: server sends tiles ranked by account value
 const CROWN = `<svg class="crown" viewBox="0 0 24 24"><path d="M3 18h18l-1.6-11-4.6 4.4L12 4l-2.8 7.4L4.6 7z" fill="currentColor"/></svg>`;
 let marketSessions = 1, lastMarket = [];
 function layoutStocks() {
-  layoutTiles(document.getElementById("stockmap"), lastMarket.map((m) => m.dollar_volume), lastMarket.map((m) => m.change_pct));
+  // fixed scale (3% a day, widening like volatility with sqrt of span), so one outlier does not wash out the rest
+  layoutTiles(document.getElementById("stockmap"), lastMarket.map((m) => m.dollar_volume), lastMarket.map((m) => m.change_pct),
+              3 * Math.sqrt(marketSessions));
+}
+const SPAN_LABEL = { 1: "1D", 5: "7D", 21: "30D" };
+function drawMovers() {
+  const by = [...lastMarket].sort((a, b) => b.change_pct - a.change_pct);
+  const li = (s) => `<li><span>${esc(s.symbol)}</span><span class="${cls(s.change_pct)}">${signed(s.change_pct)}%</span></li>`;
+  document.getElementById("moversup").innerHTML = by.filter((s) => s.change_pct > 0).slice(0, 3).map(li).join("") || `<li class="muted">none</li>`;
+  document.getElementById("moversdown").innerHTML = by.filter((s) => s.change_pct < 0).slice(-3).reverse().map(li).join("") || `<li class="muted">none</li>`;
+  document.querySelectorAll(".moverspan").forEach((el) => { el.textContent = `(${SPAN_LABEL[marketSessions]})`; });
 }
 async function loadMarket() {
   const span = marketSessions;
@@ -193,12 +212,14 @@ async function loadMarket() {
       <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
     : `<p class="muted">No daily price history yet (daemon syncs it).</p>`;
   layoutStocks();
+  drawMovers();
 }
 const sparkSvg = (pts, up) => {
   if (pts.length < 2) return "";
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-  const d = pts.map(([px, py]) => `${(((px - x0) / (x1 - x0 || 1)) * 100).toFixed(2)},${(30 - ((py - y0) / (y1 - y0 || 1)) * 28 - 1).toFixed(2)}`).join(" ");
+  const yOf = (py) => (y1 === y0 ? 15 : 30 - ((py - y0) / (y1 - y0)) * 28 - 1);  // flat series: mid-line
+  const d = pts.map(([px, py]) => `${(((px - x0) / (x1 - x0 || 1)) * 100).toFixed(2)},${yOf(py).toFixed(2)}`).join(" ");
   return `<svg viewBox="0 0 100 30" preserveAspectRatio="none"><polyline points="${d}" fill="none" stroke="${css(up ? "--good" : "--critical")}" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`;
 };
 
@@ -257,7 +278,7 @@ async function loadIndex() {
   const maxAbs = Math.max(1, ...Object.values(heat).flatMap((r) => Object.values(r).map(Math.abs)));
   const shade = (v) => {
     const t = Math.min(1, Math.abs(v) / maxAbs);
-    const pole = v >= 0 ? css("--div-pos") : css("--div-neg");
+    const pole = v >= 0 ? css("--tile-up") : css("--tile-down");  // same up/down colors as the treemaps
     return `color-mix(in oklab, ${pole} ${Math.round(t * 85)}%, ${css("--div-mid")})`;
   };
   const rows = window.SERIES.filter((s) => heat[s]).map((s) =>

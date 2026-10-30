@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}JBSB Dashboard{% endblock %}</title>
+<script>try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -16,7 +17,7 @@
   --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
   --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
   --bench: #7a7974;
-  --div-neg: #e34948; --div-mid: #f0efec; --div-pos: #2a78d6;
+  --div-mid: #f0efec;
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
   --tile-up: #1baf7a; --tile-down: #e34948;
   --gold: #d4a514; --silver: #9a9a9a; --bronze: #c77a45;
@@ -30,7 +31,7 @@
     --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
     --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
     --bench: #8f8e86;
-    --div-neg: #e66767; --div-mid: #20242b; --div-pos: #3987e5;
+    --div-mid: #20242b;
     --good: #34d399; --critical: #f05d6c;
     --tile-up: #1f8f63; --tile-down: #c2344d;
     --gold: #f5d77a; --silver: #d9d9d9; --bronze: #f0b48a;
@@ -44,7 +45,7 @@
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
   --bench: #8f8e86;
-  --div-neg: #e66767; --div-mid: #20242b; --div-pos: #3987e5;
+  --div-mid: #20242b;
   --good: #34d399; --critical: #f05d6c;
   --tile-up: #1f8f63; --tile-down: #c2344d;
   --gold: #f5d77a; --silver: #d9d9d9; --bronze: #f0b48a;
@@ -116,6 +117,9 @@ a.tile:hover { filter: brightness(1.15); }
 table.gain { font-size: 13px; }
 table.gain td, table.gain th { padding: 7px 4px; }
 table.gain td.l { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.movers { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.movers ol { list-style: none; margin: 6px 0 0; padding: 0; }
+.movers li { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 
 /* full leaderboard: three ranked boards */
 .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -152,7 +156,7 @@ table.stats .gstart { border-left: 1px solid var(--border); }
 table.stats th { white-space: normal; vertical-align: bottom; }
 table.stats td:first-child, table.stats th:first-child { position: sticky; left: 0; background: var(--surface-1); }
 .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px 16px; margin-bottom: 16px; }
+  padding: 14px 16px; margin-bottom: 16px; min-width: 0; }
 .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--text-secondary); font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
 .tablewrap { overflow-x: auto; }
@@ -184,17 +188,20 @@ pre { white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow
   background: var(--surface-0); padding: 10px; border-radius: 6px; font-size: 12px; }
 a { color: var(--series-1); }
 
-@media (max-width: 1200px) { .hero { grid-template-columns: 1fr; } .grid3 { grid-template-columns: 1fr; } }
+@media (max-width: 1200px) { .hero, .grid3 { grid-template-columns: minmax(0, 1fr); } }
 /* phone/tablet: sidebar folds into a top bar, bot links scroll sideways */
 @media (max-width: 900px) {
   body { display: block; }
   .side { width: auto; height: auto; position: static; padding: 10px 16px; border-right: none; border-bottom: 1px solid var(--border); }
   .brand { padding: 0 0 8px; }
   .tabs { flex-direction: row; overflow-x: auto; }
-  .navgroup, .side-foot { display: none; }
+  .tabs a { flex: none; }
+  .navgroup { display: none; }
+  .side-foot { position: absolute; top: 10px; right: 16px; padding: 0; border: none; }
+  .side { position: relative; }
   .topbar { position: static; padding: 10px 16px; }
   main { padding: 12px 16px; }
-  .grid2 { grid-template-columns: 1fr; }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
   .treemap { height: 360px; } .treemap.stocks { height: 420px; }
 }
 </style>
@@ -212,7 +219,7 @@ a { color: var(--series-1); }
     <div class="navgroup">Bots <span title="drag to reorder">⇅</span></div>
     {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}" draggable="true" title="drag to reorder"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
-  <div class="side-foot muted small">Paper money only</div>
+  <div class="side-foot muted small strip"><span>Paper money only</span><button id="theme" title="switch light / dark">◐</button></div>
 </aside>
 <div class="page">
   <header class="topbar"><div class="strip" id="status"></div></header>
