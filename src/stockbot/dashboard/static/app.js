@@ -445,7 +445,7 @@ function drawCandles(tf, res) {
   }
   candleSeries.setData(res.bars);
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
-    : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
+    : !res.bars.length ? "No price bars available (replay mode or no data yet)." : "";
 }
 async function loadArm(st) {
   const arm = encodeURIComponent(window.ARM);
