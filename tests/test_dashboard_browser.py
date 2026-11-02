@@ -69,11 +69,11 @@ class Dashboard:
         while not self.server.started:
             time.sleep(0.01)
 
-    def closed(self, symbol, ago):
-        """A closed trade bought `ago` before now, sold an hour later or now."""
+    def closed(self, symbol, ago, hold=timedelta(hours=1)):
+        """A closed trade bought `ago` before now, sold `hold` later or now."""
         buy = self.now - ago
         self.db.insert_fill(Fill(ARM, symbol, "buy", 1, 100, buy, "entry"), "why", 2.0)
-        self.db.insert_fill(Fill(ARM, symbol, "sell", 1, 110, min(buy + timedelta(hours=1), self.now), "target"))
+        self.db.insert_fill(Fill(ARM, symbol, "sell", 1, 110, min(buy + hold, self.now), "target"))
 
     def position(self, symbol, price):
         acct = self.db.load_account(ARM)
@@ -165,10 +165,10 @@ def arm_page(page_at, tab, has_touch=False):
     return page
 
 
-def assert_trade_framed(page, dash, ago):
+def assert_trade_framed(page, dash, ago, hold=timedelta(hours=1)):
     """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from app.js."""
     buy = dash.now - ago
-    sell = min(buy + timedelta(hours=1), dash.now)
+    sell = min(buy + hold, dash.now)
     page.wait_for_function("""([buy, sell]) => {
       const r = candleChart.timeScale().getVisibleLogicalRange(), bars = candleSeries.data();
       const b = bars.findLastIndex((x) => x.time <= buy), s = bars.findLastIndex((x) => x.time <= sell);
@@ -439,6 +439,17 @@ def test_closed_trade_click_frames_it_in_finest_timeframe(dash, page_at, symbol,
     assert page.input_value("#symbol") == symbol
     assert page.locator("#candles").is_visible()
     assert_trade_framed(page, dash, ago)
+
+
+@pytest.mark.parametrize("width", [1400, 400])
+def test_long_trade_fits_chart_at_any_width(dash, page_at, width):
+    ago, hold = timedelta(hours=13), timedelta(minutes=700)  # two sessions of 1Min bars at most in real life
+    dash.closed("TSLA", ago, hold)
+    page = arm_page(page_at, "trades")
+    page.set_viewport_size({"width": width, "height": 800})
+    link(page, "trades", "TSLA").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Min'")
+    assert_trade_framed(page, dash, ago, hold)
 
 
 def test_click_frames_trade_when_response_is_instant(dash, page_at):

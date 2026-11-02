@@ -365,7 +365,7 @@ async function loadCandles() {
   drawCandles(tf, res);
   fitCandles();
 }
-// 1Day opens on the recent stretch: all of it would stop at the chart's minimum bar spacing, hiding the oldest years without saying so
+// 1Day opens on the recent stretch: all of it would squeeze years of bars below a pixel each
 async function fitCandles(seq = candleSeq) {
   await chartSized();
   if (seq !== candleSeq) return;  // another load started: it fits
@@ -442,7 +442,8 @@ function drawCandles(tf, res) {
   if (!candleChart) {
     candleChart = LightweightCharts.createChart(el, { autoSize: true,
       layout: { background: { color: css("--surface-1") }, textColor: css("--text-secondary") },
-      grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } } });
+      grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } },
+      timeScale: { minBarSpacing: 0.1 } });  // default 0.5: on a phone a long trade's buy fell off the left edge
     candleSeries = candleChart.addCandlestickSeries({ upColor: css("--good"), downColor: css("--critical"),
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
     candleSeries.attachPrimitive(fillBadges);
