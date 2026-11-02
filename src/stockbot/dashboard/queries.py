@@ -204,7 +204,7 @@ def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
     return out
 
 
-def fill_markers(db: DB, account: str, symbol: str) -> list[dict]:
+def chart_fills(db: DB, account: str, symbol: str) -> list[dict]:
     return [{"time": int(f.ts.timestamp()), "side": f.side, "price": f.price, "reason": f.reason,
              "replayed": f.replayed}
             for f in db.fills(account) if f.symbol == symbol]

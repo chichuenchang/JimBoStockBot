@@ -176,7 +176,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf, sessions)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
                           "close": b.close} for b in bars],
-                "markers": q.fill_markers(db, known(arm), symbol), "error": err}
+                "fills": q.chart_fills(db, known(arm), symbol), "error": err}
 
     @app.get("/api/chart")
     def api_chart(symbol: str, tf: str, start: date, end: date, log: bool = False):

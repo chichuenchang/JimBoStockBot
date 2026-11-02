@@ -240,7 +240,7 @@ def test_api_shapes(db):
     full = c.get(f"/api/decision/{d['id']}").json()
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
-    assert len(candles["markers"]) == 2 and candles["bars"] == []
+    assert len(candles["fills"]) == 2 and candles["bars"] == []
 
 
 def test_intraday_candles_regular_session_only(db):
@@ -320,8 +320,8 @@ def test_replayed_fills_marked(tmp_path):
     c = client(db)
     [t] = c.get("/api/arm/kimi-improved/trades").json()
     assert t["replayed"] is True
-    markers = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["markers"]
-    assert [m["replayed"] for m in markers] == [False, True]
+    fills = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["fills"]
+    assert [f["replayed"] for f in fills] == [False, True]
 
 
 def test_conviction_api(tmp_path):

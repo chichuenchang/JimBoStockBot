@@ -21,6 +21,9 @@
   --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
   --tile-up: #1baf7a; --tile-down: #e34948;
   --gold: #d4a514; --silver: #9a9a9a; --bronze: #c77a45;
+  /* trade sides, both themes. Not green/red: those mean price up/down on candles, and a profitable sell is not bad */
+  --buy: #2a78d6; --on-buy: #ffffff; --sell: #f0a000; --on-sell: #1a1a1a;
+  --badge-size: 16px; --badge-font: 11px;  /* chart canvas reads these too */
 }
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme="light"])) {
@@ -166,6 +169,11 @@ th:first-child, td:first-child, td.l, th.l { text-align: left; }
 td.wrap { white-space: normal; text-align: left; min-width: 240px; }
 .pos { color: var(--good); } .neg { color: var(--critical); }
 .muted { color: var(--text-muted); }
+.fillkey { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.fillkey b { color: var(--text-primary); } .fillkey .hint { margin-left: 10px; }
+.fillbadge { width: var(--badge-size); height: var(--badge-size); border-radius: 50%; font-weight: 700; font-size: var(--badge-font); line-height: var(--badge-size); text-align: center; }
+.fillbadge.buy { background: var(--buy); color: var(--on-buy); }
+.fillbadge.sell { background: var(--sell); color: var(--on-sell); margin-left: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
   border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary); }
 .chip b { color: var(--text-primary); font-weight: 600; }
