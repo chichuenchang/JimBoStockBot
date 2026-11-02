@@ -309,16 +309,38 @@ function initIndex() {
 }
 
 // ---------- arm page ----------
-let candleChart, candleSeries;
+let candleChart, candleSeries, candleSeq = 0;
+const BUY_VIEW_BARS = 40;  // bars each side of a closed trade's buy point
+const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py CANDLE_WINDOW)
+// stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
+const stockLink = (symbol, buyIso = "") => [...document.getElementById("symbol").options].some((o) => o.value === symbol)
+  ? `<button class="stocklink" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}">${esc(symbol)}</button>` : esc(symbol);
+function showStock(symbol, buyIso) {
+  document.getElementById("symbol").value = symbol;
+  // the chart lives on the positions tab. pushState: a hash set would scroll to table#positions
+  if (document.querySelector('.tabpane[data-pane="positions"]').hidden) {
+    history.pushState(null, "", "#positions");
+    showTab("positions");
+  }
+  document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
+  loadCandles(buyIso ? new Date(buyIso).getTime() / 1000 : undefined);
+}
 function table(id, cols, rows, empty) {
   const el = document.getElementById(id);
   if (!rows.length) { el.innerHTML = `<tr><td class="l muted">${empty}</td></tr>`; return; }
   el.innerHTML = `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
 }
-async function loadCandles() {
-  const sym = document.getElementById("symbol").value, tf = document.getElementById("tf").value;
-  const res = await get(`/api/candles?symbol=${sym}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
+async function loadCandles(buyTs) {
+  const seq = ++candleSeq;
+  const sym = document.getElementById("symbol").value, tfPick = document.getElementById("tf");
+  let tf, res;
+  for (tf of buyTs ? BUY_TFS : [tfPick.value]) {  // buy point: first timeframe whose bars reach back to it
+    res = await get(`/api/candles?symbol=${sym}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
+    if (seq !== candleSeq) return;  // another stock picked while in flight
+    if (res.bars[0]?.time <= buyTs) break;
+  }
+  tfPick.value = tf;
   const el = document.getElementById("candles");
   if (!candleChart) {
     candleChart = LightweightCharts.createChart(el, { autoSize: true,
@@ -338,7 +360,9 @@ async function loadCandles() {
   candleSeries.setMarkers(res.markers.map((m) => ({ time: m.time, position: m.side === "buy" ? "belowBar" : "aboveBar",
     color: m.side === "buy" ? css("--series-1") : css("--series-2"), shape: m.side === "buy" ? "arrowUp" : "arrowDown",
     text: `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}` })).sort((a, b) => a.time - b.time));
-  candleChart.timeScale().fitContent();
+  const buyBar = buyTs ? res.bars.findLastIndex((b) => b.time <= buyTs) : -1;
+  if (buyBar < 0) candleChart.timeScale().fitContent();
+  else candleChart.timeScale().setVisibleLogicalRange({ from: buyBar - BUY_VIEW_BARS, to: buyBar + BUY_VIEW_BARS });
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
     : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
 }
@@ -358,10 +382,10 @@ async function loadArm(st) {
   btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(await loadStatus()); };
 
   const money = (v) => `<span class="${cls(v)}">${signed(v)}</span>`;
-  table("positions", [["symbol", "stock", 1], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
+  table("positions", [["symbol", "stock", 1, (v) => stockLink(v)], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
     ["price", "price now", 0, (v) => fmt(v)], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, (v) => fmt(v)],
     ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
-  table("trades", [["symbol", "stock", 1], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
+  table("trades", [["symbol", "stock", 1, (v, r) => stockLink(v, r.entry_ts)], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
     ["entry_price", "in", 0, (v) => fmt(v)], ["exit_price", "out", 0, (v) => fmt(v)], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
     ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)],
     ...(sized ? [["conviction", "conviction", 0, (v) => fmt(v)]] : []),
@@ -400,8 +424,13 @@ function initArm() {
   document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
   showTab(location.hash.slice(1));
-  document.getElementById("symbol").onchange = loadCandles;
-  document.getElementById("tf").onchange = loadCandles;
+  document.getElementById("symbol").onchange = () => loadCandles();
+  document.getElementById("tf").onchange = () => loadCandles();
+  // delegated: polling re-renders the rows
+  ["positions", "trades"].forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
+    const link = e.target.closest(".stocklink");
+    if (link) showStock(link.dataset.symbol, link.dataset.buy);
+  }));
   loadCandles();
   return loadArm;
 }
