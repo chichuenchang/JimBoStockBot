@@ -333,8 +333,8 @@ let candleChart, candleSeries, candleSeq = 0;
 const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
 const DAY_VIEW_BARS = 250;  // about a trading year
 const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py INTRADAY_SESSIONS)
-let focused = null;  // closed trade picked in the table: { symbol, buy, from, to }. Its badges stay solid, the rest fade
-const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.buy === buyIso;
+let focused = null;  // closed trade picked in the table: { symbol, from, to }. Its badges stay solid, the rest fade
+const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.from === isoSeconds(buyIso);
 // stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
 const stockLink = (symbol, buyIso = "", sellIso = "") => [...document.getElementById("symbol").options].some((o) => o.value === symbol)
   ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
@@ -347,7 +347,7 @@ const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floo
 function showStock(symbol, buyIso, sellIso) {
   document.getElementById("symbol").value = symbol;
   document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
-  focusTrade(buyIso ? { symbol, buy: buyIso, from: isoSeconds(buyIso), to: isoSeconds(sellIso) } : null);
+  focusTrade(buyIso ? { symbol, from: isoSeconds(buyIso), to: isoSeconds(sellIso) } : null);
   if (focused) loadCandlesForTrade(focused);
   else loadCandles();
 }
