@@ -63,7 +63,7 @@ class Dashboard:
             port = s.getsockname()[1]
         self.url = f"http://127.0.0.1:{port}"
         app = create_app(db, CFG, Budget(db, CFG, RealClock()), FakeData())
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=1))
         self.thread = threading.Thread(target=self.server.run, daemon=True)
         self.thread.start()
         while not self.server.started:
