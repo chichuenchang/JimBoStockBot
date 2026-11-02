@@ -395,6 +395,16 @@ def test_clicked_trade_stays_solid_and_other_trades_fade(dash, page_at):
     assert picked_row.count() == 0
 
 
+# ---------- axis ----------
+def test_intraday_axis_dates_new_days_and_times_the_rest(page_at):
+    page = arm_page(page_at, "positions")
+    page.select_option("#tf", "1Hour")
+    page.wait_for_function("candleSeries.data()[1]?.time - candleSeries.data()[0]?.time === 3600")
+    tick = "(type) => candleChart.options().timeScale.tickMarkFormatter(1700000000, LightweightCharts.TickMarkType[type])"
+    assert page.evaluate(tick, "DayOfMonth") == "Nov 14"  # 2023-11-14 17:13 ET
+    assert page.evaluate(tick, "Time") == "17:13"
+
+
 # ---------- stock links ----------
 @pytest.mark.parametrize("symbol,ago,tf", [
     ("NVDA", timedelta(hours=3), "1Min"),
