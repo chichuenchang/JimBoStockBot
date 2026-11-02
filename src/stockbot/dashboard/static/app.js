@@ -383,6 +383,38 @@ const chartSized = () => new Promise((resolve) => {
   const sized = () => { scale.unsubscribeSizeChange(sized); resolve(); };
   scale.subscribeSizeChange(sized);
 });
+// trades as solid lettered badges, one per bar and side. Not setMarkers: its labels overlap, it has no letter in a shape,
+// and it draws a fill on a later bar, or on the first bar when older than the window
+let fillsAtBar = new Map();  // bar time -> { bar, fills }
+const BADGE_R = 8, BADGE_GAP = 6;  // px; gap from bar's high or low
+const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", at: "low", dir: 1 },
+  sell: { letter: "S", color: "--sell", ink: "--on-sell", at: "high", dir: -1 } };
+const fillText = (m) => `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}`;
+function drawBadge(ctx, x, y, b, hollow) {
+  const color = css(b.color);
+  ctx.beginPath();
+  ctx.arc(x, y, BADGE_R, 0, 2 * Math.PI);
+  ctx.fillStyle = hollow ? css("--surface-1") : color;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.stroke();
+  ctx.fillStyle = hollow ? color : css(b.ink);
+  ctx.font = "bold 11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(b.letter, x, y);
+}
+const fillBadges = { paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context }) => {
+  for (const { bar, fills } of fillsAtBar.values()) {
+    const x = candleChart.timeScale().timeToCoordinate(bar.time);
+    if (x === null) continue;
+    for (const [side, b] of Object.entries(BADGES)) {
+      const mine = fills.filter((m) => m.side === side);
+      if (mine.length) drawBadge(context, x, candleSeries.priceToCoordinate(bar[b.at]) + b.dir * (BADGE_GAP + BADGE_R), b, mine.every((m) => m.replayed));
+    }
+  }
+}) }) }] };
 function drawCandles(tf, res) {
   const el = document.getElementById("candles");
   if (!candleChart) {
@@ -391,6 +423,10 @@ function drawCandles(tf, res) {
       grid: { vertLines: { color: css("--grid") }, horzLines: { color: css("--grid") } } });
     candleSeries = candleChart.addCandlestickSeries({ upColor: css("--good"), downColor: css("--critical"),
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
+    candleSeries.attachPrimitive(fillBadges);
+    candleChart.subscribeCrosshairMove((p) => {
+      document.getElementById("fillinfo").textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · ");
+    });
   }
   // day+ bars sit at ET midnight: show dates, not 00:00
   const long = ["1Day", "1Week", "1Month"].includes(tf);
@@ -399,10 +435,14 @@ function drawCandles(tf, res) {
     timeScale: { timeVisible: !long, tickMarkFormatter: (s) => new Date(s * 1000).toLocaleString("en-US",
       long ? { timeZone: "America/New_York", year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
            : { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
+  fillsAtBar = new Map();
+  for (const m of [...res.markers].sort((a, b) => a.time - b.time)) {
+    const bar = res.bars.findLast((b) => b.time <= m.time);
+    if (!bar) continue;  // older than this chart's window
+    if (!fillsAtBar.has(bar.time)) fillsAtBar.set(bar.time, { bar, fills: [] });
+    fillsAtBar.get(bar.time).fills.push(m);
+  }
   candleSeries.setData(res.bars);
-  candleSeries.setMarkers(res.markers.map((m) => ({ time: m.time, position: m.side === "buy" ? "belowBar" : "aboveBar",
-    color: m.side === "buy" ? css("--series-1") : css("--series-2"), shape: m.side === "buy" ? "arrowUp" : "arrowDown",
-    text: `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}` })).sort((a, b) => a.time - b.time));
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
     : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
 }

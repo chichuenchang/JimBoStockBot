@@ -275,6 +275,85 @@ def test_usage_table_shows_new_calls(dash, page_at):
     assert row.inner_text() != before
 
 
+# ---------- trade badges on the price chart ----------
+def badge_pixels(page, when, token):
+    """Exact-color pixels of a CSS token in the column of the bar holding `when`, above its high and below its low."""
+    return page.evaluate("""async ([ts, token]) => {
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);  // the chart paints on a frame
+      const bar = candleSeries.data().findLast((b) => b.time <= ts);
+      const x = Math.round(candleChart.timeScale().timeToCoordinate(bar.time));
+      const shot = candleChart.takeScreenshot();
+      const px = shot.getContext("2d").getImageData(x, 0, 1, shot.height).data;
+      const hex = css(token), rgb = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      const count = (from, to) => {
+        let n = 0;
+        for (let y = Math.max(from, 0); y < to; y++) if (rgb.every((v, c) => px[y * 4 + c] === v)) n++;
+        return n;
+      };
+      return { above: count(0, Math.round(candleSeries.priceToCoordinate(bar.high))),
+               below: count(Math.round(candleSeries.priceToCoordinate(bar.low)), shot.height) };
+    }""", [when.timestamp(), token])
+
+
+def bar_x(page, when):
+    return page.evaluate("""(ts) => { const bar = candleSeries.data().findLast((b) => b.time <= ts);
+      return candleChart.timeScale().timeToCoordinate(bar.time); }""", when.timestamp())
+
+
+@pytest.mark.parametrize("symbol,ago,step", [
+    ("MSFT", timedelta(days=10), timedelta(hours=1)),
+    ("AMZN", timedelta(days=100), timedelta(days=1)),
+])
+def test_buy_and_sell_badges_differ_in_color_and_side_of_their_own_bar(dash, page_at, symbol, ago, step):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", symbol).click()
+    assert_centered_on(page, dash.now - ago, step)
+    assert page.evaluate("css('--buy') !== css('--sell')")
+    buy, sell = dash.now - ago, dash.now - ago + timedelta(hours=1)
+    bought = badge_pixels(page, buy, "--buy")
+    assert bought["below"] > 0 and bought["above"] == 0
+    sold = badge_pixels(page, sell, "--sell")
+    assert sold["above"] > 0 and sold["below"] == 0
+
+
+def test_fill_older_than_chart_window_draws_no_badge(page_at):
+    page = arm_page(page_at, "positions")
+    page.select_option("#symbol", "AMZN")  # bought 100 days ago: before the first 1Hour bar, which fits on screen
+    page.select_option("#tf", "1Hour")
+    page.wait_for_function("candleSeries.data()[1]?.time - candleSeries.data()[0]?.time === 3600")
+    first = datetime.fromtimestamp(page.evaluate("candleSeries.data()[0].time"), UTC)
+    assert 0 <= bar_x(page, first) < page.locator("#candles").bounding_box()["width"]
+    assert badge_pixels(page, first, "--buy")["below"] == 0
+
+
+def test_hover_on_bar_lists_its_fills(dash, page_at):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").click()
+    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
+    box = page.locator("#candles").bounding_box()
+    sold = dash.now - timedelta(days=10) + timedelta(hours=1)
+    page.mouse.move(box["x"] + bar_x(page, sold), box["y"] + 100)
+    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('sell 110.00 target')")
+    page.mouse.move(box["x"] + bar_x(page, sold) + 26, box["y"] + 100)  # two bars on: no fill there
+    page.wait_for_function("document.getElementById('fillinfo').textContent === ''")
+
+
+def test_replayed_fill_badge_is_hollow(dash, page_at):
+    live, replayed = dash.now - timedelta(days=20), dash.now - timedelta(days=10)
+    dash.db.insert_fill(Fill(ARM, "TSLA", "buy", 1, 100, live, "entry"), "why", 2.0)
+    dash.db.insert_fill(Fill(ARM, "TSLA", "buy", 1, 100, replayed, "entry", True), "why", 2.0)
+    page = arm_page(page_at, "positions")
+    page.select_option("#symbol", "TSLA")
+    page.select_option("#tf", "1Day")
+    page.wait_for_function(f"candleSeries.data()[0]?.time < {live.timestamp()}")
+    page.evaluate(f"candleChart.timeScale().setVisibleRange({{ from: {live.timestamp() - 86400 * 5}, to: {replayed.timestamp() + 86400 * 5} }})")
+    assert 0 < badge_pixels(page, replayed, "--buy")["below"] < badge_pixels(page, live, "--buy")["below"]
+    box = page.locator("#candles").bounding_box()
+    page.mouse.move(box["x"] + bar_x(page, replayed), box["y"] + 100)
+    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('(replayed)')")
+
+
 # ---------- stock links ----------
 @pytest.mark.parametrize("symbol,ago,tf,step", [
     ("NVDA", timedelta(hours=3), "1Min", timedelta(minutes=1)),
