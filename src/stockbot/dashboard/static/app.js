@@ -388,11 +388,11 @@ const chartSized = () => new Promise((resolve) => {
 let fillsAtBar = new Map();  // bar time -> { bar, fills }
 const BADGE_R = 8, BADGE_GAP = 6;  // px; gap from bar's high or low
 const BAR_SECONDS = { "1Min": 60, "1Hour": 3600, "1Day": 86400, "1Week": 7 * 86400, "1Month": 31 * 86400 };  // week, month: upper bound
-const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", at: "low", dir: 1 },
-  sell: { letter: "S", color: "--sell", ink: "--on-sell", at: "high", dir: -1 } };
-const fillText = (m) => `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}`;
-function drawBadge(ctx, x, y, b, hollow) {
-  const color = css(b.color);
+const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", anchor: "low", dir: 1 },
+  sell: { letter: "S", color: "--sell", ink: "--on-sell", anchor: "high", dir: -1 } };
+const fillText = (f) => `${f.side} ${fmt(f.price)}${f.reason !== "entry" && f.reason !== "close" ? " " + f.reason : ""}${f.replayed ? " (replayed)" : ""}`;
+function drawBadge(ctx, x, y, badge, hollow) {
+  const color = css(badge.color);
   ctx.beginPath();
   ctx.arc(x, y, BADGE_R, 0, 2 * Math.PI);
   ctx.fillStyle = hollow ? css("--surface-1") : color;
@@ -400,19 +400,19 @@ function drawBadge(ctx, x, y, b, hollow) {
   ctx.lineWidth = 2;
   ctx.strokeStyle = color;
   ctx.stroke();
-  ctx.fillStyle = hollow ? color : css(b.ink);
+  ctx.fillStyle = hollow ? color : css(badge.ink);
   ctx.font = "bold 11px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(b.letter, x, y);
+  ctx.fillText(badge.letter, x, y);
 }
 const fillBadges = { paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context }) => {
   for (const { bar, fills } of fillsAtBar.values()) {
     const x = candleChart.timeScale().timeToCoordinate(bar.time);
     if (x === null) continue;
-    for (const [side, b] of Object.entries(BADGES)) {
-      const mine = fills.filter((m) => m.side === side);
-      if (mine.length) drawBadge(context, x, candleSeries.priceToCoordinate(bar[b.at]) + b.dir * (BADGE_GAP + BADGE_R), b, mine.every((m) => m.replayed));
+    for (const [side, badge] of Object.entries(BADGES)) {
+      const sideFills = fills.filter((f) => f.side === side);
+      if (sideFills.length) drawBadge(context, x, candleSeries.priceToCoordinate(bar[badge.anchor]) + badge.dir * (BADGE_GAP + BADGE_R), badge, sideFills.every((f) => f.replayed));
     }
   }
 }) }) }] };
@@ -439,11 +439,11 @@ function drawCandles(tf, res) {
       long ? { timeZone: "America/New_York", year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
            : { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
   fillsAtBar = new Map();
-  for (const m of [...res.markers].sort((a, b) => a.time - b.time)) {
-    const bar = res.bars.findLast((b) => b.time <= m.time);
-    if (!bar || m.time >= bar.time + BAR_SECONDS[tf]) continue;  // chart has no bar for it: older than the window, or feed down
+  for (const fill of res.fills) {
+    const bar = res.bars.findLast((b) => b.time <= fill.time);
+    if (!bar || fill.time >= bar.time + BAR_SECONDS[tf]) continue;  // chart has no bar for it: older than the window, or feed down
     if (!fillsAtBar.has(bar.time)) fillsAtBar.set(bar.time, { bar, fills: [] });
-    fillsAtBar.get(bar.time).fills.push(m);
+    fillsAtBar.get(bar.time).fills.push(fill);
   }
   candleSeries.setData(res.bars);
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
