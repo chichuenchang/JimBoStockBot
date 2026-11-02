@@ -326,21 +326,21 @@ def test_stock_out_of_universe_stays_plain_text(page_at):
 
 def test_later_click_beats_load_in_flight(dash, page_at):
     page = arm_page(page_at, "trades")
-    asked = []
-
-    def slow_msft(route):
-        asked.append(route.request.url)
-        if "tf=1Min" in route.request.url:
-            time.sleep(0.3)
-        route.continue_()
-
-    page.route("**/api/candles?symbol=MSFT*", slow_msft)
+    held = []
+    page.route("**/api/candles?symbol=MSFT*", lambda r: held.append(r))  # MSFT answers only after AMZN has drawn
     link(page, "trades", "MSFT").click()
-    page.evaluate("showStock('AMZN', document.querySelector('#trades .stocklink[data-symbol=AMZN]').dataset.buy)")
+    while not held:
+        page.wait_for_timeout(10)
+    link_buy = link(page, "trades", "AMZN").get_attribute("data-buy")
+    page.evaluate(f"showStock('AMZN', '{link_buy}')")
     assert_centered_on(page, dash.now - timedelta(days=100), timedelta(days=1))
-    page.wait_for_timeout(500)  # the MSFT load must stop, not draw over AMZN
+    asked = []
+    page.on("request", lambda r: asked.append(r.url) if "/api/candles" in r.url else None)
+    held[0].continue_()
+    page.wait_for_timeout(300)
+    assert asked == []  # MSFT's load stopped: no further timeframe tried, nothing drawn over AMZN
     assert page.input_value("#tf") == "1Day"
-    assert len(asked) == 1
+    assert_centered_on(page, dash.now - timedelta(days=100), timedelta(days=1))
 
 
 def test_back_returns_to_closed_trades(page_at):
