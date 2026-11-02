@@ -325,11 +325,16 @@ function showStock(symbol, buyIso) {
   document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
   loadCandles(buyIso ? new Date(buyIso).getTime() / 1000 : undefined);
 }
+const tableHtml = {};  // last write per table: el.innerHTML reads back normalized, so cannot be compared
 function table(id, cols, rows, empty) {
   const el = document.getElementById(id);
-  if (!rows.length) { el.innerHTML = `<tr><td class="l muted">${empty}</td></tr>`; return; }
-  el.innerHTML = `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
+  const html = !rows.length ? `<tr><td class="l muted">${empty}</td></tr>` :
+    `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  // polling calls this: a rewrite would lose keyboard focus, and a click whose button vanishes mid-press never lands
+  if (html === tableHtml[id] || el.querySelector(":active")) return;
+  tableHtml[id] = html;
+  el.innerHTML = html;
 }
 async function loadCandles(buyTs) {
   const seq = ++candleSeq;
