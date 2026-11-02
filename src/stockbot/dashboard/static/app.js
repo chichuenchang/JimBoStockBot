@@ -387,7 +387,7 @@ async function loadCandlesForTrade(trade) {
   await chartSized();
   if (seq !== candleSeq) return;
   const buyBar = res.bars.findLastIndex((b) => b.time <= trade.from);
-  if (buyBar < 0) { candleChart.timeScale().fitContent(); return; }
+  if (buyBar < 0 || focused !== trade) { fitCandles(seq); return; }  // no bar to frame, or tab switched mid-load
   const sellBar = res.bars.findLastIndex((b) => b.time <= trade.to);
   const middle = (buyBar + sellBar) / 2, half = Math.max(TRADE_VIEW_BARS, (sellBar - buyBar) * 0.75);
   candleChart.timeScale().setVisibleLogicalRange({ from: middle - half, to: middle + half });

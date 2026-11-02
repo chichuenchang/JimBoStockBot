@@ -512,6 +512,22 @@ def test_closed_trade_click_stays_on_closed_trades(page_at):
     assert page.locator("#trades").is_visible() and page.locator("#candles").is_visible()
 
 
+def test_tab_switch_during_trade_load_shows_whole_chart(dash, page_at):
+    page = arm_page(page_at, "trades")
+    held = []
+    page.route("**/api/candles?symbol=MSFT*tf=1Min*", lambda r: held.append(r))
+    link(page, "trades", "MSFT").click()
+    while not held:
+        page.wait_for_timeout(10)
+    page.click('button[data-tab="positions"]')
+    page.wait_for_function("!focused")
+    held[0].continue_()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.wait_for_timeout(300)  # the load's own framing, if any, lands by now
+    shown = page.evaluate("(({ from, to }) => to - from)(candleChart.timeScale().getVisibleLogicalRange())")
+    assert shown >= page.evaluate("candleSeries.data().length") - 2
+
+
 def test_chart_only_on_tabs_that_link_to_it(page_at):
     page = page_at(f"/arm/{ARM}#decisions")
     assert not page.locator("#candles").is_visible()
