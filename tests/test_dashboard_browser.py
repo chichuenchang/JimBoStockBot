@@ -310,7 +310,7 @@ def bar_point(page, when, dx=0):
 
 
 def page_at_msft_sell(dash, page_at, has_touch=False):
-    """Chart centered on MSFT's closed trade, and when that trade sold."""
+    """Chart framed on MSFT's closed trade, and when that trade sold."""
     page = arm_page(page_at, "trades", has_touch)
     link(page, "trades", "MSFT").click()
     assert_trade_framed(page, dash, timedelta(days=10))
