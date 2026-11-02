@@ -1,6 +1,7 @@
 """Daily price history since settings.history_start, kept in the daily_bars table."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Literal, Protocol
@@ -43,10 +44,15 @@ def aggregate(bars: list[Bar], tf: HistoryTf) -> list[Bar]:
     if tf == "1Day":
         return bars
     key = (lambda d: d.isocalendar()[:2]) if tf == "1Week" else (lambda d: (d.year, d.month))
+    return rollup(bars, lambda b: key(et_date(b.ts)))
+
+
+def rollup(bars: list[Bar], key: Callable[[Bar], object]) -> list[Bar]:
+    """One bar per run of equal keys; ts = first bar's ts."""
     out: list[Bar] = []
     last = None
     for b in bars:
-        k = key(et_date(b.ts))
+        k = key(b)
         if k != last:
             out.append(b)
             last = k
