@@ -425,9 +425,11 @@ function drawCandles(tf, res) {
     candleSeries = candleChart.addCandlestickSeries({ upColor: css("--good"), downColor: css("--critical"),
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
     candleSeries.attachPrimitive(fillBadges);
-    candleChart.subscribeCrosshairMove((p) => {
+    const showFills = (p) => {
       document.getElementById("fillinfo").textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · ");
-    });
+    };
+    candleChart.subscribeCrosshairMove(showFills);
+    candleChart.subscribeClick(showFills);  // a tap moves no crosshair
   }
   // day+ bars sit at ET midnight: show dates, not 00:00
   const long = ["1Day", "1Week", "1Month"].includes(tf);

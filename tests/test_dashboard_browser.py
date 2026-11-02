@@ -107,9 +107,9 @@ def browser():
         b.close()
 
 
-def open_page(browser, cache_dir, url):
+def open_page(browser, cache_dir, url, has_touch=False):
     """New page with CDN scripts cached on disk (tests run offline after the first), failing on any page error."""
-    ctx = browser.new_context(viewport={"width": 1400, "height": 900})
+    ctx = browser.new_context(viewport={"width": 1400, "height": 900}, has_touch=has_touch)
     page = ctx.new_page()
     page.errors = []
     page.on("pageerror", lambda e: page.errors.append(str(e)))
@@ -129,8 +129,8 @@ def open_page(browser, cache_dir, url):
 def page_at(browser, dash, pytestconfig):
     pages = []
 
-    def go(path):
-        pages.append(open_page(browser, pytestconfig.cache.mkdir("cdn"), dash.url + path))
+    def go(path, has_touch=False):
+        pages.append(open_page(browser, pytestconfig.cache.mkdir("cdn"), dash.url + path, has_touch))
         return pages[-1]
 
     yield go
@@ -160,8 +160,8 @@ def is_focused(locator):
     return locator.evaluate("e => e === document.activeElement")
 
 
-def arm_page(page_at, tab):
-    page = page_at(f"/arm/{ARM}#{tab}")
+def arm_page(page_at, tab, has_touch=False):
+    page = page_at(f"/arm/{ARM}#{tab}", has_touch)
     page.wait_for_function(CHART_READY)
     return page
 
@@ -334,6 +334,16 @@ def test_fill_newer_than_last_bar_draws_no_badge(dash, page_at):
     page.select_option("#tf", "1Day")
     page.wait_for_function("candleSeries.data()[1]?.time - candleSeries.data()[0]?.time >= 82800")
     assert badge_pixels(page, dash.now, "--buy")["below"] == 0
+
+
+def test_tap_on_bar_lists_its_fills(dash, page_at):
+    page = arm_page(page_at, "trades", has_touch=True)
+    link(page, "trades", "MSFT").click()
+    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
+    box = page.locator("#candles").bounding_box()
+    sold = dash.now - timedelta(days=10) + timedelta(hours=1)
+    page.touchscreen.tap(box["x"] + bar_x(page, sold), box["y"] + 100)
+    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('sell 110.00 target')")
 
 
 def test_hover_on_bar_lists_its_fills(dash, page_at):
