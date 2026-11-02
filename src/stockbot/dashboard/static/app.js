@@ -44,12 +44,35 @@ document.getElementById("theme").onclick = () => {
   location.reload();
 };
 
-// server-rendered stats (tiles, stats table, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
+// polled tables: change only the cells that differ, so focus, a press in progress and text selection survive the latest data
+function patchTable(el, fresh) {
+  const had = [...el.children], want = [...fresh.children];
+  want.forEach((n, i) => {
+    const o = had[i];
+    if (!o) el.append(n);
+    else if (o.isEqualNode(n)) return;
+    else if (/^(THEAD|TBODY|TR)$/.test(n.tagName) && o.cloneNode(false).isEqualNode(n.cloneNode(false))) patchTable(o, n);
+    else o.replaceWith(n);
+  });
+  had.slice(want.length).forEach((o) => o.remove());
+}
+function setTable(el, html) {
+  const fresh = el.cloneNode(false);  // parsing needs table context
+  fresh.innerHTML = html;
+  patchTable(el, fresh);
+}
+
+// server-rendered stats (tiles, stats tables, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
 async function refreshRendered(selectors) {
   const doc = new DOMParser().parseFromString(await fetch(location.pathname).then((r) => r.text()), "text/html");
   for (const s of selectors) {
-    const el = document.querySelector(s), fresh = doc.querySelector(s);
-    if (el && fresh) { el.innerHTML = fresh.innerHTML; paintSwatches(el); }
+    const fresh = doc.querySelectorAll(s);
+    document.querySelectorAll(s).forEach((el, i) => {
+      if (!fresh[i]) return;
+      paintSwatches(fresh[i]);  // before comparing: a painted swatch must equal the one on screen
+      if (el.tagName === "TABLE") patchTable(el, fresh[i]);
+      else el.innerHTML = fresh[i].innerHTML;
+    });
   }
 }
 
@@ -248,12 +271,12 @@ function drawGainers() {
   }).sort((a, b) => b.d[0] - a.d[0]);
   const num = (v) => (gainMode === "usd" ? dollars(v) : signed(v, 2) + "%");
   const arrow = (v) => `<span class="${cls(v)}">${tri(v)}${gainMode === "usd" ? "$" + Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2) + "%"}</span>`;
-  document.getElementById("gainers").innerHTML = rows.length
+  setTable(document.getElementById("gainers"), rows.length
     ? `<thead><tr><th class="l">bot</th><th title="${gainMode === "usd" ? esc(window.TIPS.nav) : esc(window.TIPS.return_pct)}">now</th>${GAIN_DAYS.map((d) =>
         `<th title="Change in account value over the last ${d} day${d > 1 ? "s" : ""}">Δ${d}D</th>`).join("")}</tr></thead><tbody>` +
       rows.map((r) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(r.arm)}"></span><a href="/arm/${encodeURIComponent(r.arm)}" style="color:inherit;text-decoration:none">${esc(nameOf(r.arm))}</a></td>` +
         `<td>${num(r.now)}</td>${r.d.map((v) => `<td>${arrow(v)}</td>`).join("")}</tr>`).join("") + `</tbody>`
-    : `<tr><td class="l muted">No bots yet.</td></tr>`;
+    : `<tr><td class="l muted">No bots yet.</td></tr>`);
 }
 
 let equityMode = "usd";
@@ -261,7 +284,7 @@ async function loadIndex() {
   const [usd, pctEq, dd, daily, heat] = await Promise.all([
     get("/api/equity?mode=usd"), equityMode === "pct" ? get("/api/equity?mode=pct") : null,
     get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
-    refreshRendered(["#treemap", "#benchnote", "#boards", "#leaderboard"]), loadMarket()]);
+    refreshRendered(["#treemap", "#benchnote", "#boards table", "#leaderboard"]), loadMarket()]);
   lastUsd = usd;
   layoutTreemap();
   document.querySelectorAll("#treemap .tile").forEach((t) => {
@@ -295,9 +318,9 @@ async function loadIndex() {
       return v === undefined ? `<td class="muted">–</td>`
         : `<td style="background:${shade(v)}" title="${esc(nameOf(s))} ${sym}: ${signed(v)}">${signed(v, 0)}</td>`;
     }).join("")}</tr>`);
-  document.getElementById("heatmap").innerHTML = symbols.length
+  setTable(document.getElementById("heatmap"), symbols.length
     ? `<thead><tr><th class="l">bot</th>${symbols.map((s) => `<th>${s}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody>`
-    : `<tr><td class="l muted">No closed trades yet.</td></tr>`;
+    : `<tr><td class="l muted">No closed trades yet.</td></tr>`);
 }
 function initIndex() {
   segmented("mode", (v) => { equityMode = v; loadIndex(); });
@@ -326,16 +349,10 @@ function showStock(symbol, buyIso) {
   if (buyIso) loadCandlesAtBuy(new Date(buyIso).getTime() / 1000);
   else loadCandles();
 }
-const tableHtml = {};  // last write per table: el.innerHTML reads back normalized, so cannot be compared
 function table(id, cols, rows, empty) {
-  const el = document.getElementById(id);
-  const html = !rows.length ? `<tr><td class="l muted">${empty}</td></tr>` :
+  setTable(document.getElementById(id), !rows.length ? `<tr><td class="l muted">${empty}</td></tr>` :
     `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
-    `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`;
-  // polling calls this: a rewrite would lose keyboard focus, and a click whose button vanishes mid-press never lands
-  if (html === tableHtml[id] || el.querySelector(":active")) return;
-  tableHtml[id] = html;
-  el.innerHTML = html;
+    `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`);
 }
 const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
 async function loadCandles() {
@@ -487,13 +504,13 @@ async function loadUsage() {
   const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
                 output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
   const cell = (t, k, b) => k === "cost" ? `<span class="${b.flat ? "muted" : ""}">${cost(t, b.bot)}</span>` : k === "calls" ? t[k] : kTok(t[k]);
-  document.getElementById("usage").innerHTML =
+  setTable(document.getElementById("usage"),
     `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
     `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
       `<th title="${tip[k]}" class="${i ? "" : "gstart"}">${k}</th>`).join("")).join("")}</tr></thead><tbody>` +
     u.bots.map((b) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(b.bot)}"></span>${esc(nameOf(b.bot))}</td>` +
       `<td class="l">${esc(b.model)}</td>${["today", "month"].map((p) => cols.map((k, i) =>
-        `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`;
+        `<td class="${i ? "" : "gstart"}">${cell(b[p], k, b)}</td>`).join("")).join("")}</tr>`).join("") + `</tbody>`);
 }
 function initUsage() {
   segmented("span", (v) => { usageSpan = v; loadUsage(); });
