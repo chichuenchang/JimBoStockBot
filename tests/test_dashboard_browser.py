@@ -146,6 +146,7 @@ POLL_INDEX = "loadIndex()"
 POLL_USAGE = "loadUsage()"
 RANGE = "candleChart.timeScale().getVisibleLogicalRange()"
 WIDE_80 = f"(() => {{ const r = {RANGE}; return r && Math.abs(r.to - r.from - 80) < 2; }})()"
+FILLINFO = "document.getElementById('fillinfo').textContent"
 
 
 def link(page, table, symbol):
@@ -301,6 +302,20 @@ def bar_x(page, when):
       return candleChart.timeScale().timeToCoordinate(bar.time); }""", when.timestamp())
 
 
+def bar_point(page, when, dx=0):
+    """Page coordinates over the bar holding `when`, for a mouse or touch event."""
+    box = page.locator("#candles").bounding_box()
+    return box["x"] + bar_x(page, when) + dx, box["y"] + 100
+
+
+def page_at_msft_sell(dash, page_at, has_touch=False):
+    """Chart centered on MSFT's closed trade, and when that trade sold."""
+    page = arm_page(page_at, "trades", has_touch)
+    link(page, "trades", "MSFT").click()
+    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
+    return page, dash.now - timedelta(days=10) + timedelta(hours=1)
+
+
 @pytest.mark.parametrize("symbol,ago,step", [
     ("MSFT", timedelta(days=10), timedelta(hours=1)),
     ("AMZN", timedelta(days=100), timedelta(days=1)),
@@ -337,25 +352,17 @@ def test_fill_newer_than_last_bar_draws_no_badge(dash, page_at):
 
 
 def test_tap_on_bar_lists_its_fills(dash, page_at):
-    page = arm_page(page_at, "trades", has_touch=True)
-    link(page, "trades", "MSFT").click()
-    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
-    box = page.locator("#candles").bounding_box()
-    sold = dash.now - timedelta(days=10) + timedelta(hours=1)
-    page.touchscreen.tap(box["x"] + bar_x(page, sold), box["y"] + 100)
-    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('sell 110.00 target')")
+    page, sold = page_at_msft_sell(dash, page_at, has_touch=True)
+    page.touchscreen.tap(*bar_point(page, sold))
+    page.wait_for_function(f"{FILLINFO}.includes('sell 110.00 target')")
 
 
 def test_hover_on_bar_lists_its_fills(dash, page_at):
-    page = arm_page(page_at, "trades")
-    link(page, "trades", "MSFT").click()
-    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
-    box = page.locator("#candles").bounding_box()
-    sold = dash.now - timedelta(days=10) + timedelta(hours=1)
-    page.mouse.move(box["x"] + bar_x(page, sold), box["y"] + 100)
-    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('sell 110.00 target')")
-    page.mouse.move(box["x"] + bar_x(page, sold) + 26, box["y"] + 100)  # two bars on: no fill there
-    page.wait_for_function("document.getElementById('fillinfo').textContent === ''")
+    page, sold = page_at_msft_sell(dash, page_at)
+    page.mouse.move(*bar_point(page, sold))
+    page.wait_for_function(f"{FILLINFO}.includes('sell 110.00 target')")
+    page.mouse.move(*bar_point(page, sold, dx=26))  # two bars on: no fill there
+    page.wait_for_function(f"{FILLINFO} === ''")
 
 
 def test_replayed_fill_badge_is_hollow(dash, page_at):
@@ -368,9 +375,8 @@ def test_replayed_fill_badge_is_hollow(dash, page_at):
     page.wait_for_function(f"candleSeries.data()[0]?.time < {live.timestamp()}")
     page.evaluate(f"candleChart.timeScale().setVisibleRange({{ from: {live.timestamp() - 86400 * 5}, to: {replayed.timestamp() + 86400 * 5} }})")
     assert 0 < badge_pixels(page, replayed, "--buy")["below"] < badge_pixels(page, live, "--buy")["below"]
-    box = page.locator("#candles").bounding_box()
-    page.mouse.move(box["x"] + bar_x(page, replayed), box["y"] + 100)
-    page.wait_for_function("document.getElementById('fillinfo').textContent.includes('(replayed)')")
+    page.mouse.move(*bar_point(page, replayed))
+    page.wait_for_function(f"{FILLINFO}.includes('(replayed)')")
 
 
 # ---------- stock links ----------

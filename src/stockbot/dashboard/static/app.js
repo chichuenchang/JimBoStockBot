@@ -388,34 +388,37 @@ const chartSized = () => new Promise((resolve) => {
 let fillsAtBar = new Map();  // bar time -> { bar, fills }
 const BADGE_R = parseFloat(css("--badge-size")) / 2, BADGE_GAP = 6;  // px; gap from bar's high or low
 const BAR_SECONDS = { "1Min": 60, "1Hour": 3600, "1Day": 86400, "1Week": 7 * 86400, "1Month": 31 * 86400 };  // week, month: upper bound
-const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", anchor: "low", dir: 1 },
-  sell: { letter: "S", color: "--sell", ink: "--on-sell", anchor: "high", dir: -1 } };
+const BADGE_FONT = `bold ${css("--badge-font")} sans-serif`, BADGE_HOLLOW = css("--surface-1");
+const BADGES = { buy: { letter: "B", color: css("--buy"), ink: css("--on-buy"), anchor: "low", dir: 1 },
+  sell: { letter: "S", color: css("--sell"), ink: css("--on-sell"), anchor: "high", dir: -1 } };
 const fillText = (f) => `${f.side} ${fmt(f.price)}${f.reason !== "entry" && f.reason !== "close" ? " " + f.reason : ""}${f.replayed ? " (replayed)" : ""}`;
 function drawBadge(ctx, x, y, badge, hollow) {
-  const color = css(badge.color);
   ctx.beginPath();
   ctx.arc(x, y, BADGE_R, 0, 2 * Math.PI);
-  ctx.fillStyle = hollow ? css("--surface-1") : color;
+  ctx.fillStyle = hollow ? BADGE_HOLLOW : badge.color;
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = badge.color;
   ctx.stroke();
-  ctx.fillStyle = hollow ? color : css(badge.ink);
-  ctx.font = `bold ${css("--badge-font")} sans-serif`;
+  ctx.fillStyle = hollow ? badge.color : badge.ink;
+  ctx.font = BADGE_FONT;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(badge.letter, x, y);
 }
-const fillBadges = { paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context }) => {
+function drawBadges({ context }) {
   for (const { bar, fills } of fillsAtBar.values()) {
     const x = candleChart.timeScale().timeToCoordinate(bar.time);
     if (x === null) continue;
     for (const [side, badge] of Object.entries(BADGES)) {
       const sideFills = fills.filter((f) => f.side === side);
-      if (sideFills.length) drawBadge(context, x, candleSeries.priceToCoordinate(bar[badge.anchor]) + badge.dir * (BADGE_GAP + BADGE_R), badge, sideFills.every((f) => f.replayed));
+      if (!sideFills.length) continue;
+      const y = candleSeries.priceToCoordinate(bar[badge.anchor]) + badge.dir * (BADGE_GAP + BADGE_R);
+      drawBadge(context, x, y, badge, sideFills.every((f) => f.replayed));
     }
   }
-}) }) }] };
+}
+const fillBadges = { paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(drawBadges) }) }] };
 function drawCandles(tf, res) {
   const el = document.getElementById("candles");
   if (!candleChart) {
