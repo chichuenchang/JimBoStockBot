@@ -373,10 +373,19 @@ async function loadCandlesAtBuy(buyTs) {
   }
   document.getElementById("tf").value = tf;
   drawCandles(tf, res);
+  await chartSized();
+  if (seq !== candleSeq) return;
   const buyBar = res.bars.findLastIndex((b) => b.time <= buyTs);
   if (buyBar < 0) candleChart.timeScale().fitContent();
   else candleChart.timeScale().setVisibleLogicalRange({ from: buyBar - BUY_VIEW_BARS, to: buyBar + BUY_VIEW_BARS });
 }
+// a chart just shown has no width until its next frame; a range set sooner keeps only its right edge, bars at minimum spacing
+const chartSized = () => new Promise((resolve) => {
+  const scale = candleChart.timeScale();
+  if (scale.width() > 0) { resolve(); return; }
+  const sized = () => { scale.unsubscribeSizeChange(sized); resolve(); };
+  scale.subscribeSizeChange(sized);
+});
 function drawCandles(tf, res) {
   const el = document.getElementById("candles");
   if (!candleChart) {
