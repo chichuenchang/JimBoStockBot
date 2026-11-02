@@ -426,6 +426,22 @@ def test_day_chart_opens_on_recent_bars_and_week_on_all(dash, page_at):
     page.wait_for_function(f"candleSeries.data().length < 500 && {VISIBLE}.from <= 0", timeout=5000)
 
 
+def test_timeframe_change_keeps_picked_trade(page_at):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.select_option("#tf", "1Day")
+    assert page.locator("#trades tr:has(.stocklink.on)").count() == 1
+
+
+def test_symbol_change_clears_picked_trade(page_at):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.select_option("#symbol", "AMZN")
+    assert page.locator("#trades tr:has(.stocklink.on)").count() == 0
+
+
 # ---------- stock links ----------
 @pytest.mark.parametrize("symbol,ago,tf", [
     ("NVDA", timedelta(hours=3), "1Min"),
