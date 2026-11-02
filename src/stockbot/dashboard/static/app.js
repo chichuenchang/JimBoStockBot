@@ -387,6 +387,7 @@ const chartSized = () => new Promise((resolve) => {
 // and it draws a fill on a later bar, or on the first bar when older than the window
 let fillsAtBar = new Map();  // bar time -> { bar, fills }
 const BADGE_R = 8, BADGE_GAP = 6;  // px; gap from bar's high or low
+const BAR_SECONDS = { "1Min": 60, "1Hour": 3600, "1Day": 86400, "1Week": 7 * 86400, "1Month": 31 * 86400 };  // week, month: upper bound
 const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", at: "low", dir: 1 },
   sell: { letter: "S", color: "--sell", ink: "--on-sell", at: "high", dir: -1 } };
 const fillText = (m) => `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}`;
@@ -438,7 +439,7 @@ function drawCandles(tf, res) {
   fillsAtBar = new Map();
   for (const m of [...res.markers].sort((a, b) => a.time - b.time)) {
     const bar = res.bars.findLast((b) => b.time <= m.time);
-    if (!bar) continue;  // older than this chart's window
+    if (!bar || m.time >= bar.time + BAR_SECONDS[tf]) continue;  // chart has no bar for it: older than the window, or feed down
     if (!fillsAtBar.has(bar.time)) fillsAtBar.set(bar.time, { bar, fills: [] });
     fillsAtBar.get(bar.time).fills.push(m);
   }

@@ -327,6 +327,15 @@ def test_fill_older_than_chart_window_draws_no_badge(page_at):
     assert badge_pixels(page, first, "--buy")["below"] == 0
 
 
+def test_fill_newer_than_last_bar_draws_no_badge(dash, page_at):
+    dash.db.insert_fill(Fill(ARM, "TSLA", "buy", 1, 100, dash.now + timedelta(days=3), "entry"), "why", 2.0)
+    page = arm_page(page_at, "positions")
+    page.select_option("#symbol", "TSLA")
+    page.select_option("#tf", "1Day")
+    page.wait_for_function("candleSeries.data()[1]?.time - candleSeries.data()[0]?.time >= 82800")
+    assert badge_pixels(page, dash.now, "--buy")["below"] == 0
+
+
 def test_hover_on_bar_lists_its_fills(dash, page_at):
     page = arm_page(page_at, "trades")
     link(page, "trades", "MSFT").click()
