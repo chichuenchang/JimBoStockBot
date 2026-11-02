@@ -140,12 +140,12 @@ def page_at(browser, dash, pytestconfig):
     assert not errors
 
 
-CHART_READY = "document.querySelector('#trades .stocklink') && typeof candleChart !== 'undefined' && !!candleChart"
-POLL_ARM = "async () => { await loadArm(await loadStatus()); }"
-POLL_INDEX = "async () => { await loadIndex(); }"
-POLL_USAGE = "async () => { await loadUsage(); }"
-RANGE = "(() => { const r = candleChart.timeScale().getVisibleLogicalRange(); return [r.from, r.to]; })()"
-WIDE_80 = "(() => { const r = candleChart.timeScale().getVisibleLogicalRange(); return r && Math.abs(r.to - r.from - 80) < 2; })()"
+CHART_READY = "document.querySelector('#trades .stocklink') && candleChart"
+POLL_ARM = "loadStatus().then(loadArm)"
+POLL_INDEX = "loadIndex()"
+POLL_USAGE = "loadUsage()"
+RANGE = "candleChart.timeScale().getVisibleLogicalRange()"
+WIDE_80 = f"(() => {{ const r = {RANGE}; return r && Math.abs(r.to - r.from - 80) < 2; }})()"
 
 
 def link(page, table, symbol):
@@ -169,8 +169,8 @@ def arm_page(page_at, tab):
 def assert_centered_on(page, buy, step):
     """80 bars shown, middle bar within one bar of the buy: derived from the seed, not from app.js."""
     page.wait_for_function(WIDE_80, timeout=5000)
-    a, b = page.evaluate(RANGE)
-    middle = page.evaluate(f"candleSeries.data()[{round((a + b) / 2)}].time")
+    r = page.evaluate(RANGE)
+    middle = page.evaluate(f"candleSeries.data()[{round((r['from'] + r['to']) / 2)}].time")
     assert 0 <= buy.timestamp() - middle <= step.total_seconds()
 
 

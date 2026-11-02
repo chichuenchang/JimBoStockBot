@@ -44,14 +44,14 @@ document.getElementById("theme").onclick = () => {
   location.reload();
 };
 
-// polled tables: change only the cells that differ, so focus, a press in progress and text selection survive the latest data
-function patchTable(el, fresh) {
-  const had = [...el.children], want = [...fresh.children];
+// polled content: change only the nodes that differ, so focus, a press in progress and text selection survive the latest data
+function patchChildren(el, fresh) {
+  const had = [...el.childNodes], want = [...fresh.childNodes];
   want.forEach((n, i) => {
     const o = had[i];
     if (!o) el.append(n);
     else if (o.isEqualNode(n)) return;
-    else if (/^(THEAD|TBODY|TR)$/.test(n.tagName) && o.cloneNode(false).isEqualNode(n.cloneNode(false))) patchTable(o, n);
+    else if (o.cloneNode(false).isEqualNode(n.cloneNode(false))) patchChildren(o, n);
     else o.replaceWith(n);
   });
   had.slice(want.length).forEach((o) => o.remove());
@@ -59,20 +59,17 @@ function patchTable(el, fresh) {
 function setTable(el, html) {
   const fresh = el.cloneNode(false);  // parsing needs table context
   fresh.innerHTML = html;
-  patchTable(el, fresh);
+  patchChildren(el, fresh);
 }
 
 // server-rendered stats (tiles, stats tables, KPIs): re-fetch this page and swap them in, so they keep pace with the charts
 async function refreshRendered(selectors) {
   const doc = new DOMParser().parseFromString(await fetch(location.pathname).then((r) => r.text()), "text/html");
   for (const s of selectors) {
-    const fresh = doc.querySelectorAll(s);
-    document.querySelectorAll(s).forEach((el, i) => {
-      if (!fresh[i]) return;
-      paintSwatches(fresh[i]);  // before comparing: a painted swatch must equal the one on screen
-      if (el.tagName === "TABLE") patchTable(el, fresh[i]);
-      else el.innerHTML = fresh[i].innerHTML;
-    });
+    const el = document.querySelector(s), fresh = doc.querySelector(s);
+    if (!el || !fresh) continue;
+    paintSwatches(fresh);  // before comparing: a painted swatch must equal the one on screen
+    patchChildren(el, fresh);
   }
 }
 
@@ -284,7 +281,7 @@ async function loadIndex() {
   const [usd, pctEq, dd, daily, heat] = await Promise.all([
     get("/api/equity?mode=usd"), equityMode === "pct" ? get("/api/equity?mode=pct") : null,
     get("/api/drawdown"), get("/api/daily_pnl"), get("/api/heatmap"),
-    refreshRendered(["#treemap", "#benchnote", "#boards table", "#leaderboard"]), loadMarket()]);
+    refreshRendered(["#treemap", "#benchnote", "#boards", "#leaderboard"]), loadMarket()]);
   lastUsd = usd;
   layoutTreemap();
   document.querySelectorAll("#treemap .tile").forEach((t) => {
