@@ -386,7 +386,7 @@ const chartSized = () => new Promise((resolve) => {
 // trades as solid lettered badges, one per bar and side. Not setMarkers: its labels overlap, it has no letter in a shape,
 // and it draws a fill on a later bar, or on the first bar when older than the window
 let fillsAtBar = new Map();  // bar time -> { bar, fills }
-const BADGE_R = 8, BADGE_GAP = 6;  // px; gap from bar's high or low
+const BADGE_R = parseFloat(css("--badge-size")) / 2, BADGE_GAP = 6;  // px; gap from bar's high or low
 const BAR_SECONDS = { "1Min": 60, "1Hour": 3600, "1Day": 86400, "1Week": 7 * 86400, "1Month": 31 * 86400 };  // week, month: upper bound
 const BADGES = { buy: { letter: "B", color: "--buy", ink: "--on-buy", anchor: "low", dir: 1 },
   sell: { letter: "S", color: "--sell", ink: "--on-sell", anchor: "high", dir: -1 } };
@@ -401,7 +401,7 @@ function drawBadge(ctx, x, y, badge, hollow) {
   ctx.strokeStyle = color;
   ctx.stroke();
   ctx.fillStyle = hollow ? color : css(badge.ink);
-  ctx.font = "bold 11px sans-serif";
+  ctx.font = `bold ${css("--badge-font")} sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(badge.letter, x, y);
