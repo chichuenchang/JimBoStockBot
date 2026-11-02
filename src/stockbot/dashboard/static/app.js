@@ -323,7 +323,8 @@ function showStock(symbol, buyIso) {
     showTab("positions");
   }
   document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
-  loadCandles(buyIso ? new Date(buyIso).getTime() / 1000 : undefined);
+  if (buyIso) loadCandlesAtBuy(new Date(buyIso).getTime() / 1000);
+  else loadCandles();
 }
 const tableHtml = {};  // last write per table: el.innerHTML reads back normalized, so cannot be compared
 function table(id, cols, rows, empty) {
@@ -336,16 +337,30 @@ function table(id, cols, rows, empty) {
   tableHtml[id] = html;
   el.innerHTML = html;
 }
-async function loadCandles(buyTs) {
+const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
+async function loadCandles() {
+  const seq = ++candleSeq, tf = document.getElementById("tf").value;
+  const res = await fetchCandles(tf);
+  if (seq !== candleSeq) return;  // another load started while in flight
+  drawCandles(tf, res);
+  candleChart.timeScale().fitContent();
+}
+// closed trade: first timeframe whose bars reach back to the buy, centered on it
+async function loadCandlesAtBuy(buyTs) {
   const seq = ++candleSeq;
-  const sym = document.getElementById("symbol").value, tfPick = document.getElementById("tf");
   let tf, res;
-  for (tf of buyTs ? BUY_TFS : [tfPick.value]) {  // buy point: first timeframe whose bars reach back to it
-    res = await get(`/api/candles?symbol=${sym}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
-    if (seq !== candleSeq) return;  // another stock picked while in flight
+  for (tf of BUY_TFS) {
+    res = await fetchCandles(tf);
+    if (seq !== candleSeq) return;  // another load started while in flight
     if (res.bars[0]?.time <= buyTs) break;
   }
-  tfPick.value = tf;
+  document.getElementById("tf").value = tf;
+  drawCandles(tf, res);
+  const buyBar = res.bars.findLastIndex((b) => b.time <= buyTs);
+  if (buyBar < 0) candleChart.timeScale().fitContent();
+  else candleChart.timeScale().setVisibleLogicalRange({ from: buyBar - BUY_VIEW_BARS, to: buyBar + BUY_VIEW_BARS });
+}
+function drawCandles(tf, res) {
   const el = document.getElementById("candles");
   if (!candleChart) {
     candleChart = LightweightCharts.createChart(el, { autoSize: true,
@@ -365,9 +380,6 @@ async function loadCandles(buyTs) {
   candleSeries.setMarkers(res.markers.map((m) => ({ time: m.time, position: m.side === "buy" ? "belowBar" : "aboveBar",
     color: m.side === "buy" ? css("--series-1") : css("--series-2"), shape: m.side === "buy" ? "arrowUp" : "arrowDown",
     text: `${m.side} ${fmt(m.price)}${m.reason !== "entry" && m.reason !== "close" ? " " + m.reason : ""}${m.replayed ? " (replayed)" : ""}` })).sort((a, b) => a.time - b.time));
-  const buyBar = buyTs ? res.bars.findLastIndex((b) => b.time <= buyTs) : -1;
-  if (buyBar < 0) candleChart.timeScale().fitContent();
-  else candleChart.timeScale().setVisibleLogicalRange({ from: buyBar - BUY_VIEW_BARS, to: buyBar + BUY_VIEW_BARS });
   document.getElementById("candlenote").textContent = res.error ? `Price data unavailable: ${res.error}`
     : !res.bars.length ? "No price bars available (replay mode or no data yet); trade markers only." : "";
 }
@@ -429,8 +441,8 @@ function initArm() {
   document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
   showTab(location.hash.slice(1));
-  document.getElementById("symbol").onchange = () => loadCandles();
-  document.getElementById("tf").onchange = () => loadCandles();
+  document.getElementById("symbol").onchange = loadCandles;
+  document.getElementById("tf").onchange = loadCandles;
   // delegated: polling re-renders the rows
   ["positions", "trades"].forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
     const link = e.target.closest(".stocklink");
