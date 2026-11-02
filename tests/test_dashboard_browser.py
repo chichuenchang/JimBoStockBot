@@ -405,6 +405,27 @@ def test_intraday_axis_dates_new_days_and_times_the_rest(page_at):
     assert page.evaluate(tick, "Time") == "17:13"
 
 
+VISIBLE = "candleChart.timeScale().getVisibleLogicalRange()"
+
+
+def test_day_chart_opens_on_recent_bars_and_week_on_all(dash, page_at):
+    today = et_date(dash.now)
+    dash.db.upsert_daily([Bar("GOOGL", et_at(today - timedelta(days=i), "00:00"), 100, 101, 99, 100, 1000)
+                          for i in range(1, 3001)])  # at the chart's minimum bar spacing, fitting all shows only part
+    page = arm_page(page_at, "positions")
+    page.select_option("#symbol", "GOOGL")
+    page.select_option("#tf", "1Day")
+    page.wait_for_function("candleSeries.data().length > 2900")
+    recent = f"{VISIBLE}.from === candleSeries.data().length - 250"
+    page.wait_for_function(recent, timeout=5000)
+    page.click('button[data-tab="decisions"]')  # chart hidden, then back at full width: same view
+    page.wait_for_function("location.hash === '#decisions'")
+    page.click('button[data-tab="positions"]')
+    page.wait_for_function(recent, timeout=5000)
+    page.select_option("#tf", "1Week")
+    page.wait_for_function(f"candleSeries.data().length < 500 && {VISIBLE}.from <= 0", timeout=5000)
+
+
 # ---------- stock links ----------
 @pytest.mark.parametrize("symbol,ago,tf", [
     ("NVDA", timedelta(hours=3), "1Min"),

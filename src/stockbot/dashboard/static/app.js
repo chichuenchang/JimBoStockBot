@@ -332,6 +332,7 @@ function initIndex() {
 let candleChart, candleSeries, candleSeq = 0;
 const CHART_TABS = ["positions", "trades"];
 const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
+const DAY_VIEW_BARS = 250;  // about a trading year
 const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py INTRADAY_SESSIONS)
 let focused = null;  // closed trade picked in the table: { symbol, buy, from, to }. Its badges stay solid, the rest fade
 const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.buy === buyIso;
@@ -362,7 +363,15 @@ async function loadCandles() {
   const res = await fetchCandles(tf);
   if (seq !== candleSeq) return;  // another load started while in flight
   drawCandles(tf, res);
-  candleChart.timeScale().fitContent();
+  fitCandles();
+}
+// 1Day opens on the recent stretch: all of it would stop at the chart's minimum bar spacing, hiding the oldest years without saying so
+async function fitCandles(seq = candleSeq) {
+  await chartSized();
+  if (seq !== candleSeq) return;  // another load started: it fits
+  const n = candleSeries.data().length;
+  if (document.getElementById("tf").value === "1Day" && n > DAY_VIEW_BARS) candleChart.timeScale().setVisibleLogicalRange({ from: n - DAY_VIEW_BARS, to: n });
+  else candleChart.timeScale().fitContent();
 }
 // closed trade: first timeframe whose bars reach back to the buy, framed so buy and sell both show
 async function loadCandlesForTrade(trade) {
@@ -515,7 +524,7 @@ function showTab(name) {
   tabs.forEach((b) => { b.classList.toggle("on", b.dataset.tab === name); b.setAttribute("aria-selected", b.dataset.tab === name); });
   document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = !p.dataset.pane.split(" ").includes(name); });
   focusTrade(null);  // only a click on a closed trade focuses; that stays on this tab
-  if (CHART_TABS.includes(name) && candleChart) candleChart.timeScale().fitContent();
+  if (CHART_TABS.includes(name) && candleChart) fitCandles();
 }
 function initArm() {
   document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
