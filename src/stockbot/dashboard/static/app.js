@@ -330,7 +330,6 @@ function initIndex() {
 
 // ---------- arm page ----------
 let candleChart, candleSeries, candleSeq = 0;
-const CHART_TABS = ["positions", "trades"];
 const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
 const DAY_VIEW_BARS = 250;  // about a trading year
 const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py INTRADAY_SESSIONS)
@@ -523,7 +522,7 @@ function showTab(name) {
   tabs.forEach((b) => { b.classList.toggle("on", b.dataset.tab === name); b.setAttribute("aria-selected", b.dataset.tab === name); });
   document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = !p.dataset.pane.split(" ").includes(name); });
   focusTrade(null);  // only a click on a closed trade focuses; that stays on this tab
-  if (CHART_TABS.includes(name) && candleChart) fitCandles();
+  if (candleChart && !document.getElementById("candles").closest(".tabpane").hidden) fitCandles();
 }
 function initArm() {
   document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
@@ -532,7 +531,7 @@ function initArm() {
   document.getElementById("symbol").onchange = () => { focusTrade(null); loadCandles(); };
   document.getElementById("tf").onchange = loadCandles;
   // delegated: polling re-renders the rows
-  CHART_TABS.forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
+  ["positions", "trades"].forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
     const link = e.target.closest(".stocklink");
     if (link) showStock(link.dataset.symbol, link.dataset.buy, link.dataset.sell);
   }));
