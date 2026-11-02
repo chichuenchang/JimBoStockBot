@@ -332,7 +332,7 @@ function initIndex() {
 let candleChart, candleSeries, candleSeq = 0;
 const CHART_TABS = ["positions", "trades"];
 const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
-const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py CANDLE_WINDOW)
+const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py INTRADAY_SESSIONS)
 let focused = null;  // closed trade picked in the table: { symbol, buy, from, to }. Its badges stay solid, the rest fade
 const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.buy === buyIso;
 // stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)

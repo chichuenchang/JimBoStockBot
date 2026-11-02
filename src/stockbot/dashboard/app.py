@@ -29,7 +29,8 @@ from stockbot.models import BENCHMARK, Session
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
-CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
+INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
+LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
 
 
 def _regular_hours(bars: list, tf: str, sessions: dict[date, Session]) -> list:
@@ -156,21 +157,24 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
-        tf = tf if tf in CANDLE_WINDOW or tf in history.HISTORY_TFS else "1Min"
+        tf = tf if tf in INTRADAY_SESSIONS or tf in history.HISTORY_TFS else "1Min"
         end = datetime.now(UTC)
         long = tf in history.HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
         err, sessions = None, {}
-        start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
-                 else end - CANDLE_WINDOW["1Day" if long else tf])
-        if data is not None and start < end:  # history holds today once the close is synced
+        if data is not None:
             try:
                 if long:
-                    bars += await data.bars(symbol, "1Day", start, end)
-                else:  # calendar knows half-days
-                    fetched, cal = await asyncio.gather(data.bars(symbol, tf, start, end),
-                                                        data.calendar(et_date(start), et_date(end)))
-                    bars, sessions = fetched, {s.day: s for s in cal}
+                    start = et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars else end - LIVE_DAYS
+                    if start < end:  # history holds today once the close is synced
+                        bars += await data.bars(symbol, "1Day", start, end)
+                else:  # calendar knows weekends, holidays, half-days
+                    n = INTRADAY_SESSIONS[tf]
+                    cal = await data.calendar(et_date(end) - timedelta(days=2 * n + 7), et_date(end))
+                    opened = [s for s in cal if s.open_utc <= end][-n:]
+                    sessions = {s.day: s for s in opened}
+                    if opened:
+                        bars = await data.bars(symbol, tf, opened[0].open_utc, end)
             except DataError as e:
                 err = str(e)
         bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf, sessions)

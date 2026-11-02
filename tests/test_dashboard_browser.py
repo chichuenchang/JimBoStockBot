@@ -43,7 +43,7 @@ class FakeData:
 
 
 class Dashboard:
-    """Live server on a seeded DB. Now-relative buys pick the timeframe: windows are app.py CANDLE_WINDOW."""
+    """Live server on a seeded DB. Now-relative buys pick the timeframe: windows are app.py INTRADAY_SESSIONS."""
 
     def __init__(self, tmp_path):
         self.db = db = DB.open(tmp_path / "t.db")

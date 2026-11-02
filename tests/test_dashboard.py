@@ -269,6 +269,27 @@ def test_intraday_candles_regular_session_only(db):
                     "1Hour": [ts(day, "09:00"), ts(day, "15:00"), ts(half, "12:00")]}
 
 
+def test_minute_candles_reach_back_two_sessions_across_a_closure(db):
+    from stockbot.clock import et_at
+    from stockbot.models import Bar, Session
+    now = datetime.now(UTC)
+    today = et_date(now)
+    past = [today - timedelta(days=d) for d in (6, 5, 4)]  # none since: flat now-2d would find nothing
+    sessions = [Session(d, et_at(d, "09:30"), et_at(d, "16:00")) for d in past]
+    not_open_yet = Session(today, now + timedelta(hours=1), now + timedelta(hours=2))
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            return [Bar(symbol, et_at(d, "10:00"), 1, 1, 1, 1, 1) for d in past if start <= et_at(d, "10:00") < end]
+
+        async def calendar(self, start, end):
+            return [s for s in sessions + [not_open_yet] if start <= s.day <= end]
+
+    bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
+        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]
+    assert [b["time"] for b in bars] == [int(et_at(d, "10:00").timestamp()) for d in past[1:]]
+
+
 def test_no_secrets_in_responses(db, monkeypatch):
     monkeypatch.setenv("MOONSHOT_API_KEY", "sk-secret-value")
     c = client(db)
