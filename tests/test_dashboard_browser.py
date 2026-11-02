@@ -452,19 +452,18 @@ def test_long_trade_fits_chart_at_any_width(dash, page_at, width):
     assert_trade_framed(page, dash, ago, hold)
 
 
-def test_click_frames_trade_when_response_is_instant(dash, page_at):
-    page = arm_page(page_at, "trades")
-    page.evaluate("""async () => {
-      const real = window.fetch, done = {};
-      for (const tf of BUY_TFS) {
-        const url = `/api/candles?symbol=MSFT&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`;
-        done[url] = await real(url).then((r) => r.json());
-      }
-      window.fetch = (url, ...rest) => done[url]
-        ? Promise.resolve({ json: () => Promise.resolve(done[url]) }) : real(url, ...rest);
-    }""")
+def test_click_beats_first_candles_load(dash, page_at):
+    page = page_at(f"/arm/{ARM}#trades")
+    first = []
+    page.route("**/api/candles*", lambda r: r.continue_() if first else first.append(r))
+    page.reload()
     link(page, "trades", "MSFT").click()
+    page.wait_for_function("candleChart")
     assert_trade_framed(page, dash, timedelta(days=10))
+    first[0].continue_()
+    page.wait_for_timeout(300)
+    assert page.input_value("#tf") == "1Hour"
+    assert_trade_framed(page, dash, timedelta(days=10))  # the first load, stale, drew nothing over it
 
 
 def test_open_position_click_keeps_timeframe_and_tab(page_at):

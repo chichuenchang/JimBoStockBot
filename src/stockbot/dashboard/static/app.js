@@ -384,13 +384,11 @@ async function loadCandlesForTrade(trade) {
   }
   document.getElementById("tf").value = tf;
   drawCandles(tf, res);
-  await chartSized();
-  if (seq !== candleSeq) return;
   const buyBar = res.bars.findLastIndex((b) => b.time <= trade.from);
-  if (buyBar < 0 || focused !== trade) { fitCandles(seq); return; }  // no bar to frame, or tab switched mid-load
+  if (buyBar < 0 || focused !== trade) { fitCandles(); return; }  // no bar to frame, or tab switched mid-load
   const sellBar = res.bars.findLastIndex((b) => b.time <= trade.to);
   const middle = (buyBar + sellBar) / 2, half = Math.max(TRADE_VIEW_BARS, (sellBar - buyBar) * 0.75);
-  candleChart.timeScale().setVisibleLogicalRange({ from: middle - half, to: middle + half });
+  candleChart.timeScale().setVisibleLogicalRange({ from: middle - half, to: middle + half });  // no chartSized: a stock link only shows with the chart
 }
 // a chart just shown has no width until its next frame; a range set sooner keeps only its right edge, bars at minimum spacing
 const chartSized = () => new Promise((resolve) => {
