@@ -162,6 +162,9 @@ table.stats td:first-child, table.stats th:first-child { position: sticky; left:
 .card h2 { font-size: 14px; margin: 0 0 10px; color: var(--text-secondary); font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
 .tablewrap { overflow-x: auto; }
+.tablewrap.scrolly { max-height: 32vh; overflow-y: auto; }  /* room for the chart below: click a row, see both */
+.scrolly th { position: sticky; top: 0; background: var(--surface-1); }
+tr:has(.stocklink.on) td { background: color-mix(in srgb, var(--accent) 15%, transparent); }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
 th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
 th { color: var(--text-muted); font-weight: 500; font-size: 12px; cursor: help; }

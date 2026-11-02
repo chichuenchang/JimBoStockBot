@@ -330,20 +330,25 @@ function initIndex() {
 
 // ---------- arm page ----------
 let candleChart, candleSeries, candleSeq = 0;
-const BUY_VIEW_BARS = 40;  // bars each side of a closed trade's buy point
+const CHART_TABS = ["positions", "trades"];
+const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
 const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py CANDLE_WINDOW)
+let focused = null;  // closed trade picked in the table: { symbol, buy, from, to }. Its badges stay solid, the rest fade
+const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.buy === buyIso;
 // stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
-const stockLink = (symbol, buyIso = "") => [...document.getElementById("symbol").options].some((o) => o.value === symbol)
-  ? `<button class="stocklink" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}">${esc(symbol)}</button>` : esc(symbol);
-function showStock(symbol, buyIso) {
+const stockLink = (symbol, buyIso = "", sellIso = "") => [...document.getElementById("symbol").options].some((o) => o.value === symbol)
+  ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
+function focusTrade(trade) {
+  focused = trade;
+  document.querySelectorAll("#trades .stocklink").forEach((l) => l.classList.toggle("on", isFocused(l.dataset.symbol, l.dataset.buy)));
+  repaintBadges?.();
+}
+const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floor: as queries.chart_fills
+function showStock(symbol, buyIso, sellIso) {
   document.getElementById("symbol").value = symbol;
-  // the chart lives on the positions tab. pushState: a hash set would scroll to table#positions
-  if (document.querySelector('.tabpane[data-pane="positions"]').hidden) {
-    history.pushState(null, "", "#positions");
-    showTab("positions");
-  }
   document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
-  if (buyIso) loadCandlesAtBuy(new Date(buyIso).getTime() / 1000);
+  focusTrade(buyIso ? { symbol, buy: buyIso, from: isoSeconds(buyIso), to: isoSeconds(sellIso) } : null);
+  if (focused) loadCandlesForTrade(focused);
   else loadCandles();
 }
 function table(id, cols, rows, empty) {
@@ -359,22 +364,24 @@ async function loadCandles() {
   drawCandles(tf, res);
   candleChart.timeScale().fitContent();
 }
-// closed trade: first timeframe whose bars reach back to the buy, centered on it
-async function loadCandlesAtBuy(buyTs) {
+// closed trade: first timeframe whose bars reach back to the buy, framed so buy and sell both show
+async function loadCandlesForTrade(trade) {
   const seq = ++candleSeq;
   let tf, res;
   for (tf of BUY_TFS) {
     res = await fetchCandles(tf);
     if (seq !== candleSeq) return;  // another load started while in flight
-    if (res.bars[0]?.time <= buyTs) break;
+    if (res.bars[0]?.time <= trade.from) break;
   }
   document.getElementById("tf").value = tf;
   drawCandles(tf, res);
   await chartSized();
   if (seq !== candleSeq) return;
-  const buyBar = res.bars.findLastIndex((b) => b.time <= buyTs);
-  if (buyBar < 0) candleChart.timeScale().fitContent();
-  else candleChart.timeScale().setVisibleLogicalRange({ from: buyBar - BUY_VIEW_BARS, to: buyBar + BUY_VIEW_BARS });
+  const buyBar = res.bars.findLastIndex((b) => b.time <= trade.from);
+  if (buyBar < 0) { candleChart.timeScale().fitContent(); return; }
+  const sellBar = res.bars.findLastIndex((b) => b.time <= trade.to);
+  const middle = (buyBar + sellBar) / 2, half = Math.max(TRADE_VIEW_BARS, (sellBar - buyBar) * 0.75);
+  candleChart.timeScale().setVisibleLogicalRange({ from: middle - half, to: middle + half });
 }
 // a chart just shown has no width until its next frame; a range set sooner keeps only its right edge, bars at minimum spacing
 const chartSized = () => new Promise((resolve) => {
@@ -385,8 +392,8 @@ const chartSized = () => new Promise((resolve) => {
 });
 // trades as solid lettered badges, one per bar and side. Not setMarkers: its labels overlap, it has no letter in a shape,
 // and it draws a fill on a later bar, or on the first bar when older than the window
-let fillsAtBar = new Map();  // bar time -> { bar, fills }
-const BADGE_R = parseFloat(css("--badge-size")) / 2, BADGE_GAP = 6;  // px; gap from bar's high or low
+let fillsAtBar = new Map(), repaintBadges;  // bar time -> { bar, fills }
+const BADGE_R = parseFloat(css("--badge-size")) / 2, BADGE_GAP = 6, BADGE_FADED = 0.25;  // px; gap from bar's high or low; opacity
 const BAR_SECONDS = { "1Min": 60, "1Hour": 3600, "1Day": 86400, "1Week": 7 * 86400, "1Month": 31 * 86400 };  // week, month: upper bound
 const BADGE_FONT = `bold ${css("--badge-font")} sans-serif`, BADGE_HOLLOW = css("--surface-1");
 const BADGES = { buy: { letter: "B", color: css("--buy"), ink: css("--on-buy"), anchor: "low", dir: 1 },
@@ -414,11 +421,13 @@ function drawBadges({ context }) {
       const sideFills = fills.filter((f) => f.side === side);
       if (!sideFills.length) continue;
       const y = candleSeries.priceToCoordinate(bar[badge.anchor]) + badge.dir * (BADGE_GAP + BADGE_R);
+      context.globalAlpha = !focused || sideFills.some((f) => focused.from <= f.time && f.time <= focused.to) ? 1 : BADGE_FADED;
       drawBadge(context, x, y, badge, sideFills.every((f) => f.replayed));
     }
   }
 }
-const fillBadges = { paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(drawBadges) }) }] };
+const fillBadges = { attached: ({ requestUpdate }) => { repaintBadges = requestUpdate; },
+  paneViews: () => [{ renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(drawBadges) }) }] };
 function drawCandles(tf, res) {
   const el = document.getElementById("candles");
   if (!candleChart) {
@@ -471,7 +480,7 @@ async function loadArm(st) {
   table("positions", [["symbol", "stock", 1, (v) => stockLink(v)], ["qty", "shares", 0, (v) => fmt(v, 3)], ["entry_price", "entry", 0, (v) => fmt(v)],
     ["price", "price now", 0, (v) => fmt(v)], ["unrealized", "unrealized", 0, money], ["stop_loss", "stop", 0, (v) => fmt(v)],
     ["profit_target", "target", 0, (v) => fmt(v)], ["invalidation", "proves it wrong", "wrap"]], pos, "No open positions.");
-  table("trades", [["symbol", "stock", 1, (v, r) => stockLink(v, r.entry_ts)], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
+  table("trades", [["symbol", "stock", 1, (v, r) => stockLink(v, r.entry_ts, r.exit_ts)], ["entry_ts", "bought", 1, etTime], ["exit_ts", "sold", 1, etTime],
     ["entry_price", "in", 0, (v) => fmt(v)], ["exit_price", "out", 0, (v) => fmt(v)], ["hold_hours", "held (h)", 0, (v) => fmt(v, 1)],
     ["pnl", "P&L", 0, money], ["r_multiple", "R", 0, (v) => signed(v, 2)],
     ...(sized ? [["conviction", "conviction", 0, (v) => fmt(v)]] : []),
@@ -503,19 +512,20 @@ function showTab(name) {
   const tabs = [...document.querySelectorAll(".subtabs button")];
   if (!tabs.some((b) => b.dataset.tab === name)) name = tabs[0].dataset.tab;
   tabs.forEach((b) => { b.classList.toggle("on", b.dataset.tab === name); b.setAttribute("aria-selected", b.dataset.tab === name); });
-  document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
-  if (name === "positions" && candleChart) candleChart.timeScale().fitContent();
+  document.querySelectorAll(".tabpane").forEach((p) => { p.hidden = !p.dataset.pane.split(" ").includes(name); });
+  focusTrade(null);  // only a click on a closed trade focuses; that stays on this tab
+  if (CHART_TABS.includes(name) && candleChart) candleChart.timeScale().fitContent();
 }
 function initArm() {
   document.querySelectorAll(".subtabs button").forEach((b) => b.onclick = () => { location.hash = b.dataset.tab; });
   window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
   showTab(location.hash.slice(1));
-  document.getElementById("symbol").onchange = loadCandles;
+  document.getElementById("symbol").onchange = () => { focusTrade(null); loadCandles(); };
   document.getElementById("tf").onchange = loadCandles;
   // delegated: polling re-renders the rows
-  ["positions", "trades"].forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
+  CHART_TABS.forEach((id) => document.getElementById(id).addEventListener("click", (e) => {
     const link = e.target.closest(".stocklink");
-    if (link) showStock(link.dataset.symbol, link.dataset.buy);
+    if (link) showStock(link.dataset.symbol, link.dataset.buy, link.dataset.sell);
   }));
   loadCandles();
   return loadArm;
