@@ -8,7 +8,7 @@ from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.models import Bar, NewsItem
-from stockbot.report.analyst import build_report
+from stockbot.report.analyst import build_report, pick_headlines
 from stockbot.report.features import regime, regime_line, render_computed_table, ticker_features
 from tests.snapshot import CFG
 
@@ -165,6 +165,23 @@ async def test_report_merges_fundamentals_and_earnings_events(env):
     assert "## Fundamentals" in text and "35.2" in text
     assert "2026-10-28 ET: MSFT earnings" in text
     assert "MSFT earnings" in llm.calls[0][1]
+
+
+def test_pick_headlines_spreads_across_days():
+    """Busy Monday must not crowd out the weekend: each ET day gets a fair share."""
+    mon = datetime(2026, 11, 2, 14, 0, tzinfo=UTC)
+    monday = [NewsItem(mon - timedelta(minutes=i), f"mon{i}", ("NVDA",), "x") for i in range(50)]
+    sunday = [NewsItem(mon - timedelta(days=1, minutes=i), f"sun{i}", ("NVDA",), "x") for i in range(3)]
+    picked = pick_headlines(monday + sunday, 10)
+    assert len(picked) == 10
+    assert {n.headline for n in picked} >= {"sun0", "sun1", "sun2"}
+    assert [n.headline for n in picked][:2] == ["mon0", "mon1"]  # newest first
+    assert picked == sorted(picked, key=lambda n: n.ts, reverse=True)
+
+
+def test_pick_headlines_under_cap_keeps_all():
+    items = [NewsItem(NOW - timedelta(hours=i), f"h{i}", ("MSFT",), "x") for i in range(3)]
+    assert pick_headlines(items, 10) == items
 
 
 async def test_report_without_fundamentals_has_no_section(env):

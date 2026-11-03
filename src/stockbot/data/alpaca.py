@@ -13,6 +13,7 @@ from stockbot.models import Bar, NewsItem, Session
 DATA_URL = "https://data.alpaca.markets"
 PAPER_URL = "https://paper-api.alpaca.markets"
 RETRY_DELAYS = (1, 2, 4)
+NEWS_MAX_PAGES = 10  # 500 items; 72h over the universe measured 211 (2026-11-02)
 _sleep = asyncio.sleep
 
 
@@ -80,10 +81,18 @@ class AlpacaData:
         return {s: t["p"] for s, t in (data.get("trades") or {}).items()}
 
     async def news(self, symbols: list[str], since: datetime) -> list[NewsItem]:
-        data = await self._get(f"{DATA_URL}/v1beta1/news",
-                               {"symbols": ",".join(symbols), "start": _iso(since), "limit": 50})
-        return [NewsItem(_ts(n["created_at"]), n["headline"], tuple(n.get("symbols") or ()),
-                         n.get("source", "")) for n in data.get("news") or []]
+        """Newest first. One page holds 50 (API max); a busy Monday morning fills it alone."""
+        params = {"symbols": ",".join(symbols), "start": _iso(since), "limit": 50}
+        out: list[NewsItem] = []
+        for _ in range(NEWS_MAX_PAGES):
+            data = await self._get(f"{DATA_URL}/v1beta1/news", params)
+            out += [NewsItem(_ts(n["created_at"]), n["headline"], tuple(n.get("symbols") or ()),
+                             n.get("source", "")) for n in data.get("news") or []]
+            token = data.get("next_page_token")
+            if not token:
+                break
+            params = {**params, "page_token": token}
+        return out
 
     async def calendar(self, start: date, end: date) -> list[Session]:
         data = await self._get(f"{PAPER_URL}/v2/calendar",
