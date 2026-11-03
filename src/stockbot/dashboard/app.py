@@ -21,7 +21,7 @@ from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard import tab_order
 from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, LABELS, TIPS
-from stockbot.data.base import DataError, MarketData
+from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.models import BENCHMARK, Bar, Session
@@ -31,7 +31,6 @@ HOST = "127.0.0.1"
 LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
 INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
 LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
-HOUR = timedelta(hours=1)
 
 
 def _regular_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Bar]:
@@ -42,9 +41,11 @@ def _regular_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Ba
 def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Bar]:
     """Regular-session minutes into hours from each open; a day's last is short. Alpaca's 1Hour bars start on the clock,
     so its 09:00 bar mixes in pre-market. ts = hour's start even if its first minute did not trade: fills find their bar by ts."""
+    hour_len = TF_DURATION["1Hour"]
+
     def hour(b: Bar) -> datetime:
         start = sessions[et_date(b.ts)].open_utc
-        return start + (b.ts - start) // HOUR * HOUR
+        return start + (b.ts - start) // hour_len * hour_len
     return history.rollup([replace(b, ts=hour(b)) for b in minutes], lambda b: b.ts)
 
 

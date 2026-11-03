@@ -334,6 +334,7 @@ const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed tr
 const DAY_VIEW_BARS = 250;  // about a trading year
 const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows are short (app.py INTRADAY_SESSIONS)
 let focused = null;  // closed trade picked in the table: { symbol, from, to }. Its badges stay solid, the rest fade
+const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floor: as queries.chart_fills
 const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.from === isoSeconds(buyIso);
 // stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
 const stockLink = (symbol, buyIso = "", sellIso = "") => [...document.getElementById("symbol").options].some((o) => o.value === symbol)
@@ -343,7 +344,6 @@ function focusTrade(trade) {
   document.querySelectorAll("#trades .stocklink").forEach((l) => l.classList.toggle("on", isFocused(l.dataset.symbol, l.dataset.buy)));
   repaintBadges?.();
 }
-const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floor: as queries.chart_fills
 function showStock(symbol, buyIso, sellIso) {
   document.getElementById("symbol").value = symbol;
   document.getElementById("candles").closest(".card").scrollIntoView({ block: "nearest" });
@@ -365,7 +365,8 @@ async function loadCandles() {
   fitCandles();
 }
 // 1Day opens on the recent stretch: all of it would squeeze years of bars below a pixel each
-async function fitCandles(seq = candleSeq) {
+async function fitCandles() {
+  const seq = candleSeq;
   await chartSized();
   if (seq !== candleSeq) return;  // another load started: it fits
   const n = candleSeries.data().length;
