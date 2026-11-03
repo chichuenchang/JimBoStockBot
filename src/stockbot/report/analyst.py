@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from itertools import chain, islice, zip_longest
 
 from stockbot.clock import ET, et_date
 from stockbot.config import AppConfig
@@ -37,13 +38,8 @@ def pick_headlines(news: list[NewsItem], cap: int) -> list[NewsItem]:
     days: dict[date, list[NewsItem]] = {}
     for n in sorted(news, key=lambda n: n.ts, reverse=True):
         days.setdefault(et_date(n.ts), []).append(n)
-    picked: list[NewsItem] = []
-    queues = list(days.values())
-    while len(picked) < cap and queues:
-        for q in queues:
-            if q and len(picked) < cap:
-                picked.append(q.pop(0))
-        queues = [q for q in queues if q]
+    rounds = chain.from_iterable(zip_longest(*days.values()))
+    picked = islice((n for n in rounds if n is not None), cap)
     return sorted(picked, key=lambda n: n.ts, reverse=True)
 
 
