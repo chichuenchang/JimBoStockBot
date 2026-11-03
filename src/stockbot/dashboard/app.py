@@ -164,7 +164,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return {**d, "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
 
     @app.get("/api/candles")
-    async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
+    async def api_candles(symbol: str, arm: str | None = None, tf: str = "1Min"):
+        """Bars for the chart; with arm, that bot's fills too (overview's market chart has none)."""
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
         tf = tf if tf in INTRADAY_SESSIONS or tf in history.HISTORY_TFS else "1Min"
@@ -193,7 +194,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             bars = history.aggregate(bars, tf)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
                           "close": b.close} for b in bars],
-                "fills": q.chart_fills(db, known(arm), symbol), "error": err}
+                "fills": q.chart_fills(db, known(arm), symbol) if arm else [], "error": err}
 
     @app.get("/api/chart")
     def api_chart(symbol: str, tf: str, start: date, end: date, log: bool = False):

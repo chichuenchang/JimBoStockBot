@@ -112,6 +112,10 @@ a.tile:hover { filter: brightness(1.15); }
 .tile.sm { padding: 6px 8px; } .tile.sm .tile-head b, .tile.sm .rank { font-size: 13px; } .tile.sm .sub { display: none; }
 .tile.xs { padding: 3px 5px; } .tile.xs .tile-head b { font-size: 11px; } .tile.xs .big { font-size: 10px; } .tile.xs .spark { display: none; }
 .treemap.stocks { height: 520px; }
+.stocks .tile { cursor: pointer; } .stocks .tile:hover { filter: brightness(1.15); }
+.stocks .tile.picked { outline: 3px solid var(--accent); outline-offset: -3px; }
+#stockchart { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+#stockchart .panelhead button { margin-left: auto; }
 .crown { width: 18px; height: 18px; margin-left: auto; flex: none; }
 .tile.r1 .crown { color: var(--gold); } .tile.r2 .crown { color: var(--silver); } .tile.r3 .crown { color: var(--bronze); }
 .tile.sm .crown { width: 13px; height: 13px; }
@@ -217,6 +221,7 @@ button.stocklink:hover { text-decoration: underline; }
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 {% block head %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">

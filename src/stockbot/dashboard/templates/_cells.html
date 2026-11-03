@@ -11,6 +11,10 @@
 {%- elif k == "alpha_pct" -%}<span class="{{ sign(v) }}">{{ '%+.1f' % v }}%</span>
 {%- else -%}{{ v }}{%- endif -%}
 {%- endmacro %}
+{% macro candle_pickers(universe) -%}
+<select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
+<select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option><option>1Week</option><option>1Month</option></select>
+{%- endmacro %}
 {% macro kpi(k, r) -%}
 <div class="kpi" title="{{ tips.get(k, '') }}"><span>{{ labels.get(k, k) }}</span><b>{{ cell(k, r[k]) }}</b></div>
 {%- endmacro %}

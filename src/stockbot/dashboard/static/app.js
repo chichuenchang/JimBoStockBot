@@ -234,14 +234,28 @@ async function loadMarket() {
   if (span !== marketSessions) return;  // span clicked while in flight
   lastMarket = m;
   const box = document.getElementById("stockmap");
-  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" title="${esc(s.symbol)}: ${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
+  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" data-symbol="${esc(s.symbol)}" title="${esc(s.symbol)}:${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
       <div class="tile-head"><b>${esc(s.symbol)}</b>${i < 3 ? CROWN : ""}</div>
       <div class="big"><span class="${cls(s.change_pct)}">${tri(s.change_pct)}${fmt(Math.abs(s.change_pct))}%</span></div>
       <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
       <div class="spark">${sparkSvg(s.spark.map((v, j) => [j, v]), s.change_pct >= 0)}</div></div>`).join("")
     : `<p class="muted">${marketOpen ? "No live prices from the feed yet." : "No daily price history yet (daemon syncs it)."}</p>`;
   layoutStocks();
+  markPicked();
   drawMovers();
+}
+// stock tile click: candle chart below the map, timeframe matching the span (1D: minutes, 7D: hours, 30D: days)
+const SPAN_TF = { 1: "1Min", 5: "1Hour", 21: "1Day" };
+const pickedStock = () => (document.getElementById("stockchart").hidden ? null : document.getElementById("symbol").value);
+const markPicked = () => document.querySelectorAll("#stockmap .tile").forEach((t) => t.classList.toggle("picked", t.dataset.symbol === pickedStock()));
+function showStockChart(symbol) {
+  const pane = document.getElementById("stockchart");
+  document.getElementById("symbol").value = symbol;
+  document.getElementById("tf").value = SPAN_TF[marketSessions];
+  pane.hidden = false;
+  markPicked();
+  pane.scrollIntoView({ block: "nearest" });
+  loadCandles();
 }
 const sparkSvg = (pts, up) => {
   if (pts.length < 2) return "";
@@ -325,6 +339,14 @@ function initIndex() {
   segmented("sessions", (v) => { marketSessions = Number(v); loadMarket(); });
   new ResizeObserver(layoutTreemap).observe(document.getElementById("treemap"));
   new ResizeObserver(layoutStocks).observe(document.getElementById("stockmap"));
+  // delegated: polling re-renders the tiles
+  document.getElementById("stockmap").addEventListener("click", (e) => {
+    const symbol = e.target.closest(".tile")?.dataset.symbol;
+    if (symbol) showStockChart(symbol);
+  });
+  document.getElementById("stockclose").onclick = () => { document.getElementById("stockchart").hidden = true; markPicked(); };
+  document.getElementById("symbol").onchange = () => { markPicked(); loadCandles(); };
+  document.getElementById("tf").onchange = loadCandles;
   return loadIndex;
 }
 
@@ -356,7 +378,9 @@ function table(id, cols, rows, empty) {
     `<thead><tr>${cols.map(([k, label, l]) => `<th class="${l ? "l" : ""}" title="${esc(window.TIPS[k] || "")}">${label}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`);
 }
-const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`);
+// no ARM (overview's market chart): bars only, no fills
+const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&tf=${tf}`
+  + (window.ARM ? `&arm=${encodeURIComponent(window.ARM)}` : ""));
 async function loadCandles() {
   const seq = ++candleSeq, tf = document.getElementById("tf").value;
   const res = await fetchCandles(tf);
@@ -445,9 +469,8 @@ function drawCandles(tf, res) {
     candleSeries = candleChart.addCandlestickSeries({ upColor: css("--good"), downColor: css("--critical"),
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
     candleSeries.attachPrimitive(fillBadges);
-    const showFills = (p) => {
-      document.getElementById("fillinfo").textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · ");
-    };
+    const info = document.getElementById("fillinfo");  // bot page only
+    const showFills = (p) => { if (info) info.textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · "); };
     candleChart.subscribeCrosshairMove(showFills);
     candleChart.subscribeClick(showFills);  // a tap moves no crosshair
   }

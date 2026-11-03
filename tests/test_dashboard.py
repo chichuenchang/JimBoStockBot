@@ -241,6 +241,7 @@ def test_api_shapes(db):
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
     assert len(candles["fills"]) == 2 and candles["bars"] == []
+    assert c.get("/api/candles?symbol=MSFT").json()["fills"] == []  # overview's market chart: no bot
 
 
 def test_intraday_candles_regular_session_only(db):
