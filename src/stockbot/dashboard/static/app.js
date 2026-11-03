@@ -234,7 +234,7 @@ async function loadMarket() {
   if (span !== marketSessions) return;  // span clicked while in flight
   lastMarket = m;
   const box = document.getElementById("stockmap");
-  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" data-symbol="${esc(s.symbol)}" title="${esc(s.symbol)}:${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
+  box.innerHTML = m.length ? m.map((s, i) => `<div class="tile${i < 3 ? ` r${i + 1}` : ""}" data-symbol="${esc(s.symbol)}" title="${esc(s.symbol)}: ${signed(s.change_pct)}% · $${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of dollar volume">
       <div class="tile-head"><b>${esc(s.symbol)}</b>${i < 3 ? CROWN : ""}</div>
       <div class="big"><span class="${cls(s.change_pct)}">${tri(s.change_pct)}${fmt(Math.abs(s.change_pct))}%</span></div>
       <div class="sub">$${fmt(s.price)} · ${fmt(s.share_pct, 1)}% of volume</div>
