@@ -244,18 +244,18 @@ async function loadMarket() {
   markPicked();
   drawMovers();
 }
-// stock tile click: candle chart below the map, timeframe matching the span (1D: minutes, 7D: hours, 30D: days)
+// stock tile click: candle chart below the map; its timeframe tracks the span (1D: minutes, 7D: hours, 30D: days)
 const SPAN_TF = { 1: "1Min", 5: "1Hour", 21: "1Day" };
 const pickedStock = () => (document.getElementById("stockchart").hidden ? null : document.getElementById("symbol").value);
 const markPicked = () => document.querySelectorAll("#stockmap .tile").forEach((t) => t.classList.toggle("picked", t.dataset.symbol === pickedStock()));
+const loadSpanCandles = () => { document.getElementById("tf").value = SPAN_TF[marketSessions]; loadCandles(); };
 function showStockChart(symbol) {
   const pane = document.getElementById("stockchart");
   document.getElementById("symbol").value = symbol;
-  document.getElementById("tf").value = SPAN_TF[marketSessions];
   pane.hidden = false;
   markPicked();
   pane.scrollIntoView({ block: "nearest" });
-  loadCandles();
+  loadSpanCandles();
 }
 const sparkSvg = (pts, up) => {
   if (pts.length < 2) return "";
@@ -336,7 +336,7 @@ async function loadIndex() {
 function initIndex() {
   segmented("mode", (v) => { equityMode = v; loadIndex(); });
   segmented("gain", (v) => { gainMode = v; drawGainers(); });
-  segmented("sessions", (v) => { marketSessions = Number(v); loadMarket(); });
+  segmented("sessions", (v) => { marketSessions = Number(v); loadMarket(); if (pickedStock()) loadSpanCandles(); });
   new ResizeObserver(layoutTreemap).observe(document.getElementById("treemap"));
   new ResizeObserver(layoutStocks).observe(document.getElementById("stockmap"));
   // delegated: polling re-renders the tiles
