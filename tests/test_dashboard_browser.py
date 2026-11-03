@@ -43,7 +43,7 @@ class FakeData:
 
 
 class Dashboard:
-    """Live server on a seeded DB. Now-relative buys pick the timeframe: windows are app.py CANDLE_WINDOW."""
+    """Live server on a seeded DB. Now-relative buys pick the timeframe: windows are app.py INTRADAY_SESSIONS."""
 
     def __init__(self, tmp_path):
         self.db = db = DB.open(tmp_path / "t.db")
@@ -63,17 +63,17 @@ class Dashboard:
             port = s.getsockname()[1]
         self.url = f"http://127.0.0.1:{port}"
         app = create_app(db, CFG, Budget(db, CFG, RealClock()), FakeData())
-        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+        self.server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=1))
         self.thread = threading.Thread(target=self.server.run, daemon=True)
         self.thread.start()
         while not self.server.started:
             time.sleep(0.01)
 
-    def closed(self, symbol, ago):
-        """A closed trade bought `ago` before now, sold an hour later or now."""
+    def closed(self, symbol, ago, hold=timedelta(hours=1)):
+        """A closed trade bought `ago` before now, sold `hold` later or now."""
         buy = self.now - ago
         self.db.insert_fill(Fill(ARM, symbol, "buy", 1, 100, buy, "entry"), "why", 2.0)
-        self.db.insert_fill(Fill(ARM, symbol, "sell", 1, 110, min(buy + timedelta(hours=1), self.now), "target"))
+        self.db.insert_fill(Fill(ARM, symbol, "sell", 1, 110, min(buy + hold, self.now), "target"))
 
     def position(self, symbol, price):
         acct = self.db.load_account(ARM)
@@ -144,8 +144,6 @@ CHART_READY = "document.querySelector('#trades .stocklink') && candleChart"
 POLL_ARM = "loadStatus().then(loadArm)"
 POLL_INDEX = "loadIndex()"
 POLL_USAGE = "loadUsage()"
-RANGE = "candleChart.timeScale().getVisibleLogicalRange()"
-WIDE_80 = f"(() => {{ const r = {RANGE}; return r && Math.abs(r.to - r.from - 80) < 2; }})()"
 FILLINFO = "document.getElementById('fillinfo').textContent"
 
 
@@ -167,12 +165,15 @@ def arm_page(page_at, tab, has_touch=False):
     return page
 
 
-def assert_centered_on(page, buy, step):
-    """80 bars shown, middle bar within one bar of the buy: derived from the seed, not from app.js."""
-    page.wait_for_function(WIDE_80, timeout=5000)
-    r = page.evaluate(RANGE)
-    middle = page.evaluate(f"candleSeries.data()[{round((r['from'] + r['to']) / 2)}].time")
-    assert 0 <= buy.timestamp() - middle <= step.total_seconds()
+def assert_trade_framed(page, dash, ago, hold=timedelta(hours=1)):
+    """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from app.js."""
+    buy = dash.now - ago
+    sell = min(buy + hold, dash.now)
+    page.wait_for_function("""([buy, sell]) => {
+      const r = candleChart.timeScale().getVisibleLogicalRange(), bars = candleSeries.data();
+      const b = bars.findLastIndex((x) => x.time <= buy), s = bars.findLastIndex((x) => x.time <= sell);
+      return r && b >= 0 && r.to - r.from >= 78 && r.from < b && s < r.to && Math.abs((r.from + r.to) / 2 - (b + s) / 2) < 2;
+    }""", arg=[buy.timestamp(), sell.timestamp()], timeout=5000)
 
 
 # ---------- live tables: latest data, and whatever the user is doing in them survives ----------
@@ -309,21 +310,18 @@ def bar_point(page, when, dx=0):
 
 
 def page_at_msft_sell(dash, page_at, has_touch=False):
-    """Chart centered on MSFT's closed trade, and when that trade sold."""
+    """Chart framed on MSFT's closed trade, and when that trade sold."""
     page = arm_page(page_at, "trades", has_touch)
     link(page, "trades", "MSFT").click()
-    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
+    assert_trade_framed(page, dash, timedelta(days=10))
     return page, dash.now - timedelta(days=10) + timedelta(hours=1)
 
 
-@pytest.mark.parametrize("symbol,ago,step", [
-    ("MSFT", timedelta(days=10), timedelta(hours=1)),
-    ("AMZN", timedelta(days=100), timedelta(days=1)),
-])
-def test_buy_and_sell_badges_differ_in_color_and_side_of_their_own_bar(dash, page_at, symbol, ago, step):
+@pytest.mark.parametrize("symbol,ago", [("MSFT", timedelta(days=10)), ("AMZN", timedelta(days=100))])
+def test_buy_and_sell_badges_differ_in_color_and_side_of_their_own_bar(dash, page_at, symbol, ago):
     page = arm_page(page_at, "trades")
     link(page, "trades", symbol).click()
-    assert_centered_on(page, dash.now - ago, step)
+    assert_trade_framed(page, dash, ago)
     assert page.evaluate("css('--buy') !== css('--sell')")
     buy, sell = dash.now - ago, dash.now - ago + timedelta(hours=1)
     bought = badge_pixels(page, buy, "--buy")
@@ -379,36 +377,109 @@ def test_replayed_fill_badge_is_hollow(dash, page_at):
     page.wait_for_function(f"{FILLINFO}.includes('(replayed)')")
 
 
+def test_clicked_trade_stays_solid_and_other_trades_fade(dash, page_at):
+    earlier, later = timedelta(days=10), timedelta(days=10) - timedelta(hours=3)
+    dash.closed("MSFT", later)
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").first.click()  # newest first: the later trade
+    assert_trade_framed(page, dash, later)
+    assert badge_pixels(page, dash.now - later, "--buy")["below"] > 0
+    assert badge_pixels(page, dash.now - earlier, "--buy")["below"] == 0
+    picked_row = page.locator("#trades tr:has(.stocklink.on)")
+    assert picked_row.count() == 1
+    page.evaluate(POLL_ARM)
+    assert picked_row.count() == 1
+    page.click('button[data-tab="positions"]')  # whole chart there: no trade picked
+    page.wait_for_function("!focused")
+    assert badge_pixels(page, dash.now - earlier, "--buy")["below"] > 0
+    assert picked_row.count() == 0
+
+
+# ---------- axis ----------
+def test_intraday_axis_dates_new_days_and_times_the_rest(page_at):
+    page = arm_page(page_at, "positions")
+    page.select_option("#tf", "1Hour")
+    page.wait_for_function("candleSeries.data()[1]?.time - candleSeries.data()[0]?.time === 3600")
+    tick = "(type) => candleChart.options().timeScale.tickMarkFormatter(1700000000, LightweightCharts.TickMarkType[type])"
+    assert page.evaluate(tick, "DayOfMonth") == "Nov 14"  # 2023-11-14 17:13 ET
+    assert page.evaluate(tick, "Time") == "17:13"
+
+
+VISIBLE = "candleChart.timeScale().getVisibleLogicalRange()"
+
+
+def test_day_chart_opens_on_recent_bars_and_week_on_all(dash, page_at):
+    today = et_date(dash.now)
+    dash.db.upsert_daily([Bar("GOOGL", et_at(today - timedelta(days=i), "00:00"), 100, 101, 99, 100, 1000)
+                          for i in range(1, 3001)])  # at the chart's minimum bar spacing, fitting all shows only part
+    page = arm_page(page_at, "positions")
+    page.select_option("#symbol", "GOOGL")
+    page.select_option("#tf", "1Day")
+    page.wait_for_function("candleSeries.data().length > 2900")
+    recent = f"{VISIBLE}.from === candleSeries.data().length - 250"
+    page.wait_for_function(recent, timeout=5000)
+    page.click('button[data-tab="decisions"]')  # chart hidden, then back at full width: same view
+    page.wait_for_function("location.hash === '#decisions'")
+    page.click('button[data-tab="positions"]')
+    page.wait_for_function(recent, timeout=5000)
+    page.select_option("#tf", "1Week")
+    page.wait_for_function(f"candleSeries.data().length < 500 && {VISIBLE}.from <= 0", timeout=5000)
+
+
+def test_timeframe_change_keeps_picked_trade(page_at):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.select_option("#tf", "1Day")
+    assert page.locator("#trades tr:has(.stocklink.on)").count() == 1
+
+
+def test_symbol_change_clears_picked_trade(page_at):
+    page = arm_page(page_at, "trades")
+    link(page, "trades", "MSFT").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.select_option("#symbol", "AMZN")
+    assert page.locator("#trades tr:has(.stocklink.on)").count() == 0
+
+
 # ---------- stock links ----------
-@pytest.mark.parametrize("symbol,ago,tf,step", [
-    ("NVDA", timedelta(hours=3), "1Min", timedelta(minutes=1)),
-    ("MSFT", timedelta(days=10), "1Hour", timedelta(hours=1)),
-    ("AMZN", timedelta(days=100), "1Day", timedelta(days=1)),
+@pytest.mark.parametrize("symbol,ago,tf", [
+    ("NVDA", timedelta(hours=3), "1Min"),
+    ("MSFT", timedelta(days=10), "1Hour"),
+    ("AMZN", timedelta(days=100), "1Day"),
 ])
-def test_closed_trade_click_centers_finest_timeframe_on_buy(dash, page_at, symbol, ago, tf, step):
+def test_closed_trade_click_frames_it_in_finest_timeframe(dash, page_at, symbol, ago, tf):
     page = arm_page(page_at, "trades")
     link(page, "trades", symbol).click()
     page.wait_for_function(f"document.getElementById('tf').value === '{tf}'")
     assert page.input_value("#symbol") == symbol
-    assert page.url.endswith("#positions")
     assert page.locator("#candles").is_visible()
-    assert_centered_on(page, dash.now - ago, step)
+    assert_trade_framed(page, dash, ago)
 
 
-def test_click_centers_when_response_beats_first_frame(dash, page_at):
-    """A chart hidden since page load has no width until a frame after it shows; the response may come first."""
+@pytest.mark.parametrize("width", [1400, 400])
+def test_long_trade_fits_chart_at_any_width(dash, page_at, width):
+    ago, hold = timedelta(hours=13), timedelta(minutes=700)  # two sessions of 1Min bars at most in real life
+    dash.closed("TSLA", ago, hold)
     page = arm_page(page_at, "trades")
-    page.evaluate("""async () => {
-      const real = window.fetch, done = {};
-      for (const tf of BUY_TFS) {
-        const url = `/api/candles?symbol=MSFT&arm=${encodeURIComponent(window.ARM)}&tf=${tf}`;
-        done[url] = await real(url).then((r) => r.json());
-      }
-      window.fetch = (url, ...rest) => done[url]
-        ? Promise.resolve({ json: () => Promise.resolve(done[url]) }) : real(url, ...rest);
-    }""")
+    page.set_viewport_size({"width": width, "height": 800})
+    link(page, "trades", "TSLA").click()
+    page.wait_for_function("document.getElementById('tf').value === '1Min'")
+    assert_trade_framed(page, dash, ago, hold)
+
+
+def test_click_beats_first_candles_load(dash, page_at):
+    page = page_at(f"/arm/{ARM}#trades")
+    first = []
+    page.route("**/api/candles*", lambda r: r.continue_() if first else first.append(r))
+    page.reload()
     link(page, "trades", "MSFT").click()
-    assert_centered_on(page, dash.now - timedelta(days=10), timedelta(hours=1))
+    page.wait_for_function("candleChart")
+    assert_trade_framed(page, dash, timedelta(days=10))
+    first[0].continue_()
+    page.wait_for_timeout(300)
+    assert page.input_value("#tf") == "1Hour"
+    assert_trade_framed(page, dash, timedelta(days=10))  # the first load, stale, drew nothing over it
 
 
 def test_open_position_click_keeps_timeframe_and_tab(page_at):
@@ -435,23 +506,46 @@ def test_later_click_beats_load_in_flight(dash, page_at):
     link(page, "trades", "MSFT").click()
     while not held:
         page.wait_for_timeout(10)
-    link_buy = link(page, "trades", "AMZN").get_attribute("data-buy")
-    page.evaluate(f"showStock('AMZN', '{link_buy}')")
-    assert_centered_on(page, dash.now - timedelta(days=100), timedelta(days=1))
+    link(page, "trades", "AMZN").click()
+    assert_trade_framed(page, dash, timedelta(days=100))
     asked = []
     page.on("request", lambda r: asked.append(r.url) if "/api/candles" in r.url else None)
     held[0].continue_()
     page.wait_for_timeout(300)
     assert asked == []  # MSFT's load stopped: no further timeframe tried, nothing drawn over AMZN
     assert page.input_value("#tf") == "1Day"
-    assert_centered_on(page, dash.now - timedelta(days=100), timedelta(days=1))
+    assert_trade_framed(page, dash, timedelta(days=100))
 
 
-def test_back_returns_to_closed_trades(page_at):
+def test_closed_trade_click_stays_on_closed_trades(page_at):
     page = arm_page(page_at, "trades")
+    length = page.evaluate("history.length")
     link(page, "trades", "MSFT").click()
     page.wait_for_function("document.getElementById('tf').value === '1Hour'")
-    page.go_back()
-    page.wait_for_function("location.hash === '#trades'")
-    assert page.locator("#trades").is_visible()
+    assert page.url.endswith("#trades")
+    assert page.evaluate("history.length") == length
+    assert page.locator("#trades").is_visible() and page.locator("#candles").is_visible()
+
+
+def test_tab_switch_during_trade_load_shows_whole_chart(dash, page_at):
+    page = arm_page(page_at, "trades")
+    held = []
+    page.route("**/api/candles?symbol=MSFT*tf=1Min*", lambda r: held.append(r))
+    link(page, "trades", "MSFT").click()
+    while not held:
+        page.wait_for_timeout(10)
+    page.click('button[data-tab="positions"]')
+    page.wait_for_function("!focused")
+    held[0].continue_()
+    page.wait_for_function("document.getElementById('tf').value === '1Hour'")
+    page.wait_for_timeout(300)  # the load's own framing, if any, lands by now
+    shown = page.evaluate("(({ from, to }) => to - from)(candleChart.timeScale().getVisibleLogicalRange())")
+    assert shown >= page.evaluate("candleSeries.data().length") - 2
+
+
+def test_chart_only_on_tabs_that_link_to_it(page_at):
+    page = page_at(f"/arm/{ARM}#decisions")
     assert not page.locator("#candles").is_visible()
+    page.click('button[data-tab="trades"]')
+    page.wait_for_function("location.hash === '#trades'")
+    assert page.locator("#candles").is_visible()

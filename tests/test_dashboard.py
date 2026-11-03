@@ -247,13 +247,11 @@ def test_intraday_candles_regular_session_only(db):
     from stockbot.clock import et_at
     from stockbot.models import Bar, Session
     day, half = et_date(T0), et_date(T0) + timedelta(days=1)  # half: early 13:00 close
-    times = {"1Min": [(day, hm) for hm in ("08:00", "09:29", "09:30", "15:59", "16:00", "17:00")]
-             + [(half, "12:59"), (half, "13:00")],
-             "1Hour": [(day, hm) for hm in ("08:00", "09:00", "15:00", "16:00")] + [(half, "12:00"), (half, "13:00")]}
+    times = [(day, hm) for hm in ("08:00", "09:29", "09:30", "15:59", "16:00", "17:00")] + [(half, "12:59"), (half, "13:00")]
 
     class Live:
         async def bars(self, symbol, tf, start, end):
-            return [Bar(symbol, et_at(d, hm), 1, 1, 1, 1, 1) for d, hm in times[tf]]
+            return [Bar(symbol, et_at(d, hm), 1, 1, 1, 1, 1) for d, hm in times]
 
         async def calendar(self, start, end):
             return [Session(day, et_at(day, "09:30"), et_at(day, "16:00")),
@@ -263,10 +261,56 @@ def test_intraday_candles_regular_session_only(db):
         return int(et_at(d, hm).timestamp())
 
     c = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live()))
-    kept = {tf: [b["time"] for b in c.get(f"/api/candles?symbol=MSFT&arm=kimi-improved&tf={tf}").json()["bars"]]
-            for tf in times}
-    assert kept == {"1Min": [ts(day, "09:30"), ts(day, "15:59"), ts(half, "12:59")],
-                    "1Hour": [ts(day, "09:00"), ts(day, "15:00"), ts(half, "12:00")]}
+    kept = [b["time"] for b in c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]]
+    assert kept == [ts(day, "09:30"), ts(day, "15:59"), ts(half, "12:59")]
+
+
+def test_hour_candles_count_from_the_open_without_pre_market(db):
+    from stockbot.clock import et_at
+    from stockbot.models import Bar, Session
+    day, half = et_date(T0), et_date(T0) + timedelta(days=1)  # half: early 13:00 close
+    minutes = [(day, "09:29", 500, 500, 500, 500), (day, "09:31", 10, 11, 9, 10), (day, "10:29", 10, 12, 10, 11),
+               (day, "10:31", 11, 13, 11, 12), (day, "15:59", 12, 12, 12, 12), (day, "16:00", 600, 600, 600, 600),
+               (half, "12:59", 20, 20, 20, 20), (half, "13:00", 700, 700, 700, 700)]
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            if tf == "1Hour":  # Alpaca's: on the clock, 09:00 holding pre-market
+                return [Bar(symbol, et_at(day, "09:00"), 500, 500, 9, 10, 1)]
+            return [Bar(symbol, et_at(d, hm), o, h, l, c, 1) for d, hm, o, h, l, c in minutes]
+
+        async def calendar(self, start, end):
+            return [Session(day, et_at(day, "09:30"), et_at(day, "16:00")),
+                    Session(half, et_at(half, "09:30"), et_at(half, "13:00"))]
+
+    bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
+        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Hour").json()["bars"]
+    assert [(b["time"], b["open"], b["high"], b["low"], b["close"]) for b in bars] == [
+        (int(et_at(day, "09:30").timestamp()), 10, 12, 9, 11),
+        (int(et_at(day, "10:30").timestamp()), 11, 13, 11, 12),
+        (int(et_at(day, "15:30").timestamp()), 12, 12, 12, 12),
+        (int(et_at(half, "12:30").timestamp()), 20, 20, 20, 20)]
+
+
+def test_minute_candles_reach_back_two_sessions_across_a_closure(db):
+    from stockbot.clock import et_at
+    from stockbot.models import Bar, Session
+    now = datetime.now(UTC)
+    today = et_date(now)
+    past = [today - timedelta(days=d) for d in (6, 5, 4)]  # none since: flat now-2d would find nothing
+    sessions = [Session(d, et_at(d, "09:30"), et_at(d, "16:00")) for d in past]
+    not_open_yet = Session(today, now + timedelta(hours=1), now + timedelta(hours=2))
+
+    class Live:
+        async def bars(self, symbol, tf, start, end):
+            return [Bar(symbol, et_at(d, "10:00"), 1, 1, 1, 1, 1) for d in past if start <= et_at(d, "10:00") < end]
+
+        async def calendar(self, start, end):
+            return [s for s in sessions + [not_open_yet] if start <= s.day <= end]
+
+    bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
+        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]
+    assert [b["time"] for b in bars] == [int(et_at(d, "10:00").timestamp()) for d in past[1:]]
 
 
 def test_no_secrets_in_responses(db, monkeypatch):

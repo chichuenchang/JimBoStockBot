@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -24,18 +24,29 @@ from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, LABELS, TIPS
 from stockbot.data.base import TF_DURATION, DataError, MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
-from stockbot.models import BENCHMARK, Session
+from stockbot.models import BENCHMARK, Bar, Session
 
 HERE = Path(__file__).parent
 HOST = "127.0.0.1"
 LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
-CANDLE_WINDOW = {"1Min": timedelta(days=2), "1Hour": timedelta(days=20), "1Day": timedelta(days=200)}
+INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
+LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
 
 
-def _regular_hours(bars: list, tf: str, sessions: dict[date, Session]) -> list:
-    """Drop pre/post-market bars (the feed returns them); an hour bar stays if it overlaps the session."""
-    return [b for b in bars if (s := sessions.get(et_date(b.ts)))
-            and s.open_utc < b.ts + TF_DURATION[tf] and b.ts < s.close_utc]
+def _regular_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Bar]:
+    """Drop pre/post-market bars (the feed returns them)."""
+    return [b for b in minutes if (s := sessions.get(et_date(b.ts))) and s.open_utc <= b.ts < s.close_utc]
+
+
+def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Bar]:
+    """Regular-session minutes into hours from each open; a day's last is short. Alpaca's 1Hour bars start on the clock,
+    so its 09:00 bar mixes in pre-market. ts = hour's start even if its first minute did not trade: fills find their bar by ts."""
+    hour_len = TF_DURATION["1Hour"]
+
+    def hour(b: Bar) -> datetime:
+        start = sessions[et_date(b.ts)].open_utc
+        return start + (b.ts - start) // hour_len * hour_len
+    return history.rollup([replace(b, ts=hour(b)) for b in minutes], lambda b: b.ts)
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
@@ -156,24 +167,30 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     async def api_candles(symbol: str, arm: str, tf: str = "1Min"):
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
-        tf = tf if tf in CANDLE_WINDOW or tf in history.HISTORY_TFS else "1Min"
+        tf = tf if tf in INTRADAY_SESSIONS or tf in history.HISTORY_TFS else "1Min"
         end = datetime.now(UTC)
         long = tf in history.HISTORY_TFS
         bars = db.daily_bars(symbol, cfg.settings.history_start, et_date(end) + timedelta(days=1)) if long else []
         err, sessions = None, {}
-        start = (et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars
-                 else end - CANDLE_WINDOW["1Day" if long else tf])
-        if data is not None and start < end:  # history holds today once the close is synced
+        if data is not None:
             try:
                 if long:
-                    bars += await data.bars(symbol, "1Day", start, end)
-                else:  # calendar knows half-days
-                    fetched, cal = await asyncio.gather(data.bars(symbol, tf, start, end),
-                                                        data.calendar(et_date(start), et_date(end)))
-                    bars, sessions = fetched, {s.day: s for s in cal}
+                    start = et_at(et_date(bars[-1].ts) + timedelta(days=1), "00:00") if bars else end - LIVE_DAYS
+                    if start < end:  # history holds today once the close is synced
+                        bars += await data.bars(symbol, "1Day", start, end)
+                else:  # calendar knows weekends, holidays, half-days
+                    n = INTRADAY_SESSIONS[tf]
+                    cal = await data.calendar(et_date(end) - timedelta(days=2 * n + 7), et_date(end))
+                    opened = [s for s in cal if s.open_utc <= end][-n:]
+                    sessions = {s.day: s for s in opened}
+                    if opened:
+                        bars = _regular_hours(await data.bars(symbol, "1Min", opened[0].open_utc, end), sessions)
+                        if tf == "1Hour":
+                            bars = _session_hours(bars, sessions)
             except DataError as e:
                 err = str(e)
-        bars = history.aggregate(bars, tf) if long else _regular_hours(bars, tf, sessions)
+        if long:
+            bars = history.aggregate(bars, tf)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
                           "close": b.close} for b in bars],
                 "fills": q.chart_fills(db, known(arm), symbol), "error": err}

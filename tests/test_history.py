@@ -26,13 +26,19 @@ def days(sym, start: date, closes):
 
 
 class FakeSource:
-    def __init__(self, bars):
+    def __init__(self, bars, minutes=()):
         self.bars = bars
+        self.minutes = minutes
         self.calls = []
+        self.minute_calls = []
 
     async def daily_history(self, symbol, start, end):
         self.calls.append((symbol, start, end))
         return [b for b in self.bars if b.symbol == symbol and start <= b.ts < end]
+
+    async def minute_history(self, symbol, start, end):
+        self.minute_calls.append((symbol, start, end))
+        return [b for b in self.minutes if b.symbol == symbol and start <= b.ts < end]
 
 
 def test_daily_roundtrip_and_reopen(tmp_path):
@@ -80,6 +86,82 @@ async def test_sync_split_refetches(tmp_path):
     await history.sync(db, split, ["NVDA"], date(2016, 1, 1), end)
     assert split.calls[-1][1] == datetime(2016, 1, 1, tzinfo=ET).astimezone(UTC)
     assert [b.close for b in db.daily_bars("NVDA", date(2016, 1, 1), date(2016, 2, 1))] == [25, 50, 60]
+
+
+WICK_DAY = date(2024, 6, 10)
+SYNC_END = datetime(2024, 7, 1, tzinfo=UTC)
+
+
+def minutes_ranging(low, high):
+    """One day's minutes, 10:00 ET on, reaching exactly low and high."""
+    t = datetime(2024, 6, 10, 10, tzinfo=ET).astimezone(UTC)
+    return [Bar("NVDA", t, high, high, low, low, 1), Bar("NVDA", t + timedelta(minutes=1), low, high, low, high, 1)]
+
+
+async def synced_range(tmp_path, day, minutes):
+    db = DB.open(tmp_path / "h.db")
+    await history.sync(db, FakeSource([day], minutes), ["NVDA"], date(2016, 1, 1), SYNC_END)
+    [b] = db.daily_bars("NVDA", WICK_DAY, WICK_DAY + timedelta(days=1))
+    return b.low, b.high
+
+
+async def test_sync_trims_wick_the_minutes_never_reached(tmp_path):
+    day = day_bar("NVDA", WICK_DAY, 120.37, 195.95, 117.01, 121.79)  # what Alpaca really returned
+    assert await synced_range(tmp_path, day, minutes_ranging(117.01, 123.1)) == (117.01, 123.1)
+
+
+async def test_sync_keeps_wick_the_minutes_confirm(tmp_path):
+    day = day_bar("NVDA", WICK_DAY, 100, 150, 99, 101)
+    assert await synced_range(tmp_path, day, minutes_ranging(99, 150)) == (99, 150)
+
+
+async def test_sync_trim_never_widens_to_extended_hours(tmp_path):
+    day = day_bar("NVDA", WICK_DAY, 370, 380, 322, 372)  # minutes run past the day high: pre-market
+    assert await synced_range(tmp_path, day, minutes_ranging(364, 382)) == (364, 380)
+
+
+async def test_sync_trim_keeps_open_and_close_inside_range(tmp_path):
+    day = day_bar("NVDA", WICK_DAY, 100, 150, 99, 110)  # official close above every minute's high
+    assert await synced_range(tmp_path, day, minutes_ranging(99, 105)) == (99, 110)
+
+
+async def test_sync_keeps_wick_without_minutes(tmp_path):
+    day = day_bar("NVDA", WICK_DAY, 100, 150, 99, 101)
+    assert await synced_range(tmp_path, day, []) == (99, 150)
+
+
+async def test_sync_asks_minutes_only_for_big_wicks_and_never_past_end(tmp_path):
+    db = DB.open(tmp_path / "h.db")
+    calm, wick = day_bar("NVDA", date(2024, 6, 7), 100, 105, 95, 101), day_bar("NVDA", WICK_DAY, 100, 150, 99, 101)
+    src = FakeSource([calm, wick])
+    end = wick.ts + timedelta(hours=16, minutes=20)  # today, just after the close: free SIP refuses the last 15 min
+    await history.sync(db, src, ["NVDA"], date(2016, 1, 1), end)
+    assert src.minute_calls == [("NVDA", wick.ts, end)]
+
+
+async def test_sync_repairs_stored_wicks_once(tmp_path):
+    db = DB.open(tmp_path / "h.db")
+    day = day_bar("NVDA", date(2024, 6, 7), 100, 150, 99, 101)
+    db.upsert_daily([day, day_bar("NVDA", WICK_DAY, 101, 102, 100, 101)])  # stored before trimming; sync resumes from the last
+    src = FakeSource([], [Bar("NVDA", day.ts + timedelta(hours=10), 100, 110, 99, 101, 1)])
+    await history.sync(db, src, ["NVDA"], date(2016, 1, 1), SYNC_END)
+    assert db.daily_bars("NVDA", day.ts.date(), WICK_DAY)[0].high == 110
+    src.minute_calls.clear()
+    db.upsert_daily([day])  # bad again: only a second repair would touch it
+    await history.sync(db, src, ["NVDA"], date(2016, 1, 1), SYNC_END)
+    assert src.minute_calls == []
+
+
+@respx.mock
+async def test_alpaca_minute_history_sip():
+    route = respx.get("https://data.alpaca.markets/v2/stocks/NVDA/bars").mock(return_value=httpx.Response(
+        200, json={"bars": [{"t": "2024-06-10T14:00:00Z", "o": 1, "h": 2, "l": 0.5, "c": 1.5, "v": 9}],
+                   "next_page_token": None}))
+    bars = await AlpacaData("k", "s").minute_history("NVDA", datetime(2024, 6, 10, tzinfo=UTC),
+                                                     datetime(2024, 6, 11, tzinfo=UTC))
+    assert [b.high for b in bars] == [2]
+    p = route.calls[0].request.url.params
+    assert p["feed"] == "sip" and p["timeframe"] == "1Min" and p["adjustment"] == "split"
 
 
 @respx.mock
