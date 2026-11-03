@@ -78,6 +78,30 @@ async def test_news():
     assert n.headline == "MSFT up" and n.symbols == ("MSFT",)
 
 
+def news_json(headline):
+    return {"created_at": "2026-10-21T12:00:00Z", "headline": headline, "symbols": ["MSFT"]}
+
+
+@respx.mock
+async def test_news_paginates():
+    route = respx.get(f"{DATA}/v1beta1/news").mock(side_effect=[
+        httpx.Response(200, json={"news": [news_json("new")], "next_page_token": "p2"}),
+        httpx.Response(200, json={"news": [news_json("old")], "next_page_token": None}),
+    ])
+    assert [n.headline for n in await AlpacaData("k", "s").news(["MSFT"], T0)] == ["new", "old"]
+    assert route.calls[1].request.url.params["page_token"] == "p2"
+
+
+@respx.mock
+async def test_news_page_cap(monkeypatch, caplog):
+    monkeypatch.setattr(alpaca_mod, "NEWS_MAX_PAGES", 2)
+    route = respx.get(f"{DATA}/v1beta1/news").mock(return_value=httpx.Response(
+        200, json={"news": [news_json("x")], "next_page_token": "again"}))
+    assert len(await AlpacaData("k", "s").news(["MSFT"], T0)) == 2
+    assert route.call_count == 2
+    assert "stopped at 2 pages, more remain" in caplog.text
+
+
 @respx.mock
 async def test_calendar_converts_et():
     respx.get(f"{PAPER}/v2/calendar").mock(return_value=httpx.Response(

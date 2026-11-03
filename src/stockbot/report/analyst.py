@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from itertools import chain, islice, zip_longest
 
 from stockbot.clock import ET, et_date
 from stockbot.config import AppConfig
@@ -11,6 +12,7 @@ from stockbot.data.fundamentals import FundamentalsSource, cached_snapshot, with
 from stockbot.db import DB
 from stockbot.llm.base import LLMClient, LLMError
 from stockbot.llm.budget import Budget
+from stockbot.models import NewsItem
 from stockbot.report.features import FUNDAMENTAL_COLUMNS, regime_line, render_computed_table, ticker_features
 
 ANALYST_SYSTEM = """You are a markets analyst writing a briefing for swing traders of US stocks.
@@ -26,7 +28,19 @@ Long-only accounts: frame bearish views as reasons to avoid or exit, not to shor
 
 HISTORY = {"1Hour": timedelta(days=15), "4Hour": timedelta(days=45), "1Day": timedelta(days=80)}  # 80d: >= 50 sessions for sma50
 NEWS_WINDOW = timedelta(hours=72)
+MAX_HEADLINES = 60
 EVENT_WINDOW_DAYS = 10
+
+
+def pick_headlines(news: list[NewsItem], cap: int) -> list[NewsItem]:
+    """Round-robin over ET days, newest first within each, so one busy morning cannot
+    crowd a weekend out. Result newest first."""
+    days: dict[date, list[NewsItem]] = {}
+    for n in sorted(news, key=lambda n: n.ts, reverse=True):
+        days.setdefault(et_date(n.ts), []).append(n)
+    rounds = chain.from_iterable(zip_longest(*days.values()))
+    picked = islice((n for n in rounds if n is not None), cap)
+    return sorted(picked, key=lambda n: n.ts, reverse=True)
 
 
 def _events(cfg: AppConfig, features: dict[str, dict], now: datetime) -> list[str]:
@@ -50,7 +64,7 @@ async def build_report(data: MarketData, llm: LLMClient | None, budget: Budget, 
             features[s].update(row)
     news = await data.news(universe, now - NEWS_WINDOW)
     headlines = [f"{n.ts.astimezone(ET):%m-%d %H:%M} [{', '.join(n.symbols)}] {n.headline}"
-                 for n in sorted(news, key=lambda n: n.ts, reverse=True)[:40]]
+                 for n in pick_headlines(news, MAX_HEADLINES)]
     events = _events(cfg, features, now)
     table = render_computed_table(features)
 
