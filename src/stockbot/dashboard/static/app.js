@@ -247,7 +247,10 @@ async function loadMarket() {
 // stock tile click: candle chart below the map; its timeframe tracks the span (1D: minutes, 7D: hours, 30D: days)
 const SPAN_TF = { 1: "1Min", 5: "1Hour", 21: "1Day" };
 const pickedStock = () => (document.getElementById("stockchart").hidden ? null : document.getElementById("symbol").value);
-const markPicked = () => document.querySelectorAll("#stockmap .tile").forEach((t) => t.classList.toggle("picked", t.dataset.symbol === pickedStock()));
+const markPicked = () => {
+  const picked = pickedStock();
+  document.querySelectorAll("#stockmap .tile").forEach((t) => t.classList.toggle("picked", t.dataset.symbol === picked));
+};
 const loadSpanCandles = () => { document.getElementById("tf").value = SPAN_TF[marketSessions]; loadCandles(); };
 function showStockChart(symbol) {
   const pane = document.getElementById("stockchart");
@@ -470,9 +473,11 @@ function drawCandles(tf, res) {
       wickUpColor: css("--good"), wickDownColor: css("--critical"), borderVisible: false });
     candleSeries.attachPrimitive(fillBadges);
     const info = document.getElementById("fillinfo");  // bot page only
-    const showFills = (p) => { if (info) info.textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · "); };
-    candleChart.subscribeCrosshairMove(showFills);
-    candleChart.subscribeClick(showFills);  // a tap moves no crosshair
+    if (info) {
+      const showFills = (p) => { info.textContent = (fillsAtBar.get(p.time)?.fills || []).map(fillText).join(" · "); };
+      candleChart.subscribeCrosshairMove(showFills);
+      candleChart.subscribeClick(showFills);  // a tap moves no crosshair
+    }
   }
   // day+ bars sit at ET midnight: show dates, not 00:00
   const long = ["1Day", "1Week", "1Month"].includes(tf);

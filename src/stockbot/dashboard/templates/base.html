@@ -223,7 +223,6 @@ button.stocklink:hover { text-decoration: underline; }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
-{% block head %}{% endblock %}
 </head>
 <body data-page="{% block page %}{% endblock %}">
 {% set active = arm if arm is defined else tab if tab is defined else "" %}

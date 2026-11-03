@@ -267,10 +267,14 @@ def test_heatmap_grows_a_column_for_a_new_stock(dash, page_at):
     assert page.locator("#heatmap th", has_text="QQQ").count() == 1
 
 
-def test_stock_tile_click_opens_its_chart_and_survives_poll(dash, page_at):
+def _rising_daily(dash, *symbols):
     today = et_date(dash.now)
     dash.db.upsert_daily([Bar(s, et_at(today - timedelta(days=i), "00:00"), 100, 101, 99, 100 + i, 1000)
-                          for s in ("MSFT", "NVDA") for i in range(1, 30)])
+                          for s in symbols for i in range(1, 30)])
+
+
+def test_stock_tile_click_opens_its_chart_and_survives_poll(dash, page_at):
+    _rising_daily(dash, "MSFT", "NVDA")
     page = page_at("/")
     tile = page.locator('#stockmap .tile[data-symbol="NVDA"]')
     assert not page.locator("#candles").is_visible()
@@ -289,9 +293,7 @@ def test_stock_tile_click_opens_its_chart_and_survives_poll(dash, page_at):
 
 
 def test_open_stock_chart_timeframe_follows_span(dash, page_at):
-    today = et_date(dash.now)
-    dash.db.upsert_daily([Bar("NVDA", et_at(today - timedelta(days=i), "00:00"), 100, 101, 99, 100 + i, 1000)
-                          for i in range(1, 30)])
+    _rising_daily(dash, "NVDA")
     page = page_at("/")
     page.click('button[data-sessions="21"]')
     page.locator('#stockmap .tile[data-symbol="NVDA"]').click()
