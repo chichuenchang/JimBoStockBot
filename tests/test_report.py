@@ -168,7 +168,6 @@ async def test_report_merges_fundamentals_and_earnings_events(env):
 
 
 def test_pick_headlines_spreads_across_days():
-    """Busy Monday must not crowd out the weekend: each ET day gets a fair share."""
     mon = datetime(2026, 11, 2, 14, 0, tzinfo=UTC)
     monday = [NewsItem(mon - timedelta(minutes=i), f"mon{i}", ("NVDA",), "x") for i in range(50)]
     sunday = [NewsItem(mon - timedelta(days=1, minutes=i), f"sun{i}", ("NVDA",), "x") for i in range(3)]

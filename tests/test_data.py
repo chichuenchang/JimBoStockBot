@@ -84,7 +84,6 @@ def news_json(headline):
 
 @respx.mock
 async def test_news_paginates():
-    """One page is 50 newest items: a busy Monday morning alone fills it, hiding the weekend."""
     route = respx.get(f"{DATA}/v1beta1/news").mock(side_effect=[
         httpx.Response(200, json={"news": [news_json("new")], "next_page_token": "p2"}),
         httpx.Response(200, json={"news": [news_json("old")], "next_page_token": None}),
