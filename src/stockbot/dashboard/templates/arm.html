@@ -1,8 +1,7 @@
 {% extends "base.html" %}
-{% from "_cells.html" import kpi with context %}
+{% from "_cells.html" import kpi, candle_pickers with context %}
 {% block title %}{{ arm | arm_label }} · JBSB{% endblock %}
 {% block page %}arm{% endblock %}
-{% block head %}<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>{% endblock %}
 {% block body %}
 <script>window.ARM = {{ arm | tojson }};</script>
 <section class="card">
@@ -30,10 +29,8 @@
   <section class="card"><h2>Closed trades <span class="muted">click a stock to see that trade on the chart</span></h2><div class="tablewrap scrolly"><table id="trades"></table></div></section>
 </div>
 <section class="card tabpane" data-pane="positions trades">
-  <h2>Price chart with this bot's trades
-    <select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
-    <select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option><option>1Week</option><option>1Month</option></select></h2>
-  <div id="candles" style="height:360px"></div>
+  <h2>Price chart with this bot's trades {{ candle_pickers(universe) }}</h2>
+  <div id="candles"></div>
   <div class="fillkey small muted"><span class="fillbadge buy">B</span> buy <span class="fillbadge sell">S</span> sell <span class="hint">hollow = replayed; faded = other trades; hover or tap a bar for prices</span> <b id="fillinfo"></b></div>
   <p class="muted" id="candlenote"></p>
 </section>

@@ -267,6 +267,44 @@ def test_heatmap_grows_a_column_for_a_new_stock(dash, page_at):
     assert page.locator("#heatmap th", has_text="QQQ").count() == 1
 
 
+def _rising_daily(dash, *symbols):
+    today = et_date(dash.now)
+    dash.db.upsert_daily([Bar(s, et_at(today - timedelta(days=i), "00:00"), 100, 101, 99, 100 + i, 1000)
+                          for s in symbols for i in range(1, 30)])
+
+
+def test_stock_tile_click_opens_its_chart_and_survives_poll(dash, page_at):
+    _rising_daily(dash, "MSFT", "NVDA")
+    page = page_at("/")
+    tile = page.locator('#stockmap .tile[data-symbol="NVDA"]')
+    assert not page.locator("#candles").is_visible()
+    page.click('button[data-sessions="21"]')
+    tile.click()
+    page.wait_for_function("candleSeries?.data().length > 20")
+    assert page.input_value("#symbol") == "NVDA" and page.input_value("#tf") == "1Day"
+    assert page.locator("#candles").is_visible()
+    page.evaluate(POLL_INDEX)
+    assert "picked" in tile.get_attribute("class")
+    page.select_option("#symbol", "MSFT")
+    assert "picked" not in tile.get_attribute("class")
+    page.click("#stockclose")
+    assert not page.locator("#candles").is_visible()
+    assert page.locator("#stockmap .tile.picked").count() == 0
+
+
+def test_open_stock_chart_timeframe_follows_span(dash, page_at):
+    _rising_daily(dash, "NVDA")
+    page = page_at("/")
+    page.click('button[data-sessions="21"]')
+    page.locator('#stockmap .tile[data-symbol="NVDA"]').click()
+    for span, tf in (("5", "1Hour"), ("1", "1Min"), ("21", "1Day")):
+        page.click(f'button[data-sessions="{span}"]')
+        assert page.input_value("#tf") == tf
+    page.click("#stockclose")
+    page.click('button[data-sessions="1"]')
+    assert page.input_value("#tf") == "1Day"  # closed chart: span leaves it alone
+
+
 def test_usage_table_shows_new_calls(dash, page_at):
     page = page_at("/usage")
     page.wait_for_function("document.querySelector('#usage tbody')")

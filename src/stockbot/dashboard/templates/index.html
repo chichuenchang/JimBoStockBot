@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_cells.html" import cell with context %}
+{% from "_cells.html" import cell, candle_pickers with context %}
 {% block page %}index{% endblock %}
 {% block body %}
 <h1 class="pagetitle">Bot Arena <span class="muted">paper money · click a bot for its trades</span></h1>
@@ -31,11 +31,16 @@
   </section>
 </div>
 
-<h2 class="section">Market <span class="muted">the {{ universe | length }} stocks the bots trade · tile size = share of dollar volume · color = price change</span></h2>
+<h2 class="section">Market <span class="muted">the {{ universe | length }} stocks the bots trade · tile size = share of dollar volume · color = price change · click a stock for its price chart</span></h2>
 <section class="panel">
   <div class="panelhead"><b class="accent">● Stocks</b><span class="muted small">daily closes; live price while the market is open</span>
     <span class="seg"><button data-sessions="1" class="on">1D</button><button data-sessions="5">7D</button><button data-sessions="21">30D</button></span></div>
   <div class="treemap stocks" id="stockmap"></div>
+  <div id="stockchart" hidden>
+    <div class="panelhead"><b>Price chart</b>{{ candle_pickers(universe) }}<button id="stockclose" title="Hide the chart">Close</button></div>
+    <div id="candles"></div>
+    <p class="muted" id="candlenote"></p>
+  </div>
 </section>
 
 <h2 class="section">Full leaderboard <span class="muted">bots only · best first · hover a column name for what it means</span></h2>
