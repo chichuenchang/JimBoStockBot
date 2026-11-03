@@ -94,12 +94,13 @@ async def test_news_paginates():
 
 
 @respx.mock
-async def test_news_page_cap(monkeypatch):
+async def test_news_page_cap(monkeypatch, caplog):
     monkeypatch.setattr(alpaca_mod, "NEWS_MAX_PAGES", 2)
     route = respx.get(f"{DATA}/v1beta1/news").mock(return_value=httpx.Response(
         200, json={"news": [news_json("x")], "next_page_token": "again"}))
     assert len(await AlpacaData("k", "s").news(["MSFT"], T0)) == 2
     assert route.call_count == 2
+    assert "stopped at 2 pages, more remain" in caplog.text
 
 
 @respx.mock

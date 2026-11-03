@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, date, datetime
 
 import httpx
@@ -15,6 +16,7 @@ PAPER_URL = "https://paper-api.alpaca.markets"
 RETRY_DELAYS = (1, 2, 4)
 NEWS_MAX_PAGES = 10  # 500 items; 72h over the universe measured 211 (2026-11-02)
 _sleep = asyncio.sleep
+log = logging.getLogger("stockbot")
 
 
 def _ts(s: str) -> datetime:
@@ -49,6 +51,22 @@ class AlpacaData:
                 await _sleep(RETRY_DELAYS[attempt])
         raise DataError(f"{url}: {last} after {len(RETRY_DELAYS) + 1} attempts")
 
+    async def _paged(self, url: str, params: dict, key: str, max_pages: int | None = None) -> list[dict]:
+        """Items under `key` across `next_page_token` pages; warns when `max_pages` cuts it short."""
+        out: list[dict] = []
+        pages = 0
+        while True:
+            data = await self._get(url, params)
+            out += data.get(key) or []
+            pages += 1
+            token = data.get("next_page_token")
+            if not token:
+                return out
+            if pages == max_pages:
+                log.warning("%s: stopped at %d pages, more remain", url, pages)
+                return out
+            params = {**params, "page_token": token}
+
     async def bars(self, symbol: str, timeframe: Timeframe, start: datetime,
                    end: datetime) -> list[Bar]:
         return await self._bars(symbol, timeframe, start, end, "iex")
@@ -64,16 +82,9 @@ class AlpacaData:
                     feed: str) -> list[Bar]:
         params = {"timeframe": timeframe, "start": _iso(start), "end": _iso(end), "feed": feed,
                   "adjustment": "split", "limit": 10000}
-        out: list[Bar] = []
-        while True:
-            data = await self._get(f"{DATA_URL}/v2/stocks/{symbol}/bars", params)
-            bars = (Bar(symbol, _ts(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"])
-                    for b in data.get("bars") or [])
-            out += [b for b in bars if b.ts < end]  # Alpaca can return a bar at end; contract is [start, end)
-            token = data.get("next_page_token")
-            if not token:
-                return out
-            params = {**params, "page_token": token}
+        bars = (Bar(symbol, _ts(b["t"]), b["o"], b["h"], b["l"], b["c"], b["v"])
+                for b in await self._paged(f"{DATA_URL}/v2/stocks/{symbol}/bars", params, "bars"))
+        return [b for b in bars if b.ts < end]  # Alpaca can return a bar at end; contract is [start, end)
 
     async def latest_prices(self, symbols: list[str]) -> dict[str, float]:
         data = await self._get(f"{DATA_URL}/v2/stocks/trades/latest",
@@ -81,18 +92,11 @@ class AlpacaData:
         return {s: t["p"] for s, t in (data.get("trades") or {}).items()}
 
     async def news(self, symbols: list[str], since: datetime) -> list[NewsItem]:
-        """Newest first. One page holds 50 (API max); a busy Monday morning fills it alone."""
+        """Newest first, so a page cap drops the oldest. 50 per page is the API max."""
         params = {"symbols": ",".join(symbols), "start": _iso(since), "limit": 50}
-        out: list[NewsItem] = []
-        for _ in range(NEWS_MAX_PAGES):
-            data = await self._get(f"{DATA_URL}/v1beta1/news", params)
-            out += [NewsItem(_ts(n["created_at"]), n["headline"], tuple(n.get("symbols") or ()),
-                             n.get("source", "")) for n in data.get("news") or []]
-            token = data.get("next_page_token")
-            if not token:
-                break
-            params = {**params, "page_token": token}
-        return out
+        items = await self._paged(f"{DATA_URL}/v1beta1/news", params, "news", NEWS_MAX_PAGES)
+        return [NewsItem(_ts(n["created_at"]), n["headline"], tuple(n.get("symbols") or ()),
+                         n.get("source", "")) for n in items]
 
     async def calendar(self, start: date, end: date) -> list[Session]:
         data = await self._get(f"{PAPER_URL}/v2/calendar",
