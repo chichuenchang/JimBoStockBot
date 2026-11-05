@@ -1,5 +1,6 @@
 universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR,  # Alpha Arena list (QQQ for NDX)
-           SPY, DIA,  # S&P 500, Dow Jones
+           SPY, DIA, IWM, GLD,  # S&P 500, Dow Jones, Russell 2000, gold
+           SPCX,  # SpaceX, IPO 2026-06-12
            AAPL, META, AVGO, NFLX, JPM, V, WMT, COST, LLY, XOM,  # added: large caps across sectors
            AMD, TSM, MU, ORCL, CRM, INTC]
 benchmark_symbol: QQQ
