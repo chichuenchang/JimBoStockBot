@@ -16,7 +16,7 @@ HISTORY_TFS: tuple[HistoryTf, ...] = ("1Day", "1Week", "1Month")
 SPLIT_TOLERANCE = 0.01  # refetched last day off by more = prices were re-adjusted (split)
 WICK_SUSPECT = 0.10  # high or low this far past open and close: check it against the day's minutes
 WICKS_REPAIRED = "daily_wicks_repaired"  # kv: rows stored before trimming existed have been checked
-FEED_DOWN_AFTER = 2  # consecutive failed symbols = feed down, not one bad symbol: stop the sync
+FEED_DOWN_AFTER = 2  # consecutive failed symbols = feed down, not one bad symbol: stop (each costs full retry backoff)
 
 
 class HistorySource(Protocol):
@@ -67,8 +67,7 @@ def rollup(bars: list[Bar], key: Callable[[Bar], object]) -> list[Bar]:
 
 async def sync(db: DB, source: HistorySource, symbols: list[str], start: date, end: datetime) -> int:
     """Fetch each symbol's missing days up to end; returns bars written.
-    A failed symbol does not stop the rest; DataError naming the failures is raised after the loop.
-    FEED_DOWN_AFTER failures in a row stop it early: each costs the source's full retry backoff."""
+    A failed symbol does not stop the rest (until FEED_DOWN_AFTER); DataError naming failures raised after."""
     n, failed, streak, repair = 0, [], 0, db.kv_get(WICKS_REPAIRED) is None
     for sym in symbols:
         try:
