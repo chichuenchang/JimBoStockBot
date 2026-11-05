@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Literal, Protocol
 
 from stockbot.clock import et_at, et_date
+from stockbot.data.base import DataError
 from stockbot.db import DB
 from stockbot.models import Bar
 
@@ -15,6 +16,7 @@ HISTORY_TFS: tuple[HistoryTf, ...] = ("1Day", "1Week", "1Month")
 SPLIT_TOLERANCE = 0.01  # refetched last day off by more = prices were re-adjusted (split)
 WICK_SUSPECT = 0.10  # high or low this far past open and close: check it against the day's minutes
 WICKS_REPAIRED = "daily_wicks_repaired"  # kv: rows stored before trimming existed have been checked
+FEED_DOWN_AFTER = 2  # consecutive failed symbols = feed down, not one bad symbol: stop (each costs full retry backoff)
 
 
 class HistorySource(Protocol):
@@ -64,19 +66,34 @@ def rollup(bars: list[Bar], key: Callable[[Bar], object]) -> list[Bar]:
 
 
 async def sync(db: DB, source: HistorySource, symbols: list[str], start: date, end: datetime) -> int:
-    """Fetch each symbol's missing days up to end; returns bars written."""
-    n, origin, repair = 0, et_at(start, "00:00"), db.kv_get(WICKS_REPAIRED) is None
+    """Fetch each symbol's missing days up to end; returns bars written.
+    A failed symbol does not stop the rest (until FEED_DOWN_AFTER); DataError naming failures raised after."""
+    n, failed, streak, repair = 0, [], 0, db.kv_get(WICKS_REPAIRED) is None
     for sym in symbols:
-        if repair:
-            stored = db.daily_bars(sym, start, et_date(end) + timedelta(days=1))
-            db.upsert_daily(await _trim_wicks(source, [b for b in stored if _suspect(b)], end))
-        last = db.last_daily(sym)
-        bars = await source.daily_history(sym, last.ts if last else origin, end)
-        if last and bars and bars[0].ts == last.ts and abs(bars[0].close / last.close - 1) > SPLIT_TOLERANCE:
-            db.delete_daily(sym)
-            bars = await source.daily_history(sym, origin, end)
-        db.upsert_daily(await _trim_wicks(source, bars, end))
-        n += len(bars)
+        try:
+            n += await _sync_one(db, source, sym, start, end, repair)
+            streak = 0
+        except DataError as e:
+            failed.append(f"{sym}: {e}")
+            streak += 1
+            if streak == FEED_DOWN_AFTER:
+                break
+    if failed:
+        raise DataError("; ".join(failed) + f" ({n} bars written)")
     if repair:
         db.kv_set(WICKS_REPAIRED, "1")
     return n
+
+
+async def _sync_one(db: DB, source: HistorySource, sym: str, start: date, end: datetime, repair: bool) -> int:
+    origin = et_at(start, "00:00")
+    if repair:
+        stored = db.daily_bars(sym, start, et_date(end) + timedelta(days=1))
+        db.upsert_daily(await _trim_wicks(source, [b for b in stored if _suspect(b)], end))
+    last = db.last_daily(sym)
+    bars = await source.daily_history(sym, last.ts if last else origin, end)
+    if last and bars and bars[0].ts == last.ts and abs(bars[0].close / last.close - 1) > SPLIT_TOLERANCE:
+        db.delete_daily(sym)
+        bars = await source.daily_history(sym, origin, end)
+    db.upsert_daily(await _trim_wicks(source, bars, end))
+    return len(bars)

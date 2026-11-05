@@ -1,11 +1,13 @@
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import pytest
 import respx
 
 from stockbot import history
 from stockbot.clock import ET
 from stockbot.data.alpaca import AlpacaData
+from stockbot.data.base import DataError
 from stockbot.db import DB
 from stockbot.models import Bar
 
@@ -86,6 +88,34 @@ async def test_sync_split_refetches(tmp_path):
     await history.sync(db, split, ["NVDA"], date(2016, 1, 1), end)
     assert split.calls[-1][1] == datetime(2016, 1, 1, tzinfo=ET).astimezone(UTC)
     assert [b.close for b in db.daily_bars("NVDA", date(2016, 1, 1), date(2016, 2, 1))] == [25, 50, 60]
+
+
+async def test_sync_failed_symbol_does_not_block_the_rest(tmp_path):
+    class OneBad(FakeSource):
+        async def daily_history(self, symbol, start, end):
+            if symbol == "BAD":
+                raise DataError("HTTP 422")
+            return await super().daily_history(symbol, start, end)
+
+    db = DB.open(tmp_path / "h.db")
+    end = datetime(2016, 2, 1, tzinfo=UTC)
+    src = OneBad(days("NVDA", date(2016, 1, 4), [1, 2]) + days("AAPL", date(2016, 1, 4), [3]))
+    with pytest.raises(DataError, match="BAD"):  # still raises: caller retries later
+        await history.sync(db, src, ["NVDA", "BAD", "AAPL"], date(2016, 1, 1), end)
+    assert db.last_daily("AAPL").close == 3
+
+
+async def test_sync_stops_when_feed_looks_down(tmp_path):
+    class Down(FakeSource):
+        async def daily_history(self, symbol, start, end):
+            self.calls.append(symbol)
+            raise DataError("HTTP 500")
+
+    src = Down([])
+    with pytest.raises(DataError):
+        await history.sync(DB.open(tmp_path / "h.db"), src, ["A", "B", "C", "D"], date(2016, 1, 1),
+                           datetime(2016, 2, 1, tzinfo=UTC))
+    assert src.calls == ["A", "B"]
 
 
 WICK_DAY = date(2024, 6, 10)

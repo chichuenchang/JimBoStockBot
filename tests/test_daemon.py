@@ -12,6 +12,7 @@ from stockbot.daemon import Daemon
 from stockbot.data.base import DataError
 from stockbot.data.recorded import RecordedData
 from stockbot.db import DB
+from stockbot.history import FEED_DOWN_AFTER
 from stockbot.llm.budget import Budget
 from stockbot.llm.fake import FakeLLM
 from stockbot.llm.quota import Window
@@ -328,8 +329,8 @@ async def test_history_failure_backoff(tmp_path, caplog):
     daemon, session, clock, _ = build(tmp_path)
     daemon.ctx.history = CountingHistory(fail=True)
     await run_day(daemon, session, clock, until=session.open_utc - timedelta(minutes=1))  # 29 passes
-    assert len(daemon.ctx.history.calls) == 1  # failed once; no retry for 30 min
+    assert len(daemon.ctx.history.calls) == FEED_DOWN_AFTER  # one pass, cut short; no retry for 30 min
     assert "history sync failed" in caplog.text
     await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=20))
-    assert len(daemon.ctx.history.calls) == 2  # one retry at open
+    assert len(daemon.ctx.history.calls) == 2 * FEED_DOWN_AFTER  # one retry at open
     assert daemon.ctx.db._q("SELECT COUNT(*) n FROM decisions")[0]["n"] > 0  # cycles still ran
