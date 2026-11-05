@@ -1,4 +1,5 @@
 universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR,  # Alpha Arena list (QQQ for NDX)
+           SPY,  # S&P 500
            AAPL, META, AVGO, NFLX, JPM, V, WMT, COST, LLY, XOM,  # added: large caps across sectors
            AMD, TSM, MU, ORCL, CRM, INTC]
 benchmark_symbol: QQQ
