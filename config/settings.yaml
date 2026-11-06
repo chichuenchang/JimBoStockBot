@@ -2,7 +2,8 @@ universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR,  # Alpha Arena list (QQQ fo
            SPY, DIA, IWM, GLD,  # S&P 500, Dow Jones, Russell 2000, gold
            SPCX,  # SpaceX, IPO 2026-06-12
            AAPL, META, AVGO, NFLX, JPM, V, WMT, COST, LLY, XOM,  # added: large caps across sectors
-           AMD, TSM, MU, ORCL, CRM, INTC]
+           AMD, TSM, MU, ORCL, CRM, INTC,
+           SNDK, SKHY]  # Sandisk; SK hynix ADR, US-listed 2026-07-10
 benchmark_symbol: QQQ
 start_nav: 10000
 slippage_bps: 5

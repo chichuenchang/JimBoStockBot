@@ -14,7 +14,7 @@ from stockbot.models import Bar, NewsItem, Session
 DATA_URL = "https://data.alpaca.markets"
 PAPER_URL = "https://paper-api.alpaca.markets"
 RETRY_DELAYS = (1, 2, 4)
-NEWS_MAX_PAGES = 20  # 1000 items; 72h weekday over 28 symbols measured 653 (2026-11-05)
+NEWS_MAX_PAGES = 20  # 1000 items; 72h weekday measured ~23/symbol (653 over 28, 2026-11-05): fits ~40 symbols
 _sleep = asyncio.sleep
 log = logging.getLogger("stockbot")
 
