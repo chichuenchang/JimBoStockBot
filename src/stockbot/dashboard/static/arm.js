@@ -123,7 +123,6 @@ function replyMd(part) {
   }
   return [rows.length ? mdTable(rows) : "", ...rest].filter(Boolean).join("\n\n");
 }
-const REPLY_MARK = "\n\n----- next reply -----\n\n";  // agent/cycle.py REPLY_MARK
 async function openDecision(el) {
   if (!el.open || el.dataset.loaded) return;
   el.dataset.loaded = "1";
@@ -134,7 +133,8 @@ async function openDecision(el) {
   const pics = d.charts.map((c) =>
     `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
   full.classList.remove("muted");
-  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(d.raw.split(REPLY_MARK).map(replyMd).join("\n\n---\n\n"))}`
+  const replies = d.replies ?? [d.raw];  // a daemon started before d.replies existed: one block, unsplit
+  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(replies.map(replyMd).join("\n\n---\n\n"))}`
     + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}${md(d.prompt)}`;
 }
 // this bot's account against just holding the benchmark

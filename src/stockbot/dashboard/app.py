@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from stockbot import charts, history, interval
 from stockbot import pause as pause_flags
 from stockbot.agent import chart_tool
+from stockbot.agent.cycle import REPLY_MARK
 from stockbot.clock import RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
@@ -165,7 +166,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         d = db.decision(decision_id)
         if d is None:
             raise HTTPException(404)
-        return {**d, "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
+        return {**d, "replies": d["raw"].split(REPLY_MARK),
+                "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
 
     @app.get("/api/candles")
     async def api_candles(symbol: str, arm: str | None = None, tf: str = "1Min"):
