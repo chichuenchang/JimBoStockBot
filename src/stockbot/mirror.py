@@ -54,6 +54,7 @@ _JS_SAFE = "!'()*"  # encodeURIComponent leaves these (and A-Z a-z 0-9 - _ . ~) 
 
 
 OFF_HOURS = timedelta(hours=1)  # push cadence with the market closed; also long candles' refresh
+RETRY = timedelta(minutes=5)  # after a failed push: a crawl is ~35 market-data calls trading shares a limit with
 MAX_REQUEST = 400_000  # bytes per blobs request: the socket's body cap is ~1 MB (spec §Measured)
 
 
@@ -208,6 +209,7 @@ class Mirror:
         self.long_at: datetime | None = None
         self.long: dict[str, Entry] = {}  # last long-candle entries
         self.api_hash = ""
+        self.failed: datetime | None = None
 
     @classmethod
     def from_env(cls, ctx) -> Mirror | None:
@@ -220,6 +222,8 @@ class Mirror:
                    Pusher(url, key_, httpx.AsyncClient()))
 
     def _due(self, now: datetime) -> bool:
+        if self.failed is not None and now - self.failed < RETRY:
+            return False
         if self.pushed is None:
             return True
         every = timedelta(minutes=interval.get(self.db, self.cfg.settings))
@@ -242,11 +246,12 @@ class Mirror:
                 sent = await self.pusher.push(entries, now)
                 log.info("mirror pushed %d keys, %d kB new", len(entries), sent // 1000)
                 self.api_hash = api_hash
-            self.pushed = now
+            self.pushed, self.failed = now, None
             if long_candles:
                 self.long_at = now
         except Exception:
-            log.exception("mirror push failed; retrying next tick")
+            self.failed = now
+            log.exception("mirror push failed; retrying in %s", RETRY)
 
 
 def _is_long_candles(k: str) -> bool:

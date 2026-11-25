@@ -222,8 +222,11 @@ def test_tick_swallows_errors(db, caplog):
     m = mirror(db, FakePusher(fail=True), crawls)
     asyncio.run(m.tick(T0))  # no raise
     assert "mirror push failed" in caplog.text
+    # socket down: back off, a crawl is ~35 market-data calls the trading loop shares a rate limit with
     asyncio.run(m.tick(T0 + timedelta(seconds=30)))
-    assert len(crawls) == 2  # failed push: still due
+    assert len(crawls) == 1
+    asyncio.run(m.tick(T0 + timedelta(minutes=5)))
+    assert len(crawls) == 2
 
 
 def test_tick_cadence(db):
