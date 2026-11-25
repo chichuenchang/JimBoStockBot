@@ -5,6 +5,7 @@ The socket serves those bodies by key; it runs no StockBot code.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import gzip
 import hashlib
@@ -177,7 +178,8 @@ class Pusher:
 
     async def push(self, entries: dict[str, Entry], pushed_at: datetime) -> int:
         """Bytes uploaded. Raises on any failed request."""
-        index, blobs, too_big = _pack(entries, self.max_request)
+        # thread: gzip + hash of ~22 MB held the daemon's loop 1.1 s (spec §Measured)
+        index, blobs, too_big = await asyncio.to_thread(_pack, entries, self.max_request)
         if too_big:  # one request can't carry it: left out (404 "not mirrored"), not retried forever
             log.warning("mirror: %d bodies over %d B gzipped, not mirrored: %s", len(too_big), self.max_request,
                         too_big[:3])

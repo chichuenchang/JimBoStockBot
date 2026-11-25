@@ -57,7 +57,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 ### Push
 
 - `.env`: `JBSB_MIAODA_URL` (`https://ycnx0knkk9ic.feishuapp.com/app/<app_id>`), `JBSB_MIAODA_KEY`. Either missing = mirror off, one log line at start.
-- Daemon task beside dashboard (`daemon.run_forever`): crawl + push every `cycle_every_min` while market open, hourly otherwise, once at start. Push every due tick: `/api/status` heartbeat moves every step, and stamp proves PC up; unchanged blobs already on socket. Errors logged, never raised into cycles. Crawl in thread (`asyncio.to_thread`) if it blocks loop >1s — measure.
+- Daemon task beside dashboard (`daemon.run_forever`): crawl + push every `cycle_every_min` while market open, hourly otherwise, once at start. Push every due tick: `/api/status` heartbeat moves every step, and stamp proves PC up; unchanged blobs already on socket. Errors logged, never raised into cycles.
 - Wire (delta, content-addressed — upload ~40 kB/s, see Measured): body gzipped, `hash` = sha256 of gzipped bytes. Client remembers hashes the socket acked. `POST /openapi/jbsb/blobs` `{blobs:[{hash, content_type, gz_b64}]}` chunked ≤ 400 kB request, only hashes not acked. Then `POST /openapi/jbsb/commit` `{index:{key: hash}, pushed_at}`: socket in one transaction replaces index if every hash stored, else 409 `{missing:[hash]}` — client uploads those, commits again (once). Old index serves until commit lands. Unreferenced blobs pruned on commit.
 
 ### Socket (new Miaoda repo `../jbsb-miaoda`)
@@ -83,6 +83,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 - Platform middleware owns `/app/<id>/static/*` (404 "File not found", browser sees 503) before the app: mirror JS at `/jbsb-js` (`MIRROR_STATIC`).
 - Platform Drizzle binds a `Buffer` param as text: bytea insert 500s. Store via `decode(<b64>,'base64')`, read `encode(body,'base64')`.
 - Crawl, live DB 2026-11-24 (31 symbols, 7 arms): 966 keys, 13 s, 24 MB raw, 7 MB gz (decisions 4.0, candles 1.9, equity 0.5). Per-arm candle copies were 5.1 MB more: bot chart now = overview bars + `/api/arm/<arm>/fills`.
+- Loop stall, DB copy 2026-11-25: crawl worst 65 ms (stays on loop); gzip + hash of 22 MB 1.1 s, so `_pack` runs in `asyncio.to_thread`.
 - First full upload 9.3 MB base64, 155 s. Restart push (commit first, 409 lists missing): 150 kB, ~19 s.
 - Decision details pushed = ids the page lists (50 latest + acted), not a setting.
 
