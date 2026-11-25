@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 
 from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
-from stockbot.dashboard.app import create_app
-from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, TIPS
+from stockbot.dashboard.app import HERE, SCRIPTS, create_app
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, RULES, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard, market
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -53,6 +53,13 @@ def client(db):
 
 def row(rows, arm):
     return next(r for r in rows if r["arm"] == arm)
+
+
+def test_every_script_loaded(db):
+    """A static/*.js left out of SCRIPTS is never loaded; one listed but missing 404s."""
+    assert sorted(SCRIPTS) == sorted(p.stem for p in (HERE / "static").glob("*.js"))
+    html = client(db).get("/").text
+    assert re.findall(r'src="/static/(\w+)\.js\?v=\d+"', html) == list(SCRIPTS)
 
 
 def test_leaderboard_rows(db):
@@ -239,9 +246,10 @@ def test_api_shapes(db):
     [d] = c.get("/api/arm/kimi-improved/decisions").json()
     full = c.get(f"/api/decision/{d['id']}").json()
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
-    candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
-    assert len(candles["fills"]) == 2 and candles["bars"] == []
-    assert c.get("/api/candles?symbol=MSFT").json()["fills"] == []  # overview's market chart: no bot
+    assert full["replies"] == ["RAW REPLY"]
+    assert c.get("/api/candles?symbol=MSFT").json() == {"bars": [], "error": None}
+    assert len(c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json()) == 2  # bot page: overview's bars + these
+    assert c.get("/api/arm/nobody/fills?symbol=MSFT").status_code == 404
 
 
 def test_intraday_candles_regular_session_only(db):
@@ -262,7 +270,7 @@ def test_intraday_candles_regular_session_only(db):
         return int(et_at(d, hm).timestamp())
 
     c = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live()))
-    kept = [b["time"] for b in c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]]
+    kept = [b["time"] for b in c.get("/api/candles?symbol=MSFT&tf=1Min").json()["bars"]]
     assert kept == [ts(day, "09:30"), ts(day, "15:59"), ts(half, "12:59")]
 
 
@@ -285,7 +293,7 @@ def test_hour_candles_count_from_the_open_without_pre_market(db):
                     Session(half, et_at(half, "09:30"), et_at(half, "13:00"))]
 
     bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Hour").json()["bars"]
+        "/api/candles?symbol=MSFT&tf=1Hour").json()["bars"]
     assert [(b["time"], b["open"], b["high"], b["low"], b["close"]) for b in bars] == [
         (int(et_at(day, "09:30").timestamp()), 10, 12, 9, 11),
         (int(et_at(day, "10:30").timestamp()), 11, 13, 11, 12),
@@ -310,7 +318,7 @@ def test_minute_candles_reach_back_two_sessions_across_a_closure(db):
             return [s for s in sessions + [not_open_yet] if start <= s.day <= end]
 
     bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]
+        "/api/candles?symbol=MSFT&tf=1Min").json()["bars"]
     assert [b["time"] for b in bars] == [int(et_at(d, "10:00").timestamp()) for d in past[1:]]
 
 
@@ -365,7 +373,7 @@ def test_replayed_fills_marked(tmp_path):
     c = client(db)
     [t] = c.get("/api/arm/kimi-improved/trades").json()
     assert t["replayed"] is True
-    fills = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["fills"]
+    fills = c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json()
     assert [f["replayed"] for f in fills] == [False, True]
 
 
@@ -442,16 +450,16 @@ def test_api_market_one_feed_call_for_concurrent_polls(db):
 
 def test_candles_week_from_history(db):
     seed_daily(db)
-    bars = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week").json()["bars"]
+    bars = client(db).get("/api/candles?symbol=MSFT&tf=1Week").json()["bars"]
     assert [(b["open"], b["high"], b["low"], b["close"]) for b in bars] == [(10, 14, 8, 13), (20, 21, 19, 20)]
-    month = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Month").json()["bars"]
+    month = client(db).get("/api/candles?symbol=MSFT&tf=1Month").json()["bars"]
     assert len(month) == 2
-    day = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    day = client(db).get("/api/candles?symbol=MSFT&tf=1Day").json()["bars"]
     assert len(day) == 6
 
 
 def test_candles_week_empty_history(db):
-    r = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week")
+    r = client(db).get("/api/candles?symbol=MSFT&tf=1Week")
     assert r.status_code == 200 and r.json()["bars"] == []
 
 
@@ -468,7 +476,7 @@ def test_decision_charts_redraw(db):
     c = client(db)
     [chart] = c.get(f"/api/decision/{i}").json()["charts"]
     assert chart == {"symbol": "MSFT", "tf": "1Week", "start": "2026-01-01", "end": "2026-01-30", "log": True}
-    r = c.get("/api/chart", params=chart)  # app.js passes the object as-is
+    r = c.get("/api/chart", params=chart)  # arm.js passes the object as-is
     assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
 
 
@@ -496,11 +504,11 @@ async def test_candles_day_appends_live_after_history(db):
 
     clock = ReplayClock(T0)
     c = TestClient(create_app(db, CFG, Budget(db, CFG, clock), Live()))
-    bars = c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    bars = c.get("/api/candles?symbol=MSFT&tf=1Day").json()["bars"]
     assert [b["close"] for b in bars][-2:] == [20, 21.5]
     assert Live.calls[0] == ("1Day", day_bar("X", date(2026, 2, 3), 0, 0, 0, 0).ts)  # day after last stored
     db.upsert_daily([day_bar("NVDA", date(2026, 1, 26), 1, 2, 0.5, 1.5)])
-    r = c.get("/api/candles?symbol=NVDA&arm=kimi-improved&tf=1Week").json()
+    r = c.get("/api/candles?symbol=NVDA&tf=1Week").json()
     assert [b["close"] for b in r["bars"]] == [1.5] and "HTTP 500" in r["error"]  # stored history survives feed error
 
 
@@ -513,7 +521,7 @@ def test_candles_history_through_today_skips_live(db):
 
     db.upsert_daily([day_bar("MSFT", et_date(datetime.now(UTC)), 1, 2, 0.5, 1.5)])  # evening: close synced
     r = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()
+        "/api/candles?symbol=MSFT&tf=1Day").json()
     assert r["error"] is None and [b["close"] for b in r["bars"]] == [1.5]
 
 
@@ -582,3 +590,104 @@ def test_usage_removed_bot_latest_model(db):
     old = {b["bot"]: b for b in client(db).get("/api/usage").json()["bots"]}["old-bot"]
     assert old["model"] == "deepseek-v4.1-flash" and not old["flat"]
     assert old["today"]["calls"] == 0 and old["month"]["calls"] == 2 and old["month"]["cost"] == 0.2
+
+
+def test_equity_for_named_accounts_only(db):
+    c = client(db)
+    assert set(c.get(f"/api/equity?arms=kimi-improved,{BENCHMARK}").json()) == {"kimi-improved", BENCHMARK}
+    assert len(c.get("/api/equity").json()) == 3
+
+
+def decide(db, at, per_symbol):
+    return db.insert_decision("kimi-improved", at, "scheduled", None, "P", "R",
+                              json.dumps({"per_symbol": per_symbol}), "ok", 1, 0, 1, 0.0)
+
+
+def test_decision_actions_trades_first(db):
+    decide(db, T0 + timedelta(minutes=5), {"MSFT": {"signal": "hold", "justification": "wait"},
+                                           "NVDA": {"signal": "hold"},
+                                           "AMZN": {"signal": "buy_to_enter", "justification": "breakout"}})
+    d = client(db).get("/api/arm/kimi-improved/decisions").json()[0]
+    assert d["actions"] == [{"symbol": "AMZN", "signal": "buy_to_enter", "why": "breakout"},
+                            {"symbol": "MSFT", "signal": "hold", "why": "wait"}]  # a hold with no comment: left out
+
+
+def test_acted_decisions_are_the_ones_before_a_chosen_fill(db):
+    """Fixture: MSFT bought at T0 on the T0 decision, sold at its target (the harness sells there, no decision)."""
+    later = decide(db, T0 + timedelta(hours=3), {"MSFT": {"signal": "hold"}})
+    buy = decide(db, T0 + timedelta(hours=4), {"NVDA": {"signal": "buy_to_enter"}})
+    db.insert_fill(Fill("kimi-improved", "NVDA", "buy", 1, 10, T0 + timedelta(hours=4, minutes=1), "entry", False))
+    c = client(db)
+    assert [d["id"] for d in c.get("/api/arm/kimi-improved/decisions").json()][:2] == [buy, later]
+    acted = c.get("/api/arm/kimi-improved/decisions?acted=1").json()
+    assert [d["slot_ts"] for d in acted] == [(T0 + timedelta(hours=4)).isoformat(), T0.isoformat()]
+
+
+def test_benchmark_named_for_what_it_is(db):
+    html = client(db).get("/").text
+    assert "QQQ buy &amp; hold" in html and f">{BENCHMARK}<" not in html
+
+
+def test_headline_leader_and_bots_beating_benchmark(db):
+    """Fixture: kimi-improved +5% (480 after AI cost), deepseek-baseline flat, QQQ +2%."""
+    head = client(db).get("/").text.split('id="headline"')[1].split('id="sec-arena"')[0]
+    assert 'href="/arm/kimi-improved"' in head and "Leading bot" in head
+    assert "1 <small>of 2</small>" in head and "+$480" in head
+
+
+def test_rejections_explain_their_rule(db):
+    db.insert_rejection("kimi-improved", None, "MSFT", "cooldown", "entry 1 stop 0.9 target 1.2", T0)
+    db.insert_rejection("kimi-improved", None, "MSFT", "rule_newer_than_the_glossary", "", T0)
+    new, old = client(db).get("/api/arm/kimi-improved/rejections").json()
+    assert old["meaning"] == RULES["cooldown"] and new["meaning"] == ""
+
+
+def test_glossary_explains_every_rule_the_harness_can_break():
+    import inspect
+
+    from stockbot.agent import cycle, rules
+    emitted = set(re.findall(r'return "(\w+)"', inspect.getsource(rules)))
+    emitted |= set(re.findall(r'rejections\.append\(\([\w.]+, "(\w+)"', inspect.getsource(cycle)))
+    assert len(emitted) > 10 and emitted <= set(RULES)
+    assert all(len(v.split()) <= 25 for v in RULES.values())
+
+
+# ---------- Miaoda mirror: root prefix + read-only flag (spec 2026-11-24-jbsb-miaoda-mirror-design.md) ----------
+MIRROR_PAGES = ("/", "/usage", "/arm/kimi-improved")
+
+
+def mirror_client(db, root="/app/x"):
+    clock = ReplayClock(T0 + timedelta(days=1))
+    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror=T0))
+
+
+def test_root_prefixes_every_link(db):
+    c = mirror_client(db)
+    for path in MIRROR_PAGES:
+        html = c.get(path).text
+        bare = [u for u in re.findall(r'(?:href|src)="(/[^"]*)"', html) if not u.startswith("/app/x/")]
+        assert bare == [], (path, bare)
+        assert 'data-root="/app/x"' in html
+
+
+def test_localhost_links_unchanged(db):
+    html = client(db).get("/").text
+    assert 'href="/arm/kimi-improved"' in html and 'src="/static/core.js?v=' in html
+    assert 'data-root=""' in html and "data-mirror" not in html and 'id="mirrorstamp"' not in html
+
+
+def test_js_has_no_bare_paths():
+    """Every dashboard path in JS goes through get() or url(), which prefix ROOT; a `...Path = () =>` helper feeds get()."""
+    for p in (HERE / "static").glob("*.js"):
+        src = p.read_text(encoding="utf-8")
+        for m in re.finditer(r'["\'`]/(api|arm|static|usage)\b', src):
+            before = src[max(0, m.start() - 20):m.start()]
+            assert before.endswith(("get(", "url(")) or re.search(r"Path = \(\) => $", before), \
+                f"{p.name}: {src[m.start():m.start() + 40]!r}"
+
+
+def test_mirror_hides_controls(db):
+    c = mirror_client(db)
+    arm = c.get("/arm/kimi-improved").text
+    assert 'id="pausebtn"' not in arm and 'draggable="true"' not in arm and "data-mirror" in arm
+    assert re.search(r'id="mirrorstamp"[^>]*>[^<]*as of 10:00 ET', arm)  # T0 14:00 UTC = 10:00 EDT

@@ -1,6 +1,7 @@
 universe: [TSLA, QQQ, NVDA, MSFT, AMZN, GOOGL, PLTR,  # Alpha Arena list (QQQ for NDX)
            SPY, DIA, IWM, GLD,  # S&P 500, Dow Jones, Russell 2000, gold
            SPCX,  # SpaceX, IPO 2026-06-12
+           ANT,  # Anthropic, Nasdaq IPO 2026-11-19
            AAPL, META, AVGO, NFLX, JPM, V, WMT, COST, LLY, XOM,  # added: large caps across sectors
            AMD, TSM, MU, ORCL, CRM, INTC,
            SNDK, SKHY]  # Sandisk; SK hynix ADR, US-listed 2026-07-10

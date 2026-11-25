@@ -1,21 +1,56 @@
 {% extends "base.html" %}
-{% from "_cells.html" import cell, candle_pickers with context %}
+{% from "_cells.html" import cell, money, candle_pickers, no_lines_yet with context %}
 {% block page %}index{% endblock %}
+{% block subnav %}
+    <div class="subnav">{% for id, label in (("sec-arena", "Leaderboard"), ("sec-market", "Market"), ("sec-rank", "Rankings"), ("sec-time", "Over time"), ("sec-stats", "All stats"), ("sec-stocks", "P&L by stock")) %}<a href="#{{ id }}">{{ label }}</a>{% endfor %}</div>
+{% endblock %}
 {% block body %}
 <h1 class="pagetitle">Bot Arena <span class="muted">paper money · click a bot for its trades</span></h1>
 
-<div class="hero">
+{% set bots = rows | rejectattr("variant", "equalto", "benchmark") | list %}
+{% set bench = rows | selectattr("variant", "equalto", "benchmark") | first %}
+<div class="headline" id="headline">
+  {% if bots %}
+  {% set lead = bots | sort(attribute="return_pct", reverse=true) | first %}
+  <a class="stat" href="{{ root }}/arm/{{ lead.arm }}" data-tip="The bot with the highest return so far.">
+    <div class="lbl">Leading bot</div>
+    <div class="val"><span class="swatch" data-series="{{ lead.arm }}"></span>{{ lead.arm | arm_label }}</div>
+    <div class="sub">{{ cell("return_pct", lead.return_pct) }} · ${{ cell("nav", lead.nav) }}</div>
+  </a>
+  {% if bench %}
+  {% set ahead = bots | rejectattr("vs_benchmark_pct", "none") | selectattr("vs_benchmark_pct", "gt", 0) | list %}
+  <div class="stat" data-tip="The yardstick: buy QQQ (the 100 biggest Nasdaq stocks in one share) on day one and never trade. A bot is only worth running if it beats this.">
+    <div class="lbl">Just holding QQQ</div>
+    <div class="val">{{ cell("return_pct", bench.return_pct) }}</div>
+    <div class="sub">no bot, no trades · ${{ cell("nav", bench.nav) }}</div>
+  </div>
+  <div class="stat" data-tip="How many bots have a better return than just holding QQQ.">
+    <div class="lbl">Bots beating QQQ</div>
+    <div class="val">{{ ahead | length }} <small>of {{ bots | length }}</small></div>
+    <div class="sub">{% if ahead %}{% set top = ahead | sort(attribute="vs_benchmark_pct", reverse=true) | first %}widest lead {{ cell("vs_benchmark_pct", top.vs_benchmark_pct) }}{% else %}none ahead yet{% endif %}</div>
+  </div>
+  {% endif %}
+  <div class="stat" data-tip="Every bot's profit or loss added up, after paying for the AI calls.">
+    <div class="lbl">All bots, after AI cost</div>
+    <div class="val">{{ money(bots | sum(attribute="net_after_llm")) }}</div>
+    <div class="sub">trading {{ money(bots | sum(attribute="pnl")) }} · AI ${{ '%.2f' % (bots | sum(attribute="llm_spend")) }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="hero" id="sec-arena">
   <section class="panel">
-    <div class="panelhead"><b class="accent">● Leaderboard</b><span class="muted small">tile size = account value · color = return</span></div>
+    <div class="panelhead"><b class="accent">● Leaderboard</b><span class="muted small">tile size = account value · color = return · line = value since start</span></div>
     <div class="treemap" id="treemap">
       {% set rank = namespace(n=0) %}
       {% for r in rows if r.variant != "benchmark" %}{% set rank.n = rank.n + 1 %}
-      <a class="tile{{ ' r%d' % rank.n if rank.n <= 3 }}" href="/arm/{{ r.arm }}" data-arm="{{ r.arm }}" data-nav="{{ r.nav }}" data-ret="{{ r.return_pct }}">
-        <div class="tile-head"><span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b><span class="rank">#{{ rank.n }}</span></div>
-        <div class="big" title="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
+      <a class="tile{{ ' r%d' % rank.n if rank.n <= 3 }}" href="{{ root }}/arm/{{ r.arm }}" data-arm="{{ r.arm }}" data-nav="{{ r.nav }}" data-ret="{{ r.return_pct }}">
+        <div class="tile-head"><span class="rank">#{{ rank.n }}</span><span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b></div>
+        <div class="big" data-tip="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
         <div class="sub">${{ cell("nav", r.nav) }} · {{ (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
         <div class="spark"></div>
       </a>
+      {% else %}<p class="empty">No bot has an account yet. The daemon opens them the first time it runs.</p>
       {% endfor %}
     </div>
     <div class="muted small" id="benchnote">{% for r in rows if r.variant == "benchmark" %}Reference: buy QQQ once and hold {{ cell("return_pct", r.return_pct) }}, value ${{ cell("nav", r.nav) }}{% endfor %}</div>
@@ -31,63 +66,72 @@
   </section>
 </div>
 
-<h2 class="section">Market <span class="muted">the {{ universe | length }} stocks the bots trade · tile size = share of dollar volume · color = price change · click a stock for its price chart</span></h2>
+<h2 class="section" id="sec-market">Market <span class="muted">the {{ universe | length }} stocks the bots trade · tile size = share of dollar volume · color = price change · click a stock for its price chart</span></h2>
 <section class="panel">
   <div class="panelhead"><b class="accent">● Stocks</b><span class="muted small">daily closes; live price while the market is open</span>
     <span class="seg"><button data-sessions="1" class="on">1D</button><button data-sessions="5">7D</button><button data-sessions="21">30D</button></span></div>
   <div class="treemap stocks" id="stockmap"></div>
   <div id="stockchart" hidden>
-    <div class="panelhead"><b>Price chart</b>{{ candle_pickers(universe) }}<button id="stockclose" title="Hide the chart">Close</button></div>
+    <div class="panelhead"><b>Price chart</b>{{ candle_pickers(universe) }}<button id="stockclose" data-tip="Hide the chart">Close</button></div>
     <div id="candles"></div>
     <p class="muted" id="candlenote"></p>
   </div>
 </section>
 
-<h2 class="section">Full leaderboard <span class="muted">bots only · best first · hover a column name for what it means</span></h2>
+<h2 class="section" id="sec-rank">Full leaderboard <span class="muted">bots only · best first · hover a column name for what it means</span></h2>
 <div class="grid3" id="boards">
   {% for b in boards %}
   <section class="board">
     <div class="boardhead">{{ b.title }}</div>
     <div class="tablewrap"><table>
-      <thead><tr><th class="l">#</th><th class="l">bot</th><th title="{{ tips.get(b.key, '') }}">{{ labels.get(b.key, b.key) }}</th><th title="{{ tips.get(b.side, '') }}">{{ labels.get(b.side, b.side) }}</th></tr></thead>
+      <thead><tr><th class="l">#</th><th class="l">bot</th><th data-tip="{{ tips.get(b.key, '') }}">{{ labels.get(b.key, b.key) }}</th><th data-tip="{{ tips.get(b.side, '') }}">{{ labels.get(b.side, b.side) }}</th></tr></thead>
       <tbody>{% for r in b.rows %}<tr class="{{ 'r%d' % loop.index if loop.index <= 3 }}">
         <td class="n">{{ loop.index }}</td>
-        <td class="l"><div class="who"><span><span class="swatch" data-series="{{ r.arm }}"></span><a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a></span><span class="muted">{{ r.model if r.model != '-' else 'no AI' }}</span></div></td>
+        <td class="l"><div class="who"><span><span class="swatch" data-series="{{ r.arm }}"></span><a href="{{ root }}/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a></span><span class="muted">{{ r.model if r.model != '-' else 'no AI' }}</span></div></td>
         <td>{{ cell(b.key, r[b.key]) }}</td><td>{{ cell(b.side, r[b.side]) }}</td>
-      </tr>{% endfor %}</tbody>
+      </tr>{% else %}<tr><td colspan="4" class="l muted">No bots yet.</td></tr>{% endfor %}</tbody>
     </table></div>
   </section>
   {% endfor %}
 </div>
 
-<h2 class="section">Over time</h2>
+<h2 class="section" id="sec-time">Over time <span class="muted">market hours only: nights and weekends are cut out · hover a name to highlight its line, click to hide it</span></h2>
 <section class="card">
-  <h2>Account value <span class="strip" style="display:inline-flex;margin-left:8px">
-    <button data-mode="usd" class="on">$</button><button data-mode="pct">%</button></span></h2>
-  <div class="chart"><canvas id="equity"></canvas></div>
+  <div class="cardhead"><h2>Account value</h2>
+    <span class="seg"><button data-mode="usd" class="on" data-tip="Dollars in the account">$</button><button data-mode="pct" data-tip="Percent gained or lost since the start">%</button></span>
+    <span class="seg"><button data-range="1">1D</button><button data-range="5">1W</button><button data-range="21">1M</button><button data-range="0" class="on">All</button></span></div>
+  <div class="chartrow" id="timecharts">
+    <div class="chartcol">
+      <div class="chart"><canvas id="equity"></canvas></div>
+      <h3 class="charttitle">Drop from peak <span class="muted">how far each account sits below its best value so far</span></h3>
+      <div class="chart mini"><canvas id="drawdown"></canvas></div>
+    </div>
+    <div class="legend" id="serieslegend"></div>
+  </div>
+  <p class="empty" id="timeempty" hidden>{{ no_lines_yet() }}</p>
 </section>
-<div class="grid2">
-  <section class="card"><h2>Drop from peak (%)</h2><div class="chart short"><canvas id="drawdown"></canvas></div></section>
-  <section class="card"><h2>Daily P&amp;L ($)</h2><div class="chart short"><canvas id="daily"></canvas></div></section>
-</div>
+<section class="card">
+  <h2>Daily P&amp;L ($) <span class="muted">one square per trading day · green made money, red lost · darker = more</span></h2>
+  <div class="tablewrap"><table class="heat days" id="daily"></table></div>
+</section>
 
-<h2 class="section">All stats <span class="muted">hover a column name for what it means</span></h2>
+<h2 class="section" id="sec-stats">All stats <span class="muted">click a column name to sort · hover it for what it means</span></h2>
 <section class="card">
   <div class="tablewrap"><table id="leaderboard" class="stats">
     <thead>
       <tr class="groups">{% for g, keys in groups %}<th colspan="{{ keys | length }}" class="l{{ ' gstart' if g }}">{{ g }}</th>{% endfor %}</tr>
-      <tr>{% for g, keys in groups %}{% for k in keys %}<th title="{{ tips.get(k, '') }}" class="{{ 'l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}">{{ labels.get(k, k) }}</th>{% endfor %}{% endfor %}</tr>
+      <tr>{% for g, keys in groups %}{% for k in keys %}<th data-tip="{{ tips.get(k, '') }}" tabindex="0" class="sortable{{ ' l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}">{{ labels.get(k, k) }}</th>{% endfor %}{% endfor %}</tr>
     </thead>
     <tbody>
     {% for r in rows %}<tr>
-      {% for g, keys in groups %}{% for k in keys %}<td class="{{ 'l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}">
-        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a>{% else %}{{ r.arm | arm_label }}{% endif %}
+      {% for g, keys in groups %}{% for k in keys %}<td class="{{ 'l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}" data-v="{{ (r.arm | arm_label) if k == 'arm' else r[k][0] if k == 'sharpe_ci' and r[k] else '' if r[k] is none else r[k] }}">
+        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="{{ root }}/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a>{% else %}{{ r.arm | arm_label }}{% endif %}
         {%- else -%}{{ cell(k, r[k]) }}{%- endif -%}</td>{% endfor %}{% endfor %}
-    </tr>{% endfor %}
+    </tr>{% else %}<tr><td class="l muted">No accounts yet.</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </section>
 
-<h2 class="section">Realized P&amp;L by stock ($)</h2>
-<section class="card"><div class="tablewrap"><table class="heat" id="heatmap"></table></div></section>
+<h2 class="section" id="sec-stocks">Realized P&amp;L by stock ($) <span class="muted">closed trades only · which stocks each bot won and lost on · best stock first · click a stock for its price chart</span></h2>
+<section class="card"><div class="heatpair" id="heatmap"></div><p class="muted small" id="heatnote"></p></section>
 {% endblock %}

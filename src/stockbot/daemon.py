@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from stockbot import history, interval
 from stockbot.agent.cycle import AppContext, run_cycle
@@ -14,6 +15,9 @@ from stockbot.llm import quota
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
 from stockbot.report.analyst import build_report
+
+if TYPE_CHECKING:
+    from stockbot.mirror import Mirror
 
 log = logging.getLogger("stockbot")
 REPLAY_GAP = timedelta(minutes=2)
@@ -27,10 +31,11 @@ def floor_minute(ts: datetime) -> datetime:
 
 
 class Daemon:
-    def __init__(self, ctx: AppContext, serve_dashboard: bool = True, poll_quota: bool = False):
+    def __init__(self, ctx: AppContext, serve_dashboard: bool = True, poll_quota: bool = False, mirror: bool = False):
         self.ctx = ctx
         self.serve_dashboard = serve_dashboard
         self.poll_quota = poll_quota  # live runs only: replay must not hit provider endpoints
+        self.mirror = mirror  # live runs only: push the dashboard to Miaoda (stockbot/mirror.py), if .env has its keys
         self._quota_next = datetime.min.replace(tzinfo=UTC)
         self._quota_warned: set[tuple] = set()  # (model, window, reset): warn once per window
         self.sessions: list[Session] = []
@@ -238,6 +243,11 @@ class Daemon:
         if self.serve_dashboard:
             from stockbot.dashboard.app import serve
             server_task = asyncio.create_task(serve(self.ctx))
+        mirror_task = None
+        if self.mirror:
+            from stockbot.mirror import Mirror
+            if m := Mirror.from_env(self.ctx):
+                mirror_task = asyncio.create_task(self._mirror_loop(m))
         try:
             while True:
                 try:
@@ -246,5 +256,12 @@ class Daemon:
                     log.exception("daemon step failed")
                 await asyncio.sleep(poll_s)
         finally:
-            if server_task:
-                server_task.cancel()
+            for task in (server_task, mirror_task):
+                if task:
+                    task.cancel()
+
+    async def _mirror_loop(self, mirror: Mirror, poll_s: float = 30) -> None:
+        """Own task: a first push over the slow link takes minutes; steps must not wait for it. tick never raises."""
+        while True:
+            await mirror.tick(self.ctx.clock.now())
+            await asyncio.sleep(poll_s)

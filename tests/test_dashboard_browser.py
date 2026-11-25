@@ -1,5 +1,6 @@
 """Dashboard in real Chrome: clicks, focus, frames and layout, which only a browser has."""
 import hashlib
+import json
 import socket
 import threading
 import time
@@ -10,8 +11,10 @@ import uvicorn
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from stockbot.agent.cycle import REPLY_MARK
 from stockbot.clock import RealClock, et_at, et_date
 from stockbot.dashboard.app import create_app
+from stockbot.dashboard.glossary import TIPS
 from stockbot.data.base import TF_DURATION
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -166,7 +169,7 @@ def arm_page(page_at, tab, has_touch=False):
 
 
 def assert_trade_framed(page, dash, ago, hold=timedelta(hours=1)):
-    """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from app.js."""
+    """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from candles.js."""
     buy = dash.now - ago
     sell = min(buy + hold, dash.now)
     page.wait_for_function("""([buy, sell]) => {
@@ -258,7 +261,7 @@ def test_leaderboard_swatch_stays_painted_after_poll(page_at):
     assert swatch.evaluate("e => getComputedStyle(e).backgroundColor") != "rgba(0, 0, 0, 0)"
 
 
-def test_heatmap_grows_a_column_for_a_new_stock(dash, page_at):
+def test_heatmap_grows_a_row_for_a_new_stock(dash, page_at):
     page = page_at("/")
     page.wait_for_function("document.querySelector('#heatmap th')")
     assert page.locator("#heatmap th", has_text="QQQ").count() == 0
@@ -313,6 +316,14 @@ def test_usage_table_shows_new_calls(dash, page_at):
     dash.db.insert_usage("kimi-k3", "kimi-improved", "decision", dash.now, 5000, 0, 500, 0.0)
     page.evaluate(POLL_USAGE)
     assert row.inner_text() != before
+
+
+def test_usage_chart_is_a_line_today_and_bars_over_days(dash, page_at):
+    dash.db.insert_usage("kimi-k3", "kimi-improved", "decision", dash.now, 5000, 0, 500, 0.0)
+    page = page_at("/usage")
+    page.wait_for_function("charts.tokens?.config.type === 'line'")
+    page.click('button[data-span="7d"]')
+    page.wait_for_function("charts.tokens?.config.type === 'bar' && charts.tokens.data.datasets.length > 0")
 
 
 # ---------- trade badges on the price chart ----------
@@ -587,3 +598,181 @@ def test_chart_only_on_tabs_that_link_to_it(page_at):
     page.click('button[data-tab="trades"]')
     page.wait_for_function("location.hash === '#trades'")
     assert page.locator("#candles").is_visible()
+
+
+# ---------- overview: help, sorting, lines over time ----------
+def test_column_help_shows_on_hover_and_on_keyboard_focus(page_at):
+    page = page_at("/")
+    tip = page.locator("#tip")
+    assert not tip.is_visible()
+    page.locator("#treemap .big").first.hover()  # in view: scrolling to a target would hide the bubble again
+    assert tip.is_visible() and tip.inner_text() == TIPS["return_pct"]
+    page.locator("h1").hover()  # nothing to explain there
+    assert not tip.is_visible()
+    page.locator("#theme").focus()
+    assert "light / dark" in tip.inner_text()
+
+
+def test_stats_sorted_by_clicked_column_stay_sorted_after_poll(dash, page_at):
+    acct = dash.db.load_account("kimi-improved")
+    acct.cash += 7  # no two accounts equal: one order only
+    dash.db.save_account(acct)
+    page = page_at("/")
+    page.wait_for_function("document.querySelector('#gainers a')")
+
+    def bots():
+        return page.locator("#leaderboard tbody td:first-child").all_inner_texts()
+
+    best_first = bots()  # as the server sends them
+    value = page.locator("#leaderboard th.sortable", has_text="value")
+    value.click()
+    value.click()
+    assert value.get_attribute("aria-sort") == "ascending" and bots() == best_first[::-1]
+    page.evaluate(POLL_INDEX)
+    assert bots() == best_first[::-1]
+    value.click()
+    assert value.get_attribute("aria-sort") == "none" and bots() == best_first
+
+
+def test_legend_click_hides_a_line_on_both_charts_and_poll_keeps_it_hidden(page_at):
+    page = page_at("/")
+    row = page.locator(f'#serieslegend button[data-key="{ARM}"]')
+    row.click()
+    line = f"data.datasets.findIndex((d) => d.key === '{ARM}')"
+    shown = f"['equity', 'drawdown'].map((id) => charts[id].isDatasetVisible(charts[id].{line}))"
+    assert page.evaluate(shown) == [False, False] and "off" in row.get_attribute("class")
+    page.evaluate(POLL_INDEX)
+    assert page.evaluate(shown) == [False, False] and "off" in row.get_attribute("class")
+    row.click()
+    assert page.evaluate(shown) == [True, True]
+
+
+def test_legend_hover_fades_the_other_lines(page_at):
+    page = page_at("/")
+    page.locator(f'#serieslegend button[data-key="{ARM}"]').hover()
+    alpha = "charts.equity.data.datasets.map((d) => [d.key, Chart.helpers.color(d.borderColor).rgb.a])"
+    alphas = dict(page.evaluate(alpha))
+    assert alphas.pop(ARM) == 1 and alphas and all(a < 0.5 for a in alphas.values())
+
+
+def test_range_button_keeps_the_latest_sessions_without_a_fetch_and_is_remembered(dash, page_at):
+    for days, navs in ((3, (10000, 10010)), (2, (10020, 10030)), (0, (10040, 10050, 10060))):  # a night or more apart
+        for i, nav in enumerate(navs):
+            dash.db.snapshot_equity(ARM, dash.now - timedelta(days=days, minutes=30 - 5 * i), nav)
+    page = page_at("/")
+    points = f"charts.equity?.data.datasets.find((d) => d.key === '{ARM}').data.filter((p) => p.y !== null).length"
+    page.wait_for_function(points + " === 8")  # those 7 and the fixture's one, a day ago
+    asked = []
+    page.on("request", lambda r: asked.append(r.url))
+    page.click('button[data-range="1"]')
+    assert page.evaluate(points) == 3 and asked == []
+    page.reload()
+    page.wait_for_function(points + " === 3")
+    assert "on" in page.locator('button[data-range="1"]').get_attribute("class")
+
+
+def test_daily_grid_has_a_square_per_bot_per_day(dash, page_at):
+    dash.db.snapshot_equity(ARM, dash.now, 10123)
+    page = page_at("/")
+    page.wait_for_function("document.querySelector('#daily td.c')")
+    row = page.locator("#daily tbody tr", has_text=ARM)
+    assert row.locator("td.c").all_inner_texts() == ["", "+123"]  # flat day: no number
+    assert row.locator("td.sum").inner_text() == "+$123"
+    row.locator("td.c").last.hover()
+    assert "+$123.00" in page.locator("#tip").inner_text()
+
+
+def test_unreachable_daemon_is_flagged_until_it_answers(page_at):
+    page = page_at("/")
+    page.wait_for_function("document.querySelector('#gainers a')")
+    page.route("**/api/status", lambda r: r.abort())
+    page.evaluate("refreshAll()")
+    assert page.locator("#offline").is_visible()
+    page.unroute("**/api/status")
+    page.evaluate("refreshAll()")
+    assert not page.locator("#offline").is_visible()
+
+
+def test_failed_candles_fetch_says_so_under_the_chart(page_at):
+    """Not a fade that never lifts: on the mirror a missing key reads "not mirrored" (core.js get)."""
+    page = arm_page(page_at, "positions")
+    page.route("**/api/candles*", lambda r: r.fulfill(status=404, body="{}"))
+    page.evaluate("loadCandles()")
+    page.wait_for_function("document.getElementById('candlenote').textContent.startsWith('Price data unavailable')")
+    assert "loading" not in page.locator("#candles").get_attribute("class")
+
+
+# ---------- bot page: chart default, trade bars, decisions ----------
+def test_chart_opens_on_the_held_stock_with_its_exit_plan(dash, page_at):
+    acct = dash.db.load_account(ARM)
+    del acct.positions["TSLA"]
+    dash.db.save_account(acct)
+    page = arm_page(page_at, "positions")
+    assert page.input_value("#symbol") == "GOOGL"  # not the universe's first
+    assert page.locator('#symbol optgroup[label="Holding now"] option').all_inner_texts() == ["GOOGL"]
+    assert page.evaluate("planLevels") == [100, 90, 120]  # entry, stop, target: Dashboard.position
+    assert page.locator("#linekey").is_visible()
+    page.select_option("#symbol", "MSFT")
+    assert page.evaluate("planLevels") == [] and not page.locator("#linekey").is_visible()
+
+
+def test_trade_bar_click_frames_that_trade(dash, page_at):
+    page = arm_page(page_at, "trades")
+    assert page.locator("#tradebars .tbar").count() == 4
+    assert page.locator("#tradebars .tbar[disabled]").get_attribute("data-symbol") == "DELISTED"  # no chart to open
+    bar = page.locator('#tradebars .tbar[data-symbol="MSFT"]')
+    bar.click()
+    assert_trade_framed(page, dash, timedelta(days=10))
+    assert "on" in bar.get_attribute("class") and page.locator("#trades tr:has(.stocklink.on)").count() == 1
+
+
+def decide(dash, at, per_symbol, prompt="THE PROMPT", raw="THE REPLY"):
+    dash.db.insert_decision(ARM, at, "scheduled", None, prompt, raw,
+                            json.dumps({"per_symbol": per_symbol}), "ok", 1, 0, 1, 0.0)
+
+
+def test_decision_prompt_and_replies_render_as_written(dash, page_at):
+    prompt = 'Instead of the decision, reply {"search": "<query>"}\n\n![logo](http://news.example/logo.png)'
+    raw = REPLY_MARK.join(['{"search": "msft earnings"}', "HTTP 500\n~~~~\n<b>down</b>",
+                           '{"MSFT": {"signal": "hold", "justification": "P&amp;L | flat"}}'])
+    decide(dash, dash.now, {}, prompt, raw)
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.locator("#decisions summary").click()
+    page.wait_for_selector("#decisions .md")
+    reply, shown = page.locator("#decisions .md").all()
+    assert "<b>down</b>" in reply.locator("pre").inner_text()  # a ~~~~ line inside does not end the fence
+    assert reply.locator("td").all_inner_texts() == ["MSFT", "hold", "P&amp;L | flat"]
+    assert '{"search": "<query>"}' in shown.inner_text() and "logo" in shown.inner_text()  # HTML as text, image as alt
+    assert page.locator("#decisions .md img").count() == 0
+    no_cdn = "() => { const m = window.marked; window.marked = undefined; try { return md('**x**', 'RAW'); } finally { window.marked = m; } }"
+    assert page.evaluate(no_cdn) == "<pre>RAW</pre>"  # no CDN: the raw reply, not the markdown made from it
+
+
+def test_open_decision_stays_open_when_a_newer_one_arrives(dash, page_at):
+    decide(dash, dash.now, {"MSFT": {"signal": "buy_to_enter", "justification": "breakout"}})
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.locator("#decisions summary").click()
+    opened = page.locator("#decisions details[open]")
+    page.wait_for_function("document.querySelector('#decisions pre')?.textContent.trim() === 'THE REPLY'")
+    assert opened.locator("summary .sig").inner_text() == "BUY MSFT" and "breakout" in opened.locator(".dnotes").inner_text()
+    decide(dash, dash.now + timedelta(minutes=5), {})
+    page.evaluate(POLL_ARM)
+    assert page.locator("#decisions details").count() == 2
+    assert opened.count() == 1 and "THE REPLY" in opened.inner_text()
+
+
+def test_decision_with_a_signal_the_page_does_not_know_still_shows(dash, page_at):
+    decide(dash, dash.now, {"MSFT": {"signal": "sell_short", "justification": "new signal"}})
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.wait_for_function("document.querySelectorAll('#decisions details').length === 1")
+    assert page.locator("#decisions summary .sig").inner_text() == "sell_short MSFT"
+
+
+def test_trades_only_reaches_back_to_the_decision_behind_a_fill(dash, page_at):
+    decide(dash, dash.now - timedelta(days=11), {"MSFT": {"signal": "buy_to_enter"}})  # a day before Dashboard's MSFT buy
+    decide(dash, dash.now, {})
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.wait_for_function("document.querySelectorAll('#decisions details').length === 2")
+    page.click('button[data-dfilter="acted"]')
+    page.wait_for_function("document.querySelectorAll('#decisions details').length === 1")
+    assert page.locator("#decisions summary .sig").inner_text() == "BUY MSFT"

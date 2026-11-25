@@ -9,6 +9,7 @@ from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
+from stockbot.dashboard.glossary import RULES
 from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
@@ -129,9 +130,11 @@ def _ms(ts: datetime) -> int:  # chart x: epoch ms
     return int(ts.timestamp() * 1000)
 
 
-def equity(db: DB, mode: str = "usd") -> dict[str, list]:
+def equity(db: DB, mode: str = "usd", only: set[str] | None = None) -> dict[str, list]:
     out = {}
     for a in db.accounts():
+        if only is not None and a not in only:
+            continue
         start = db.start_cash(a)
         pts = [[_ms(ts), nav if mode == "usd" else (nav / start - 1) * 100]
                for ts, nav in db.equity_series(a)]
@@ -193,15 +196,28 @@ def conviction(db: DB, account: str) -> list[dict]:
     return [{**r, "win_rate": r["win_rate"] * 100} for r in conviction_buckets(db.closed_trades(account))]
 
 
-def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
+DECIDED_FILLS = ("entry", "add", "close")  # fills a decision asked for; stop and target fills are the harness's own
+
+
+def decisions(db: DB, account: str, limit: int = 50, acted: bool = False) -> list[dict]:
+    """The latest decisions; acted: only those that led to a trade, however far back. Found from fills, not by
+    searching decisions for a signal: that reads every stored prompt."""
     out = []
-    for r in db.recent_decisions(account, limit):
+    rows = db.traded_decisions(account, DECIDED_FILLS, limit) if acted else db.recent_decisions(account, limit)
+    for r in rows:
         parsed = json.loads(r["parsed_json"] or "{}").get("per_symbol", {})
-        acts = [f"{s} {d['signal']}: {d.get('justification', '')}".strip(": ")
-                for s, d in parsed.items() if d["signal"] != "hold" or d.get("justification")]
+        # per stock it traded or commented on; trades first: on a 30-stock reply the one buy is what the reader came for
+        acts = sorted(({"symbol": s, "signal": d["signal"], "why": d.get("justification", "")}
+                       for s, d in parsed.items() if d["signal"] != "hold" or d.get("justification")),
+                      key=lambda a: a["signal"] == "hold")
         out.append({"id": r["id"], "slot_ts": r["slot_ts"], "reason": r["reason"], "status": r["status"],
-                    "cost": r["cost"], "summary": " | ".join(acts) or "hold all"})
+                    "cost": r["cost"], "actions": acts})
     return out
+
+
+def rejections(db: DB, account: str, limit: int = 100) -> list[dict]:
+    """Latest blocked orders, each with its rule in plain words ("" for a rule the glossary does not know)."""
+    return [{**r, "meaning": RULES.get(r["rule"], "")} for r in db.recent_rejections(account, limit)]
 
 
 def chart_fills(db: DB, account: str, symbol: str) -> list[dict]:
