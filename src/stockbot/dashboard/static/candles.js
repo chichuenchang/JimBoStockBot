@@ -1,6 +1,6 @@
-// ---------- price chart: candles, fill badges, open position lines (overview's market panel and bot page) ----------
 "use strict";
 
+// ---------- price chart: candles, fill badges, open position lines (overview's market panel and bot page) ----------
 let candleChart, candleSeries, candleSeq = 0;
 const TRADE_VIEW_BARS = 40;  // at least this many bars each side of a closed trade's middle
 const DAY_VIEW_BARS = 250;  // about a trading year

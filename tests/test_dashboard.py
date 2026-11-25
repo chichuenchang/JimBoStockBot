@@ -468,7 +468,7 @@ def test_decision_charts_redraw(db):
     c = client(db)
     [chart] = c.get(f"/api/decision/{i}").json()["charts"]
     assert chart == {"symbol": "MSFT", "tf": "1Week", "start": "2026-01-01", "end": "2026-01-30", "log": True}
-    r = c.get("/api/chart", params=chart)  # app.js passes the object as-is
+    r = c.get("/api/chart", params=chart)  # arm.js passes the object as-is
     assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
 
 
