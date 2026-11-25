@@ -14,18 +14,19 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
 from dotenv import load_dotenv
 
 from stockbot import interval
-from stockbot.config import AppConfig
 from stockbot.dashboard.app import INTRADAY_SESSIONS, MIRROR_STATIC, SCRIPTS, create_app
 from stockbot.data.base import MarketData
-from stockbot.db import DB
-from stockbot.llm.budget import Budget
 from stockbot.models import BENCHMARK, Bar, Session
+
+if TYPE_CHECKING:
+    from stockbot.agent.cycle import AppContext
 
 log = logging.getLogger(__name__)
 
@@ -83,10 +84,11 @@ class MemoData:
         return await self.inner.news(symbols, since)
 
 
-async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None, root: str,
-                now: datetime, long_candles: bool = True) -> dict[str, Entry]:
+async def crawl(ctx: AppContext, root: str, now: datetime, long_candles: bool = True) -> dict[str, Entry]:
     """long_candles False: skip 1Day/1Week/1Month bars (most of the bytes, and only their last bar moves)."""
-    app = create_app(db, cfg, budget, MemoData(data) if data is not None else None, root=root, mirror=now)
+    data = MemoData(ctx.data) if ctx.data is not None else None
+    app = create_app(ctx.db, ctx.cfg, ctx.budget, data, root=root, mirror=now)
+    cfg = ctx.cfg
     out: dict[str, Entry] = {}
     failed: list[str] = []
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mirror") as c:
@@ -114,7 +116,7 @@ async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None,
             await get("/api/market", f"sessions={n}")
         for span in _offered(usage, rb'data-span="([^"]+)"'):
             await get("/api/usage", f"span={span}")
-        tfs = _offered(b"".join(re.findall(rb'<select id="tf".*?</select>', index, re.S)), rb'value="([^"]+)"')
+        tfs = _offered(b"".join(re.findall(rb'<select id="tf".*?</select>', index, re.DOTALL)), rb'value="([^"]+)"')
         for s in universe:
             for tf in tfs if long_candles else [t for t in tfs if t in INTRADAY_SESSIONS]:
                 await get("/api/candles", f"symbol={s}&tf={tf}")
@@ -132,8 +134,9 @@ async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None,
             for i in sorted(ids):
                 r = await get(f"/api/decision/{i}")
                 for chart in (r.json()["charts"] if r is not None else []):
-                    q = "&".join(f"{k}={str(v).lower() if isinstance(v, bool) else v}" for k, v in chart.items())
-                    await get("/api/chart", q)
+                    chart_query = "&".join(f"{k}={str(v).lower() if isinstance(v, bool) else v}"
+                                           for k, v in chart.items())  # as arm.js URLSearchParams sends it
+                    await get("/api/chart", chart_query)
     if failed:
         log.warning("mirror crawl: %d not mirrored, e.g. %s", len(failed), failed[:3])
     return out
@@ -143,9 +146,9 @@ class Pusher:
     """Delta push (spec §Push): gzip each body, hash it, upload the blobs the socket lacks, then commit the whole
     key -> hash index at once. Until the commit lands the socket serves the previous index."""
 
-    def __init__(self, url: str, key: str, client: httpx.AsyncClient, max_request: int = MAX_REQUEST):
+    def __init__(self, url: str, api_key: str, client: httpx.AsyncClient, max_request: int = MAX_REQUEST):
         self.url, self.client, self.max_request = url.rstrip("/"), client, max_request
-        self.headers = {"Authorization": f"Bearer {key}"}
+        self.headers = {"Authorization": f"Bearer {api_key}"}
         self.acked: set[str] = set()  # blobs the socket holds: what the last commit indexed, + uploads since
         self.fresh = True  # nothing known yet (daemon restart): commit first, the 409 names what to upload
 
@@ -197,45 +200,43 @@ class Mirror:
     """Daemon side: crawl + push every decision interval while the market is open, hourly otherwise.
     Long candles (crawl long_candles) only hourly; between, the last ones ride along."""
 
-    def __init__(self, db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None, root: str, pusher,
+    def __init__(self, ctx: AppContext, root: str, pusher: Pusher,
                  crawl_fn: Callable[..., Awaitable[dict[str, Entry]]] = crawl):
-        self.db, self.cfg, self.budget, self.data, self.root = db, cfg, budget, data, root
-        self.pusher, self.crawl = pusher, crawl_fn
+        self.ctx, self.root, self.pusher, self.crawl = ctx, root, pusher, crawl_fn
         self.pushed: datetime | None = None
-        self.long_at: datetime | None = None
-        self.long: dict[str, Entry] = {}  # last long-candle entries
+        self.long_candles_at: datetime | None = None
+        self.long_candles: dict[str, Entry] = {}  # from the last crawl that took them
         self.api_hash = ""
         self.failed: datetime | None = None
 
     @classmethod
-    def from_env(cls, ctx) -> Mirror | None:
+    def from_env(cls, ctx: AppContext) -> Mirror | None:
         load_dotenv()
-        url, key_ = os.environ.get("JBSB_MIAODA_URL"), os.environ.get("JBSB_MIAODA_KEY")
-        if not url or not key_:
+        url, api_key = os.environ.get("JBSB_MIAODA_URL"), os.environ.get("JBSB_MIAODA_KEY")
+        if not url or not api_key:
             log.info("mirror off: JBSB_MIAODA_URL / JBSB_MIAODA_KEY not set")
             return None
-        return cls(ctx.db, ctx.cfg, ctx.budget, ctx.data, urlparse(url).path.rstrip("/"),
-                   Pusher(url, key_, httpx.AsyncClient()))
+        return cls(ctx, urlparse(url).path.rstrip("/"), Pusher(url, api_key, httpx.AsyncClient()))
 
     def _due(self, now: datetime) -> bool:
         if self.failed is not None and now - self.failed < RETRY:
             return False
         if self.pushed is None:
             return True
-        every = timedelta(minutes=interval.get(self.db, self.cfg.settings))
-        return now - self.pushed >= (every if self.db.kv_get("market_open") == "1" else OFF_HOURS)
+        db = self.ctx.db
+        every = timedelta(minutes=interval.get(db, self.ctx.cfg.settings))
+        return now - self.pushed >= (every if db.kv_get("market_open") == "1" else OFF_HOURS)
 
     async def tick(self, now: datetime) -> None:
         """Never raises: a dead socket must not touch trading."""
         if not self._due(now):
             return
         try:
-            long_candles = self.long_at is None or now - self.long_at >= OFF_HOURS
-            entries = await self.crawl(self.db, self.cfg, self.budget, self.data, root=self.root, now=now,
-                                       long_candles=long_candles)
-            if long_candles:
-                self.long = {k: e for k, e in entries.items() if _is_long_candles(k)}
-            entries = {**self.long, **entries}
+            with_long = self.long_candles_at is None or now - self.long_candles_at >= OFF_HOURS
+            entries = await self.crawl(self.ctx, root=self.root, now=now, long_candles=with_long)
+            if with_long:
+                self.long_candles = {k: e for k, e in entries.items() if _is_long_candles(k)}
+            entries = {**self.long_candles, **entries}
             api_hash = hashlib.sha256(b"".join(k.encode() + e.body for k, e in sorted(entries.items())
                                                if k.startswith("/api/"))).hexdigest()
             if api_hash != self.api_hash:  # HTML carries the stamp: always differs, not a reason to push
@@ -243,8 +244,8 @@ class Mirror:
                 log.info("mirror pushed %d keys, %d kB new", len(entries), sent // 1000)
                 self.api_hash = api_hash
             self.pushed, self.failed = now, None
-            if long_candles:
-                self.long_at = now
+            if with_long:
+                self.long_candles_at = now
         except Exception:
             self.failed = now
             log.exception("mirror push failed; retrying in %s", RETRY)

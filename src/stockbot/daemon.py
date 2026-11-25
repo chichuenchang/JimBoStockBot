@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, date, datetime, timedelta
+from typing import TYPE_CHECKING
 
 from stockbot import history, interval
 from stockbot.agent.cycle import AppContext, run_cycle
@@ -14,6 +15,9 @@ from stockbot.llm import quota
 from stockbot.models import BENCHMARK, Session
 from stockbot.monitor import MINUTE, monitor_tick, wake_due
 from stockbot.report.analyst import build_report
+
+if TYPE_CHECKING:
+    from stockbot.mirror import Mirror
 
 log = logging.getLogger("stockbot")
 REPLAY_GAP = timedelta(minutes=2)
@@ -256,8 +260,8 @@ class Daemon:
                 if task:
                     task.cancel()
 
-    async def _mirror_loop(self, m, poll_s: float = 30) -> None:
+    async def _mirror_loop(self, mirror: Mirror, poll_s: float = 30) -> None:
         """Own task: a first push over the slow link takes minutes; steps must not wait for it. tick never raises."""
         while True:
-            await m.tick(self.ctx.clock.now())
+            await mirror.tick(self.ctx.clock.now())
             await asyncio.sleep(poll_s)

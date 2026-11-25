@@ -7,6 +7,7 @@ import logging
 import re
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -21,9 +22,13 @@ from tests.snapshot import CFG
 from tests.test_dashboard import T0, db  # noqa: F401  (fixture)
 
 
+def app_ctx(db, data=None):
+    """The AppContext fields a mirror reads."""
+    return SimpleNamespace(db=db, cfg=CFG, budget=Budget(db, CFG, ReplayClock(T0 + timedelta(days=1))), data=data)
+
+
 def run_crawl(db, data=None):
-    budget = Budget(db, CFG, ReplayClock(T0 + timedelta(days=1)))
-    return asyncio.run(crawl(db, CFG, budget, data, root="/app/x", now=T0))
+    return asyncio.run(crawl(app_ctx(db, data), root="/app/x", now=T0))
 
 
 def test_key_sorts_query():
@@ -75,8 +80,7 @@ def test_crawl_covers_every_js_fetch(db):
 
 
 def test_crawl_without_long_candles(db):
-    budget = Budget(db, CFG, ReplayClock(T0 + timedelta(days=1)))
-    keys = set(asyncio.run(crawl(db, CFG, budget, None, root="/app/x", now=T0, long_candles=False)))
+    keys = set(asyncio.run(crawl(app_ctx(db), root="/app/x", now=T0, long_candles=False)))
     assert "/api/candles?symbol=MSFT&tf=1Min" in keys and "/api/candles?symbol=MSFT&tf=1Hour" in keys
     assert not [k for k in keys if "tf=1Day" in k or "tf=1Week" in k or "tf=1Month" in k]
 
@@ -237,7 +241,7 @@ def mirror(db, p, crawls):
     async def counting(*a, **kw):
         crawls.append(kw.get("long_candles", True))
         return await crawl(*a, **kw)
-    return Mirror(db, CFG, Budget(db, CFG, ReplayClock(T0)), None, "/app/x", p, crawl_fn=counting)
+    return Mirror(app_ctx(db), "/app/x", p, crawl_fn=counting)
 
 
 def test_mirror_off_without_env(monkeypatch, caplog):
