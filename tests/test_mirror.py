@@ -4,13 +4,15 @@ import base64
 import gzip
 import json
 import logging
+import re
 from datetime import timedelta
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from stockbot import interval
+from stockbot import dashboard, interval
 from stockbot.clock import ReplayClock
 from stockbot.llm.budget import Budget
 from stockbot.mirror import Entry, MemoData, Mirror, Pusher, crawl, key
@@ -43,6 +45,33 @@ def test_crawl_keys(db):
     assert len([k for k in keys if k.startswith("/api/candles?symbol=MSFT&")]) == 5
     # Miaoda's own static middleware answers /static/* (404 File not found) before the app: the mirror's JS lives apart
     assert any(k.startswith("/jbsb-js/core.js?v=") for k in keys) and not [k for k in keys if k.startswith("/static/")]
+
+
+# JS paths the mirror leaves out on purpose: writes. "/api/" = the templated pause/resume(_all) posts
+UNMIRRORED = {"/api/", "/api/interval", "/api/tab_order"}
+
+
+def js_api_paths() -> set[str]:
+    """Every /api path literal in static/*.js, up to its query, ${...} as *."""
+    out = set()
+    for p in (Path(dashboard.__file__).parent / "static").glob("*.js"):
+        for lit in re.findall(r"""["'`](/api/[^"'`?]*)""", p.read_text(encoding="utf-8")):
+            out.add(re.sub(r"\$\{[^}]*$", "", re.sub(r"\$\{[^}]*\}", "*", lit)))
+    return out
+
+
+def test_crawl_covers_every_js_fetch(db):
+    """A fetch added to the JS without a crawl entry would 404 on the phone only."""
+    from tests.test_dashboard import seed_daily
+    seed_daily(db)
+    db.insert_decision("kimi-improved", T0 + timedelta(days=1), "scheduled", None,
+                       "# CHART image 1: MSFT 1Week 2026-01-01..2026-01-30 log", "{}", "{}", "ok", 0, 0, 0, 0.0)
+    keys = run_crawl(db)
+    paths = js_api_paths()
+    assert "/api/arm/*/fills" in paths and "/api/" in paths  # the scan sees templated paths
+    for path in paths - UNMIRRORED:
+        pattern = re.compile(re.escape(path).replace(r"\*", "[^/?]+") + r"(\?|$)")
+        assert any(pattern.match(k) for k in keys), path
 
 
 def test_crawl_without_long_candles(db):
