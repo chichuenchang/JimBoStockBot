@@ -51,6 +51,7 @@ _JS_SAFE = "!'()*"  # encodeURIComponent leaves these (and A-Z a-z 0-9 - _ . ~) 
 OFF_HOURS = timedelta(hours=1)  # push cadence with the market closed; also long candles' refresh
 RETRY = timedelta(minutes=5)  # after a failed push: a crawl is ~35 market-data calls trading shares a limit with
 MAX_REQUEST = 400_000  # bytes per blobs request: the socket's body cap is ~1 MB (spec §Measured)
+BLOB_OVERHEAD = 200  # JSON around one blob's base64: hash, content_type, keys
 
 
 class MemoData:
@@ -159,7 +160,7 @@ class Pusher:
     async def _upload(self, blobs: dict[str, dict]) -> int:
         sent, chunk, size = 0, [], 0
         for h, b in blobs.items():
-            n = len(b["gz_b64"]) + 200
+            n = len(b["gz_b64"]) + BLOB_OVERHEAD
             if chunk and size + n > self.max_request:
                 sent += await self._send(chunk)
                 chunk, size = [], 0
@@ -176,13 +177,10 @@ class Pusher:
 
     async def push(self, entries: dict[str, Entry], pushed_at: datetime) -> int:
         """Bytes uploaded. Raises on any failed request."""
-        blobs: dict[str, dict] = {}
-        index: dict[str, str] = {}
-        for k, e in entries.items():
-            gz = gzip.compress(e.body, mtime=0)  # mtime 0: equal bodies, equal hash
-            h = hashlib.sha256(gz).hexdigest()
-            index[k] = h
-            blobs[h] = {"content_type": e.content_type, "gz_b64": base64.b64encode(gz).decode()}
+        index, blobs, too_big = _pack(entries, self.max_request)
+        if too_big:  # one request can't carry it: left out (404 "not mirrored"), not retried forever
+            log.warning("mirror: %d bodies over %d B gzipped, not mirrored: %s", len(too_big), self.max_request,
+                        too_big[:3])
         sent = 0 if self.fresh else await self._upload({h: b for h, b in blobs.items() if h not in self.acked})
         commit = {"index": index, "pushed_at": pushed_at.isoformat()}
         r = await self._post("commit", commit)
@@ -194,6 +192,23 @@ class Pusher:
         r.raise_for_status()
         self.acked, self.fresh = set(index.values()), False  # the commit pruned every blob it did not index
         return sent
+
+
+def _pack(entries: dict[str, Entry], max_request: int) -> tuple[dict[str, str], dict[str, dict], list[str]]:
+    """key -> hash index, hash -> blob, and the keys whose blob alone exceeds a request."""
+    index: dict[str, str] = {}
+    blobs: dict[str, dict] = {}
+    too_big: list[str] = []
+    for k, e in entries.items():
+        gz = gzip.compress(e.body, mtime=0)  # mtime 0: equal bodies, equal hash
+        b64 = base64.b64encode(gz).decode()
+        if len(b64) + BLOB_OVERHEAD > max_request:
+            too_big.append(k)
+            continue
+        h = hashlib.sha256(gz).hexdigest()
+        index[k] = h
+        blobs[h] = {"content_type": e.content_type, "gz_b64": b64}
+    return index, blobs, too_big
 
 
 class Mirror:

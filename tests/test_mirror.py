@@ -4,6 +4,7 @@ import base64
 import gzip
 import json
 import logging
+import os
 import re
 from datetime import timedelta
 from pathlib import Path
@@ -167,6 +168,17 @@ def test_push_chunks_then_commits():
     got = {b["hash"]: gzip.decompress(base64.b64decode(b["gz_b64"])) for b in sent_blobs(blobs)}
     assert {index[k]: e.body for k, e in ENTRIES.items()} == got
     assert all(c.request.headers["authorization"] == "Bearer KEY" for c in [*blobs.calls, *commit.calls])
+
+
+@respx.mock
+def test_push_leaves_out_blob_over_request_cap(caplog):
+    """A body no request can carry would fail every push: leave it out, keep the rest live."""
+    blobs = respx.post(f"{URL}/openapi/jbsb/blobs").mock(return_value=httpx.Response(200, json={}))
+    commit = respx.post(f"{URL}/openapi/jbsb/commit").mock(return_value=httpx.Response(200, json={}))
+    big = {"/api/big": Entry("application/json", os.urandom(2000))}  # random: gzip can't shrink it
+    asyncio.run(pusher(max_request=700).push({**ENTRIES, **big}, T0))
+    assert set(json.loads(commit.calls[0].request.content)["index"]) == set(ENTRIES)
+    assert len(sent_blobs(blobs)) == len(ENTRIES) and "/api/big" in caplog.text
 
 
 @respx.mock
