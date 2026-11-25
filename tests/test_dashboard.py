@@ -582,3 +582,9 @@ def test_usage_removed_bot_latest_model(db):
     old = {b["bot"]: b for b in client(db).get("/api/usage").json()["bots"]}["old-bot"]
     assert old["model"] == "deepseek-v4.1-flash" and not old["flat"]
     assert old["today"]["calls"] == 0 and old["month"]["calls"] == 2 and old["month"]["cost"] == 0.2
+
+
+def test_equity_for_named_accounts_only(db):
+    c = client(db)
+    assert set(c.get(f"/api/equity?arms=kimi-improved,{BENCHMARK}").json()) == {"kimi-improved", BENCHMARK}
+    assert len(c.get("/api/equity").json()) == 3

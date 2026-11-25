@@ -129,9 +129,11 @@ def _ms(ts: datetime) -> int:  # chart x: epoch ms
     return int(ts.timestamp() * 1000)
 
 
-def equity(db: DB, mode: str = "usd") -> dict[str, list]:
+def equity(db: DB, mode: str = "usd", only: set[str] | None = None) -> dict[str, list]:
     out = {}
     for a in db.accounts():
+        if only is not None and a not in only:
+            continue
         start = db.start_cash(a)
         pts = [[_ms(ts), nav if mode == "usd" else (nav / start - 1) * 100]
                for ts, nav in db.equity_series(a)]

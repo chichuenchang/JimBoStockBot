@@ -100,8 +100,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return q.leaderboard(db, cfg)
 
     @app.get("/api/equity")
-    def api_equity(mode: str = "usd"):
-        return q.equity(db, "pct" if mode == "pct" else "usd")
+    def api_equity(mode: str = "usd", arms: str = ""):
+        """arms: comma list, a bot page asks for itself and the benchmark; empty = every account."""
+        return q.equity(db, "pct" if mode == "pct" else "usd", set(arms.split(",")) if arms else None)
 
     @app.get("/api/drawdown")
     def api_drawdown():
