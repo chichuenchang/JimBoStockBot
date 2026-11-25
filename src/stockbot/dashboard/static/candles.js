@@ -17,9 +17,13 @@ const stockLink = (symbol, buyIso = "", sellIso = "") => inUniverse(symbol)
 // (stockbot/mirror.py) stores each stock's bars once, not once per bot
 async function fetchCandles(tf) {
   const symbol = document.getElementById("symbol").value;
-  const [res, fills] = await Promise.all([get(`/api/candles?symbol=${symbol}&tf=${tf}`),
-    window.ARM ? get(`/api/arm/${encodeURIComponent(window.ARM)}/fills?symbol=${symbol}`) : []]);
-  return { ...res, fills };
+  try {
+    const [res, fills] = await Promise.all([get(`/api/candles?symbol=${symbol}&tf=${tf}`),
+      window.ARM ? get(`/api/arm/${encodeURIComponent(window.ARM)}/fills?symbol=${symbol}`) : []]);
+    return { ...res, fills };
+  } catch (e) {  // daemon down, or a key the mirror lacks: say so under the chart, not a stuck fade
+    return { bars: [], fills: [], error: e.message };
+  }
 }
 // a fetch can take seconds (live feed): fade the old stock's bars meanwhile, so they don't pass for the new one's
 const candlesLoading = (on) => document.getElementById("candles").classList.toggle("loading", on);

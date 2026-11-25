@@ -40,7 +40,7 @@ Miaoda mounts app at `/app/<app_id>`; templates/JS use absolute `/...` (`base.ht
 
 ### Mirror flag
 
-`create_app(..., mirror: MirrorView | None)`. Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` JS 404 → muted "not mirrored" in place of panel.
+`create_app(..., mirror: MirrorView | None)`. Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` 404 = `get()` error "not mirrored": shown under candle chart and in decision detail; other panels fixed-key, crawl test covers them.
 
 ### Crawl (daemon side, new `src/stockbot/mirror.py`)
 

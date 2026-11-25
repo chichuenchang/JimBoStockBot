@@ -37,7 +37,10 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<
 // ROOT: path prefix (Miaoda mirror mounts at /app/<id>; localhost ""). MIRROR_AT: crawl time of a read-only copy, else null
 const ROOT = document.body.dataset.root ?? "", MIRROR_AT = document.body.dataset.mirror ? new Date(document.body.dataset.mirror) : null;
 const url = (path) => ROOT + path;
-const get = (path) => fetch(url(path)).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${path}: HTTP ${r.status}`))));
+// mirror 404 = the crawl left that key out (mirror.py): a reason to show, not a fault
+const NOT_MIRRORED = "not mirrored";
+const get = (path) => fetch(url(path)).then((r) => (r.ok ? r.json() : Promise.reject(new Error(
+  MIRROR_AT && r.status === 404 ? NOT_MIRRORED : `${path}: HTTP ${r.status}`))));
 const tipAttr = (text) => (text ? ` data-tip="${esc(text)}"` : "");
 const pref = (key, fallback) => { try { return localStorage.getItem("jbsb." + key) ?? fallback; } catch (e) { return fallback; } };
 const setPref = (key, value) => { try { localStorage.setItem("jbsb." + key, value); } catch (e) { /* private window: this page only */ } };

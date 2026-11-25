@@ -136,8 +136,12 @@ async function openDecision(el) {
   if (!el.open || el.dataset.loaded) return;
   el.dataset.loaded = "1";
   const full = el.querySelector(".full");
-  const d = await get(`/api/decision/${el.dataset.id}`).catch(() => null);
-  if (!d) { delete el.dataset.loaded; full.textContent = "Could not load. Close and open again to retry."; return; }
+  const d = await get(`/api/decision/${el.dataset.id}`).catch((e) => e);
+  if (d instanceof Error) {
+    delete el.dataset.loaded;
+    full.textContent = d.message === NOT_MIRRORED ? "Not mirrored: open it on the PC dashboard." : "Could not load. Close and open again to retry.";
+    return;
+  }
   // chart-tool pictures the bot saw, re-drawn (agent/chart_tool.py seen)
   const pics = d.charts.map((c) =>
     `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="${esc(url("/api/chart?" + new URLSearchParams(c)))}">`);
