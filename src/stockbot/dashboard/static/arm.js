@@ -100,10 +100,14 @@ function drawDecisions() {
   }
   box.replaceChildren(...nodes);
 }
-// prompt and reply as markdown. Text is the model's and the news': always through DOMPurify. No CDN: plain, the
-// original text, not the markdown made from it
-const md = (src, plain = src) => (window.marked && window.DOMPurify
-  ? `<div class="md">${DOMPurify.sanitize(marked.parse(src))}</div>` : `<pre>${esc(plain)}</pre>`);
+// prompt and reply as markdown. Text is the model's and the news': HTML in it shows as text, not tags (the prompt's
+// "<query>" would vanish), and still goes through DOMPurify. No CDN: plain, the original text, not the markdown made from it
+let marker;
+function md(src, plain = src) {
+  if (!window.marked || !window.DOMPurify) return `<pre>${esc(plain)}</pre>`;
+  marker ??= new marked.Marked({ renderer: { html: ({ text }) => esc(text) } });
+  return `<div class="md">${DOMPurify.sanitize(marker.parse(src))}</div>`;
+}
 const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~]/g, "\\$&").replace(/\n/g, " ");
 const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
 function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
