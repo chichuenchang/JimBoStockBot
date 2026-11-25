@@ -206,7 +206,6 @@ class Mirror:
         self.pushed: datetime | None = None
         self.long_candles_at: datetime | None = None
         self.long_candles: dict[str, Entry] = {}  # from the last crawl that took them
-        self.api_hash = ""
         self.failed: datetime | None = None
 
     @classmethod
@@ -237,12 +236,10 @@ class Mirror:
             if with_long:
                 self.long_candles = {k: e for k, e in entries.items() if _is_long_candles(k)}
             entries = {**self.long_candles, **entries}
-            api_hash = hashlib.sha256(b"".join(k.encode() + e.body for k, e in sorted(entries.items())
-                                               if k.startswith("/api/"))).hexdigest()
-            if api_hash != self.api_hash:  # HTML carries the stamp: always differs, not a reason to push
-                sent = await self.pusher.push(entries, now)
-                log.info("mirror pushed %d keys, %d kB new", len(entries), sent // 1000)
-                self.api_hash = api_hash
+            # always push: /api/status heartbeat moves every step anyway, and the new stamp says the PC is up.
+            # Unchanged bodies cost nothing: the socket already holds their blobs
+            sent = await self.pusher.push(entries, now)
+            log.info("mirror pushed %d keys, %d kB new", len(entries), sent // 1000)
             self.pushed, self.failed = now, None
             if with_long:
                 self.long_candles_at = now

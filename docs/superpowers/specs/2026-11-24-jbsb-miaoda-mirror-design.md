@@ -57,7 +57,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 ### Push
 
 - `.env`: `JBSB_MIAODA_URL` (`https://ycnx0knkk9ic.feishuapp.com/app/<app_id>`), `JBSB_MIAODA_KEY`. Either missing = mirror off, one log line at start.
-- Daemon task beside dashboard (`daemon.run_forever`): crawl + push every `cycle_every_min` while market open, hourly otherwise, once at start. Skip push when body hashes unchanged. Errors logged, never raised into cycles. Crawl in thread (`asyncio.to_thread`) if it blocks loop >1s — measure.
+- Daemon task beside dashboard (`daemon.run_forever`): crawl + push every `cycle_every_min` while market open, hourly otherwise, once at start. Push every due tick: `/api/status` heartbeat moves every step, and stamp proves PC up; unchanged blobs already on socket. Errors logged, never raised into cycles. Crawl in thread (`asyncio.to_thread`) if it blocks loop >1s — measure.
 - Wire (delta, content-addressed — upload ~40 kB/s, see Measured): body gzipped, `hash` = sha256 of gzipped bytes. Client remembers hashes the socket acked. `POST /openapi/jbsb/blobs` `{blobs:[{hash, content_type, gz_b64}]}` chunked ≤ 400 kB request, only hashes not acked. Then `POST /openapi/jbsb/commit` `{index:{key: hash}, pushed_at}`: socket in one transaction replaces index if every hash stored, else 409 `{missing:[hash]}` — client uploads those, commits again (once). Old index serves until commit lands. Unreferenced blobs pruned on commit.
 
 ### Socket (new Miaoda repo `../jbsb-miaoda`)

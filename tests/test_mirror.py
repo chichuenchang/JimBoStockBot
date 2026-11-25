@@ -278,14 +278,12 @@ def test_tick_cadence(db):
     assert crawls == [True, False, True]
 
 
-def test_tick_skips_unchanged_push_and_keeps_long_candles(db):
+def test_tick_pushes_each_crawl_and_keeps_long_candles(db):
     crawls, p = [], FakePusher()
     m = mirror(db, p, crawls)
     db.kv_set("market_open", "1")
     interval.set(db, 5)
     asyncio.run(m.tick(T0))
-    db.snapshot_equity("kimi-improved", T0 + timedelta(minutes=5), 10600)  # /api data moved
-    asyncio.run(m.tick(T0 + timedelta(minutes=5)))
-    asyncio.run(m.tick(T0 + timedelta(minutes=10)))  # nothing moved: crawled, not pushed
-    assert len(crawls) == 3 and len(p.pushes) == 2
+    asyncio.run(m.tick(T0 + timedelta(minutes=5)))  # nothing moved: pushed anyway, the stamp says the PC is up
+    assert len(crawls) == 2 and len(p.pushes) == 2
     assert "/api/candles?symbol=MSFT&tf=1Day" in p.pushes[1][1]  # short crawl keeps the last long candles
