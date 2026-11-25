@@ -588,3 +588,8 @@ def test_equity_for_named_accounts_only(db):
     c = client(db)
     assert set(c.get(f"/api/equity?arms=kimi-improved,{BENCHMARK}").json()) == {"kimi-improved", BENCHMARK}
     assert len(c.get("/api/equity").json()) == 3
+
+
+def test_benchmark_named_for_what_it_is(db):
+    html = client(db).get("/").text
+    assert "QQQ buy &amp; hold" in html and f">{BENCHMARK}<" not in html
