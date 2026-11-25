@@ -114,7 +114,8 @@ main { padding: 20px 24px 48px; max-width: 1480px; margin: 0 auto; transition: o
 h1.pagetitle { font-size: 22px; margin: 0 0 16px; font-weight: 700; letter-spacing: -.01em; }
 h1.pagetitle .muted { font-size: 13px; font-weight: 400; margin-left: 8px; letter-spacing: 0; }
 h2.section { font-size: 16px; margin: 32px 0 12px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-[id^="sec-"] { scroll-margin-top: calc(var(--topbar-h, 50px) + 14px); }  /* a jump lands below the sticky bar; app.js measures it */
+/* a jump or a scrollIntoView lands below the sticky bar; app.js measures it */
+[id^="sec-"], #stockchart, .card:has(> #candles) { scroll-margin-top: calc(var(--topbar-h, 50px) + 14px); }
 h2.section:first-child { margin-top: 4px; }
 h2 .muted, h2.section .muted, h3 .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .small { font-size: 12px; }
