@@ -120,8 +120,7 @@ async function openDecision(el) {
 // this bot's account against just holding the benchmark
 async function loadArmEquity() {
   const bench = window.SERIES.find(isBench), pair = [bench, window.ARM].filter(Boolean);
-  const all = await get(`/api/equity?mode=usd&arms=${encodeURIComponent(pair.join(","))}`);
-  const eq = Object.fromEntries(pair.filter((s) => all[s]?.length).map((s) => [s, all[s]]));
+  const eq = await get(`/api/equity?mode=usd&arms=${encodeURIComponent(pair.join(","))}`);  // only the pair
   const grid = sessionGrid(eq);
   const lines = sessionDatasets(grid, eq, pair);
   if (chartEmpty("armequity", !lines.length)) return;

@@ -191,7 +191,7 @@ function drawDaily(daily) {
   const shade = shader(Math.max(1, quantile(series.flatMap((s) => daily[s].map(([, v]) => Math.abs(v))), 0.9)));
   const at = (d) => new Date(d + "T12:00:00Z");
   const month = (d) => at(d).toLocaleDateString("en-US", { timeZone: "UTC", month: "short" });
-  const long = (d) => at(d).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+  const long = (d) => etLongDayFmt.format(at(d));  // noon UTC is the same date in New York; one formatter for every cell
   const months = [];  // [label, span] runs
   for (const d of days) if (months.at(-1)?.[0] === month(d)) months.at(-1)[1]++; else months.push([month(d), 1]);
   // name + total columns 274 px; "-123" (28 px at 12 px type) needs a 32 px square

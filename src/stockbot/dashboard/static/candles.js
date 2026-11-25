@@ -143,12 +143,12 @@ function drawCandles(tf, res) {
   }
   // day+ bars sit at ET midnight: show dates, not 00:00
   const long = ["1Day", "1Week", "1Month"].includes(tf);
-  const etDay = (s) => new Date(s * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", year: "numeric", month: "short", day: "numeric" });
+  const etDay = (s) => new Date(s * 1000).toLocaleDateString("en-US", { timeZone: ET, year: "numeric", month: "short", day: "numeric" });
   candleChart.applyOptions({ localization: { timeFormatter: (s) => long ? etDay(s) : etTime(s * 1000) },
     timeScale: { timeVisible: !long, tickMarkFormatter: (s, type) => new Date(s * 1000).toLocaleString("en-US",
-      long ? { timeZone: "America/New_York", year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
-           : type < LightweightCharts.TickMarkType.Time ? { timeZone: "America/New_York", month: "short", day: "numeric" }  // a new day
-           : { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
+      long ? { timeZone: ET, year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
+           : type < LightweightCharts.TickMarkType.Time ? { timeZone: ET, month: "short", day: "numeric" }  // a new day
+           : { timeZone: ET, hour: "2-digit", minute: "2-digit", hour12: false }) } });
   fillsAtBar = new Map();
   for (const fill of res.fills) {
     const bar = res.bars.findLast((b) => b.time <= fill.time);

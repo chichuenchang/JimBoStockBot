@@ -45,12 +45,14 @@ def test_decision_unique_per_slot(db):
         db.insert_decision(**args)
 
 
-def test_decision_before_is_the_last_at_or_before(db):
+def test_traded_decisions_are_the_last_at_or_before_each_fill(db):
     ids = [db.insert_decision("a", T0 + timedelta(minutes=5 * i), "scheduled", None, "p", "r", "{}", "ok", 0, 0, 0, 0.0)
            for i in range(3)]
-    assert db.decision_before("a", T0 + timedelta(minutes=5))["id"] == ids[1]
-    assert db.decision_before("a", T0 + timedelta(minutes=9))["id"] == ids[1]
-    assert db.decision_before("a", T0 - timedelta(minutes=1)) is None and db.decision_before("b", T0) is None
+    for minutes, reason in [(-1, "entry"), (5, "entry"), (9, "close"), (11, "stop")]:  # before any decision; same one twice
+        db.insert_fill(Fill("a", "X", "buy", 1, 10, T0 + timedelta(minutes=minutes), reason, False))
+    assert [d["id"] for d in db.traded_decisions("a", ("entry", "close"), 10)] == [ids[1]]
+    assert [d["id"] for d in db.traded_decisions("a", ("stop",), 10)] == [ids[2]]
+    assert db.traded_decisions("b", ("entry",), 10) == []
 
 
 def test_spent_filters_month_and_model(db):

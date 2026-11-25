@@ -284,17 +284,20 @@ class DB:
         rows = self._q("SELECT MAX(slot_ts) m FROM decisions WHERE arm=?", arm)
         return parse_ts(rows[0]["m"]) if rows and rows[0]["m"] else None
 
-    def recent_decisions(self, arm: str, limit: int) -> list[dict]:
-        """Newest first, without the bulky prompt and raw reply."""
-        return [dict(r) for r in self._q(
-            "SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
-            "ORDER BY slot_ts DESC LIMIT ?", arm, limit)]
+    _DECISION_ROW = "SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions"  # no bulky prompt, raw reply
 
-    def decision_before(self, arm: str, ts: datetime) -> dict | None:
-        """The arm's last decision at or before ts, shaped as recent_decisions. One index seek on (arm, slot_ts)."""
-        rows = self._q("SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
-                       "AND slot_ts<=? ORDER BY slot_ts DESC LIMIT 1", arm, iso(ts))
-        return dict(rows[0]) if rows else None
+    def recent_decisions(self, arm: str, limit: int) -> list[dict]:
+        """Newest first."""
+        return [dict(r) for r in self._q(f"{self._DECISION_ROW} WHERE arm=? ORDER BY slot_ts DESC LIMIT ?", arm, limit)]
+
+    def traded_decisions(self, arm: str, reasons: tuple[str, ...], limit: int) -> list[dict]:
+        """Newest first, shaped as recent_decisions: the decision behind each fill with one of these reasons, i.e. the
+        arm's last decision at or before the fill. One index seek on (arm, slot_ts) per fill, all inside SQLite."""
+        marks = ",".join("?" * len(reasons))
+        return [dict(r) for r in self._q(
+            f"{self._DECISION_ROW} WHERE id IN (SELECT (SELECT d.id FROM decisions d WHERE d.arm=f.account "
+            f"AND d.slot_ts<=f.ts ORDER BY d.slot_ts DESC LIMIT 1) FROM fills f WHERE f.account=? AND f.reason IN ({marks})) "
+            "ORDER BY slot_ts DESC LIMIT ?", arm, *reasons, limit)]
 
     def decision(self, decision_id: int) -> dict | None:
         rows = self._q("SELECT id, arm, slot_ts, status, prompt, raw FROM decisions WHERE id=?", decision_id)
