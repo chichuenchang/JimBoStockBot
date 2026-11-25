@@ -334,3 +334,32 @@ async def test_history_failure_backoff(tmp_path, caplog):
     await run_day(daemon, session, clock, until=session.open_utc + timedelta(minutes=20))
     assert len(daemon.ctx.history.calls) == 2 * FEED_DOWN_AFTER  # one retry at open
     assert daemon.ctx.db._q("SELECT COUNT(*) n FROM decisions")[0]["n"] > 0  # cycles still ran
+
+
+def test_mirror_task_runs_beside_steps(tmp_path, monkeypatch):
+    """Live daemon pushes the mirror in its own task: a slow push never holds up a step."""
+    import asyncio
+
+    from stockbot import mirror
+    daemon, session, clock, _ = build(tmp_path)
+    ticks, steps = [], []
+
+    class Slow:
+        async def tick(self, now):
+            ticks.append(now)
+            await asyncio.sleep(3600)  # a first push over a slow link
+
+    monkeypatch.setattr(mirror.Mirror, "from_env", classmethod(lambda cls, ctx: Slow()))
+
+    async def step(now):
+        steps.append(now)
+    daemon.step = step
+    daemon.mirror = True
+
+    async def run():
+        try:
+            await asyncio.wait_for(daemon.run_forever(poll_s=0.01), 0.3)
+        except TimeoutError:
+            pass
+    asyncio.run(run())
+    assert len(ticks) == 1 and len(steps) > 5

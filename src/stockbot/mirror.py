@@ -5,13 +5,20 @@ The socket serves those bodies by key; it runs no StockBot code.
 """
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
 import logging
+import os
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date, datetime
-from urllib.parse import parse_qsl, quote
+from datetime import date, datetime, timedelta
+from urllib.parse import parse_qsl, quote, urlparse
 
 import httpx
+from dotenv import load_dotenv
 
+from stockbot import interval
 from stockbot.config import AppConfig
 from stockbot.dashboard.app import SCRIPTS, create_app
 from stockbot.data.base import MarketData
@@ -44,6 +51,10 @@ def key(path: str, query: str) -> str:
 
 
 _JS_SAFE = "!'()*"  # encodeURIComponent leaves these (and A-Z a-z 0-9 - _ . ~) unescaped
+
+
+OFF_HOURS = timedelta(hours=1)  # push cadence with the market closed; also long candles' refresh
+MAX_REQUEST = 400_000  # bytes per blobs request: the socket's body cap is ~1 MB (spec §Measured)
 
 
 class MemoData:
@@ -129,3 +140,112 @@ async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None,
     if failed:
         log.warning("mirror crawl: %d not mirrored, e.g. %s", len(failed), failed[:3])
     return out
+
+
+class Pusher:
+    """Delta push (spec §Push): gzip each body, hash it, upload the blobs the socket lacks, then commit the whole
+    key -> hash index at once. Until the commit lands the socket serves the previous index."""
+
+    def __init__(self, url: str, key: str, client: httpx.AsyncClient, max_request: int = MAX_REQUEST):
+        self.url, self.client, self.max_request = url.rstrip("/"), client, max_request
+        self.headers = {"Authorization": f"Bearer {key}"}
+        self.acked: set[str] = set()  # blobs the socket confirmed storing
+
+    async def _post(self, path: str, body: dict) -> httpx.Response:
+        return await self.client.post(f"{self.url}/openapi/jbsb/{path}", json=body, headers=self.headers,
+                                      timeout=120)
+
+    async def _upload(self, blobs: dict[str, dict]) -> int:
+        sent, chunk, size = 0, [], 0
+        for h, b in blobs.items():
+            n = len(b["gz_b64"]) + 200
+            if chunk and size + n > self.max_request:
+                sent += await self._send(chunk)
+                chunk, size = [], 0
+            chunk.append({"hash": h, **b})
+            size += n
+        if chunk:
+            sent += await self._send(chunk)
+        return sent
+
+    async def _send(self, chunk: list[dict]) -> int:
+        (await self._post("blobs", {"blobs": chunk})).raise_for_status()
+        self.acked |= {b["hash"] for b in chunk}
+        return sum(len(b["gz_b64"]) for b in chunk)
+
+    async def push(self, entries: dict[str, Entry], pushed_at: datetime) -> int:
+        """Bytes uploaded. Raises on any failed request."""
+        blobs: dict[str, dict] = {}
+        index: dict[str, str] = {}
+        for k, e in entries.items():
+            gz = gzip.compress(e.body, mtime=0)  # mtime 0: equal bodies, equal hash
+            h = hashlib.sha256(gz).hexdigest()
+            index[k] = h
+            blobs[h] = {"content_type": e.content_type, "gz_b64": base64.b64encode(gz).decode()}
+        sent = await self._upload({h: b for h, b in blobs.items() if h not in self.acked})
+        commit = {"index": index, "pushed_at": pushed_at.isoformat()}
+        r = await self._post("commit", commit)
+        if r.status_code == 409:  # socket lost blobs it once stored (DB reset): send them, commit once more
+            missing = set(r.json().get("missing", []))
+            self.acked -= missing
+            sent += await self._upload({h: b for h, b in blobs.items() if h in missing})
+            r = await self._post("commit", commit)
+        r.raise_for_status()
+        return sent
+
+
+class Mirror:
+    """Daemon side: crawl + push every decision interval while the market is open, hourly otherwise.
+    Long candles (crawl long_candles) only hourly; between, the last ones ride along."""
+
+    def __init__(self, db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None, root: str, pusher,
+                 crawl_fn: Callable[..., Awaitable[dict[str, Entry]]] = crawl):
+        self.db, self.cfg, self.budget, self.data, self.root = db, cfg, budget, data, root
+        self.pusher, self.crawl = pusher, crawl_fn
+        self.pushed: datetime | None = None
+        self.long_at: datetime | None = None
+        self.long: dict[str, Entry] = {}  # last long-candle entries
+        self.api_hash = ""
+
+    @classmethod
+    def from_env(cls, ctx) -> Mirror | None:
+        load_dotenv()
+        url, key_ = os.environ.get("JBSB_MIAODA_URL"), os.environ.get("JBSB_MIAODA_KEY")
+        if not url or not key_:
+            log.info("mirror off: JBSB_MIAODA_URL / JBSB_MIAODA_KEY not set")
+            return None
+        return cls(ctx.db, ctx.cfg, ctx.budget, ctx.data, urlparse(url).path.rstrip("/"),
+                   Pusher(url, key_, httpx.AsyncClient()))
+
+    def _due(self, now: datetime) -> bool:
+        if self.pushed is None:
+            return True
+        every = timedelta(minutes=interval.get(self.db, self.cfg.settings))
+        return now - self.pushed >= (every if self.db.kv_get("market_open") == "1" else OFF_HOURS)
+
+    async def tick(self, now: datetime) -> None:
+        """Never raises: a dead socket must not touch trading."""
+        if not self._due(now):
+            return
+        try:
+            long_candles = self.long_at is None or now - self.long_at >= OFF_HOURS
+            entries = await self.crawl(self.db, self.cfg, self.budget, self.data, root=self.root, now=now,
+                                       long_candles=long_candles)
+            if long_candles:
+                self.long = {k: e for k, e in entries.items() if _is_long_candles(k)}
+            entries = {**self.long, **entries}
+            api_hash = hashlib.sha256(b"".join(k.encode() + e.body for k, e in sorted(entries.items())
+                                               if k.startswith("/api/"))).hexdigest()
+            if api_hash != self.api_hash:  # HTML carries the stamp: always differs, not a reason to push
+                sent = await self.pusher.push(entries, now)
+                log.info("mirror pushed %d keys, %d kB new", len(entries), sent // 1000)
+                self.api_hash = api_hash
+            self.pushed = now
+            if long_candles:
+                self.long_at = now
+        except Exception:
+            log.exception("mirror push failed; retrying next tick")
+
+
+def _is_long_candles(k: str) -> bool:
+    return k.startswith("/api/candles?") and not any(f"tf={tf}" in k for tf in INTRADAY_TFS)
