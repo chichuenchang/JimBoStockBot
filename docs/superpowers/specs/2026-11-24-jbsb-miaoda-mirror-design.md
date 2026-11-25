@@ -74,10 +74,9 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 
 ## Measured (spike 2026-11-24, app `app_17jr1c29a4u`)
 
-- Login wall: unauthenticated `GET /` = 302. `POST /openapi/**` with `Authorization: Bearer <key>` = 200 past it; any other header = 403 `k_ec_000015` "missing or invalid Authorization header". Fallback not needed.
+- Login wall (scope `specific`, pre password gate): unauthenticated `GET /` = 302. `POST /openapi/**` with `Authorization: Bearer <key>` = 200 past it; any other header = 403 `k_ec_000015` "missing or invalid Authorization header". Fallback not needed. Scope `public` unprobed: `POST /openapi/jbsb/commit` without key must still 403.
 - Body cap: 512 kB ok, 2 MB = 500 `PayloadTooLargeError`. Cap ≈1 MB (body-parser), unset by us.
 - Upload Canada→Miaoda ~40 kB/s: 64 kB 2.3 s, 512 kB 13.1 s. Hence gzip + delta wire.
-- `access-scope-set specific` leaves `apply_config.enabled` with Jim as approver: others may request, Jim approves.
 - Template `npm run lint` / pre-commit hook: `spawn EINVAL` / `spawnSync npm ENOENT` on Windows. Run `npx eslint` + `npm run type:check:server` by hand.
 
 - Platform middleware owns `/app/<id>/static/*` (404 "File not found", browser sees 503) before the app: mirror JS at `/jbsb-js` (`MIRROR_STATIC`).
