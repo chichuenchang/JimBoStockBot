@@ -540,7 +540,7 @@ function drawOverTime() {
   const pct = (v) => signed(v, 2) + "%";
   const yFmt = equityMode === "usd" ? dollars : pct;
   const lines = sessionDatasets(grid, eq).map(styleSeries);
-  document.querySelector("#sec-time + .card .chartrow").hidden = !lines.length;
+  document.getElementById("timecharts").hidden = !lines.length;
   document.getElementById("timeempty").hidden = lines.length > 0;
   if (!lines.length) return;
   draw("equity", "line", { datasets: lines }, sessionOptions(grid, yFmt));
