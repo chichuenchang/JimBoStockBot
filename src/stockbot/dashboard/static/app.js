@@ -566,7 +566,7 @@ function drawDaily(daily) {
   const shade = shader(Math.max(1, quantile(series.flatMap((s) => daily[s].map(([, v]) => Math.abs(v))), 0.9)));
   const at = (d) => new Date(d + "T12:00:00Z");
   const month = (d) => at(d).toLocaleDateString("en-US", { timeZone: "UTC", month: "short" });
-  const long = (d) => at(d).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+  const long = (d) => etLongDayFmt.format(at(d));  // noon UTC is the same date in New York; one formatter for every cell
   const months = [];  // [label, span] runs
   for (const d of days) if (months.at(-1)?.[0] === month(d)) months.at(-1)[1]++; else months.push([month(d), 1]);
   // name + total columns 274 px; "-123" (28 px at 12 px type) needs a 32 px square
@@ -852,12 +852,12 @@ function drawCandles(tf, res) {
   }
   // day+ bars sit at ET midnight: show dates, not 00:00
   const long = ["1Day", "1Week", "1Month"].includes(tf);
-  const etDay = (s) => new Date(s * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", year: "numeric", month: "short", day: "numeric" });
+  const etDay = (s) => new Date(s * 1000).toLocaleDateString("en-US", { timeZone: ET, year: "numeric", month: "short", day: "numeric" });
   candleChart.applyOptions({ localization: { timeFormatter: (s) => long ? etDay(s) : etTime(s * 1000) },
     timeScale: { timeVisible: !long, tickMarkFormatter: (s, type) => new Date(s * 1000).toLocaleString("en-US",
-      long ? { timeZone: "America/New_York", year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
-           : type < LightweightCharts.TickMarkType.Time ? { timeZone: "America/New_York", month: "short", day: "numeric" }  // a new day
-           : { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false }) } });
+      long ? { timeZone: ET, year: "2-digit", month: "short", day: tf === "1Day" ? "numeric" : undefined }
+           : type < LightweightCharts.TickMarkType.Time ? { timeZone: ET, month: "short", day: "numeric" }  // a new day
+           : { timeZone: ET, hour: "2-digit", minute: "2-digit", hour12: false }) } });
   fillsAtBar = new Map();
   for (const fill of res.fills) {
     const bar = res.bars.findLast((b) => b.time <= fill.time);
@@ -967,8 +967,7 @@ async function openDecision(el) {
 // this bot's account against just holding the benchmark
 async function loadArmEquity() {
   const bench = window.SERIES.find(isBench), pair = [bench, window.ARM].filter(Boolean);
-  const all = await get(`/api/equity?mode=usd&arms=${encodeURIComponent(pair.join(","))}`);
-  const eq = Object.fromEntries(pair.filter((s) => all[s]?.length).map((s) => [s, all[s]]));
+  const eq = await get(`/api/equity?mode=usd&arms=${encodeURIComponent(pair.join(","))}`);  // only the pair
   const grid = sessionGrid(eq);
   const lines = sessionDatasets(grid, eq, pair);
   if (chartEmpty("armequity", !lines.length)) return;
