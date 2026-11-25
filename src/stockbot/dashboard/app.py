@@ -167,6 +167,11 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def api_rejections(arm: str):
         return q.rejections(db, known(arm))
 
+    @app.get("/api/arm/{arm}/fills")
+    def api_fills(arm: str, symbol: str):
+        """The bot page chart's badges, apart from its bars: those are the overview's, so the mirror stores them once."""
+        return q.chart_fills(db, known(arm), symbol)
+
     @app.get("/api/decision/{decision_id}")
     def api_decision(decision_id: int):
         d = db.decision(decision_id)

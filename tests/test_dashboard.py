@@ -250,6 +250,9 @@ def test_api_shapes(db):
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
     assert len(candles["fills"]) == 2 and candles["bars"] == []
     assert c.get("/api/candles?symbol=MSFT").json()["fills"] == []  # overview's market chart: no bot
+    # the bot page's chart: overview's bars + this, so the mirror stores bars once (mirror.py)
+    assert c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json() == candles["fills"]
+    assert c.get("/api/arm/nobody/fills?symbol=MSFT").status_code == 404
 
 
 def test_intraday_candles_regular_session_only(db):

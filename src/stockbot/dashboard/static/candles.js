@@ -13,9 +13,14 @@ function focusCandles(trade) { focused = trade; repaintBadges?.(); }  // only wr
 const stockLink = (symbol, buyIso = "", sellIso = "") => inUniverse(symbol)
   ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
 
-// no ARM (overview's market chart): bars only, no fills
-const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&tf=${tf}`
-  + (window.ARM ? `&arm=${encodeURIComponent(window.ARM)}` : ""));
+// no ARM (overview's market chart): bars only, no fills. Bot page: the same bars + its fills apart, so the mirror
+// (stockbot/mirror.py) stores each stock's bars once, not once per bot
+async function fetchCandles(tf) {
+  const symbol = document.getElementById("symbol").value;
+  const [res, fills] = await Promise.all([get(`/api/candles?symbol=${symbol}&tf=${tf}`),
+    window.ARM ? get(`/api/arm/${encodeURIComponent(window.ARM)}/fills?symbol=${symbol}`) : []]);
+  return { ...res, fills };
+}
 // a fetch can take seconds (live feed): fade the old stock's bars meanwhile, so they don't pass for the new one's
 const candlesLoading = (on) => document.getElementById("candles").classList.toggle("loading", on);
 async function loadCandles() {
