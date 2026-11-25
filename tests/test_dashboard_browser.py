@@ -638,6 +638,14 @@ def test_legend_click_hides_a_line_on_both_charts_and_poll_keeps_it_hidden(page_
     assert page.evaluate(shown) == [True, True]
 
 
+def test_legend_hover_fades_the_other_lines(page_at):
+    page = page_at("/")
+    page.locator(f'#serieslegend button[data-key="{ARM}"]').hover()
+    alpha = "charts.equity.data.datasets.map((d) => [d.key, Chart.helpers.color(d.borderColor).rgb.a])"
+    alphas = dict(page.evaluate(alpha))
+    assert alphas.pop(ARM) == 1 and alphas and all(a < 0.5 for a in alphas.values())
+
+
 def test_range_button_keeps_the_latest_sessions_without_a_fetch_and_is_remembered(dash, page_at):
     for days, navs in ((3, (10000, 10010)), (2, (10020, 10030)), (0, (10040, 10050, 10060))):  # a night or more apart
         for i, nav in enumerate(navs):

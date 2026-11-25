@@ -343,7 +343,7 @@ const SERIES_CHARTS = ["equity", "drawdown"];  // one legend drives both
 function styleSeries(ds) {
   const color = colorOf(ds.key);
   ds.hidden = hiddenSeries.has(ds.key);
-  ds.borderColor = hotSeries && hotSeries !== ds.key ? color + "30" : color;  // the rest fade to a quarter
+  ds.borderColor = hotSeries && hotSeries !== ds.key ? Chart.helpers.color(color).alpha(0.2).rgbString() : color;  // the rest fade
   ds.borderWidth = hotSeries === ds.key ? 3 : 2;
   return ds;
 }
