@@ -100,9 +100,10 @@ function drawDecisions() {
   }
   box.replaceChildren(...nodes);
 }
-// prompt and reply as markdown. Text is the model's and the news': always through DOMPurify. No CDN: plain text
-const md = (src) => (window.marked && window.DOMPurify
-  ? `<div class="md">${DOMPurify.sanitize(marked.parse(src))}</div>` : `<pre>${esc(src)}</pre>`);
+// prompt and reply as markdown. Text is the model's and the news': always through DOMPurify. No CDN: plain, the
+// original text, not the markdown made from it
+const md = (src, plain = src) => (window.marked && window.DOMPurify
+  ? `<div class="md">${DOMPurify.sanitize(marked.parse(src))}</div>` : `<pre>${esc(plain)}</pre>`);
 const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~]/g, "\\$&").replace(/\n/g, " ");
 const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
 function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
@@ -134,7 +135,7 @@ async function openDecision(el) {
     `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
   full.classList.remove("muted");
   const replies = d.replies ?? [d.raw];  // a daemon started before d.replies existed: one block, unsplit
-  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(replies.map(replyMd).join("\n\n---\n\n"))}`
+  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(replies.map(replyMd).join("\n\n---\n\n"), d.raw)}`
     + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}${md(d.prompt)}`;
 }
 // this bot's account against just holding the benchmark
