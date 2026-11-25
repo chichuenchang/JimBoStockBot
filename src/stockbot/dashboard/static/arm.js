@@ -5,9 +5,8 @@
 const stockLink = (symbol, buyIso = "", sellIso = "") => inUniverse(symbol)
   ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
 function focusTrade(trade) {
-  focused = trade;
+  focusCandles(trade);
   document.querySelectorAll("#trades .stocklink, #tradebars .tbar").forEach((l) => l.classList.toggle("on", isFocused(l.dataset.symbol, l.dataset.buy)));
-  repaintBadges?.();
 }
 function showStock(symbol, buyIso, sellIso) {
   document.getElementById("symbol").value = symbol;

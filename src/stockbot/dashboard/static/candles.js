@@ -8,6 +8,7 @@ const BUY_TFS = ["1Min", "1Hour", "1Day"];  // finest first: intraday windows ar
 let focused = null;  // closed trade picked in the table: { symbol, from, to }. Its badges stay solid, the rest fade
 const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floor: as queries.chart_fills
 const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.from === isoSeconds(buyIso);
+function focusCandles(trade) { focused = trade; repaintBadges?.(); }  // only writer of focused
 
 // no ARM (overview's market chart): bars only, no fills
 const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&tf=${tf}`
