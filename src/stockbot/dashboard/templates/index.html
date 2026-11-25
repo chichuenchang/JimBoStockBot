@@ -12,7 +12,7 @@
 <div class="headline" id="headline">
   {% if bots %}
   {% set lead = bots | sort(attribute="return_pct", reverse=true) | first %}
-  <a class="stat" href="/arm/{{ lead.arm }}" data-tip="The bot with the highest return so far.">
+  <a class="stat" href="{{ root }}/arm/{{ lead.arm }}" data-tip="The bot with the highest return so far.">
     <div class="lbl">Leading bot</div>
     <div class="val"><span class="swatch" data-series="{{ lead.arm }}"></span>{{ lead.arm | arm_label }}</div>
     <div class="sub">{{ cell("return_pct", lead.return_pct) }} · ${{ cell("nav", lead.nav) }}</div>
@@ -44,7 +44,7 @@
     <div class="treemap" id="treemap">
       {% set rank = namespace(n=0) %}
       {% for r in rows if r.variant != "benchmark" %}{% set rank.n = rank.n + 1 %}
-      <a class="tile{{ ' r%d' % rank.n if rank.n <= 3 }}" href="/arm/{{ r.arm }}" data-arm="{{ r.arm }}" data-nav="{{ r.nav }}" data-ret="{{ r.return_pct }}">
+      <a class="tile{{ ' r%d' % rank.n if rank.n <= 3 }}" href="{{ root }}/arm/{{ r.arm }}" data-arm="{{ r.arm }}" data-nav="{{ r.nav }}" data-ret="{{ r.return_pct }}">
         <div class="tile-head"><span class="rank">#{{ rank.n }}</span><span class="swatch" data-series="{{ r.arm }}"></span><b>{{ r.arm | arm_label }}</b></div>
         <div class="big" data-tip="{{ tips.return_pct }}">{{ cell("return_pct", r.return_pct) }}</div>
         <div class="sub">${{ cell("nav", r.nav) }} · {{ (r.model if r.model != '-' else 'no AI') ~ ' · ' ~ r.variant }}</div>
@@ -87,7 +87,7 @@
       <thead><tr><th class="l">#</th><th class="l">bot</th><th data-tip="{{ tips.get(b.key, '') }}">{{ labels.get(b.key, b.key) }}</th><th data-tip="{{ tips.get(b.side, '') }}">{{ labels.get(b.side, b.side) }}</th></tr></thead>
       <tbody>{% for r in b.rows %}<tr class="{{ 'r%d' % loop.index if loop.index <= 3 }}">
         <td class="n">{{ loop.index }}</td>
-        <td class="l"><div class="who"><span><span class="swatch" data-series="{{ r.arm }}"></span><a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a></span><span class="muted">{{ r.model if r.model != '-' else 'no AI' }}</span></div></td>
+        <td class="l"><div class="who"><span><span class="swatch" data-series="{{ r.arm }}"></span><a href="{{ root }}/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a></span><span class="muted">{{ r.model if r.model != '-' else 'no AI' }}</span></div></td>
         <td>{{ cell(b.key, r[b.key]) }}</td><td>{{ cell(b.side, r[b.side]) }}</td>
       </tr>{% else %}<tr><td colspan="4" class="l muted">No bots yet.</td></tr>{% endfor %}</tbody>
     </table></div>
@@ -125,7 +125,7 @@
     <tbody>
     {% for r in rows %}<tr>
       {% for g, keys in groups %}{% for k in keys %}<td class="{{ 'l' if k == 'arm' }}{{ ' gstart' if loop.first and g }}" data-v="{{ (r.arm | arm_label) if k == 'arm' else r[k][0] if k == 'sharpe_ci' and r[k] else '' if r[k] is none else r[k] }}">
-        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a>{% else %}{{ r.arm | arm_label }}{% endif %}
+        {%- if k == 'arm' -%}<span class="swatch" data-series="{{ r.arm }}"></span>{% if r.variant != 'benchmark' %}<a href="{{ root }}/arm/{{ r.arm }}">{{ r.arm | arm_label }}</a>{% else %}{{ r.arm | arm_label }}{% endif %}
         {%- else -%}{{ cell(k, r[k]) }}{%- endif -%}</td>{% endfor %}{% endfor %}
     </tr>{% else %}<tr><td class="l muted">No accounts yet.</td></tr>{% endfor %}
     </tbody>

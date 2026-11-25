@@ -150,7 +150,7 @@ function drawGainers() {
   setHtml(document.getElementById("gainers"), rows.length
     ? `<thead><tr><th class="l">bot</th><th${tipAttr(gainMode === "usd" ? window.TIPS.nav : window.TIPS.return_pct)}>now</th>${GAIN_DAYS.map((d) =>
         `<th data-tip="Change in account value over the last ${d} day${d > 1 ? "s" : ""}">Δ${d}D</th>`).join("")}</tr></thead><tbody>` +
-      rows.map((r) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(r.arm)}"></span><a href="/arm/${encodeURIComponent(r.arm)}">${esc(nameOf(r.arm))}</a></td>` +
+      rows.map((r) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(r.arm)}"></span><a href="${esc(url("/arm/" + encodeURIComponent(r.arm)))}">${esc(nameOf(r.arm))}</a></td>` +
         `<td>${num(r.now)}</td>${r.d.map((v) => `<td>${arrow(v)}</td>`).join("")}</tr>`).join("") + `</tbody>`
     : `<tr><td class="l muted">No bots yet.</td></tr>`);
 }

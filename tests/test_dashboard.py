@@ -650,3 +650,44 @@ def test_glossary_explains_every_rule_the_harness_can_break():
     emitted |= set(re.findall(r'rejections\.append\(\([\w.]+, "(\w+)"', inspect.getsource(cycle)))
     assert len(emitted) > 10 and emitted <= set(RULES)
     assert all(len(v.split()) <= 25 for v in RULES.values())
+
+
+# ---------- Miaoda mirror: root prefix + read-only flag (spec 2026-11-24-jbsb-miaoda-mirror-design.md) ----------
+MIRROR_PAGES = ("/", "/usage", "/arm/kimi-improved")
+
+
+def mirror_client(db, root="/app/x"):
+    clock = ReplayClock(T0 + timedelta(days=1))
+    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror=T0))
+
+
+def test_root_prefixes_every_link(db):
+    c = mirror_client(db)
+    for path in MIRROR_PAGES:
+        html = c.get(path).text
+        bare = [u for u in re.findall(r'(?:href|src)="(/[^"]*)"', html) if not u.startswith("/app/x/")]
+        assert bare == [], (path, bare)
+        assert 'data-root="/app/x"' in html
+
+
+def test_localhost_links_unchanged(db):
+    html = client(db).get("/").text
+    assert 'href="/arm/kimi-improved"' in html and 'src="/static/core.js?v=' in html
+    assert 'data-root=""' in html and "data-mirror" not in html and 'id="mirrorstamp"' not in html
+
+
+def test_js_has_no_bare_paths():
+    """Every dashboard path in JS goes through get() or url(), which prefix ROOT; a `...Path = () =>` helper feeds get()."""
+    for p in (HERE / "static").glob("*.js"):
+        src = p.read_text(encoding="utf-8")
+        for m in re.finditer(r'["\'`]/(api|arm|static|usage)\b', src):
+            before = src[max(0, m.start() - 20):m.start()]
+            assert before.endswith(("get(", "url(")) or re.search(r"Path = \(\) => $", before), \
+                f"{p.name}: {src[m.start():m.start() + 40]!r}"
+
+
+def test_mirror_hides_controls(db):
+    c = mirror_client(db)
+    arm = c.get("/arm/kimi-improved").text
+    assert 'id="pausebtn"' not in arm and 'draggable="true"' not in arm and "data-mirror" in arm
+    assert re.search(r'id="mirrorstamp"[^>]*>[^<]*as of 10:00 ET', arm)  # T0 14:00 UTC = 10:00 EDT
