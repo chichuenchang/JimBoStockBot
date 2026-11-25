@@ -30,6 +30,29 @@ TIPS = {
     "avg_r": "Average R of these trades. If the model's confidence means anything, this rises from low to high.",
 }
 
+# Risk rules in plain words (agent/rules.py, agent/cycle.py): the bot page explains why an order was blocked.
+RULES = {
+    "missing_exit_plan": "The buy had no stop, no target, or no condition that proves it wrong. Every buy needs all three.",
+    "stop_not_below_entry": "The stop was at or above the buy price. A stop has to sit below it.",
+    "target_not_above_entry": "The target was at or below the buy price. A target has to sit above it.",
+    "rr_below_min": "Too little to gain for the risk: distance to the target, divided by distance to the stop, "
+                    "is under the minimum.",
+    "stop_too_tight": "Stop too close to the price: the stock's normal hourly swing would hit it.",
+    "max_positions": "Already holding the most different stocks allowed at once.",
+    "max_entries_per_day": "Already made the most buys allowed in one day.",
+    "cooldown": "This stock was sold earlier today. No buying it back the same day.",
+    "daily_loss_freeze": "The account lost too much today. No new buys until tomorrow.",
+    "regime_risk_off": "The whole market is weak: QQQ is under its 50-day average. No new buys while that lasts.",
+    "earnings_blackout": "The company reports earnings very soon and the price can jump either way. No new buys "
+                         "before it.",
+    "position_cap_reached": "Already holds as much of this stock as one position may be.",
+    "zero_size": "After the risk limit, the position cap and the cash left, there was nothing to buy.",
+    "stop_removed": "The model tried to drop the stop on a stock it holds. A stop is never removed.",
+    "stop_lowered": "The model tried to move a stop down. Stops only move up, so a loss cannot grow.",
+    "missing_quantity": "The buy did not say how many shares.",
+    "no_price": "No current price for the stock, so nothing could be ordered.",
+}
+
 # Stats table columns, grouped money / trading / risk. Model and setup sit on the leaderboard cards instead.
 COLUMN_GROUPS = [
     ("", ["arm"]),

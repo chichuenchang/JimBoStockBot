@@ -9,6 +9,7 @@ from stockbot import interval, pause
 from stockbot.broker.sim import SimBroker
 from stockbot.clock import et_at, et_date
 from stockbot.config import AppConfig
+from stockbot.dashboard.glossary import RULES
 from stockbot.db import DB, iso, parse_ts
 from stockbot.llm.budget import level
 from stockbot.metrics import (aligned_daily_returns, alpha_beta, conviction_buckets, daily_closes, daily_returns,
@@ -204,6 +205,11 @@ def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
         out.append({"id": r["id"], "slot_ts": r["slot_ts"], "reason": r["reason"], "status": r["status"],
                     "cost": r["cost"], "summary": " | ".join(acts) or "hold all"})
     return out
+
+
+def rejections(db: DB, account: str, limit: int = 100) -> list[dict]:
+    """Latest blocked orders, each with its rule in plain words ("" for a rule the glossary does not know)."""
+    return [{**r, "meaning": RULES.get(r["rule"], "")} for r in db.recent_rejections(account, limit)]
 
 
 def chart_fills(db: DB, account: str, symbol: str) -> list[dict]:

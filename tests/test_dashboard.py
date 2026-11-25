@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
 from stockbot.dashboard.app import create_app
-from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, TIPS
+from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, RULES, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard, market
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -593,3 +593,20 @@ def test_equity_for_named_accounts_only(db):
 def test_benchmark_named_for_what_it_is(db):
     html = client(db).get("/").text
     assert "QQQ buy &amp; hold" in html and f">{BENCHMARK}<" not in html
+
+
+def test_rejections_explain_their_rule(db):
+    db.insert_rejection("kimi-improved", None, "MSFT", "cooldown", "entry 1 stop 0.9 target 1.2", T0)
+    db.insert_rejection("kimi-improved", None, "MSFT", "rule_newer_than_the_glossary", "", T0)
+    new, old = client(db).get("/api/arm/kimi-improved/rejections").json()
+    assert old["meaning"] == RULES["cooldown"] and new["meaning"] == ""
+
+
+def test_glossary_explains_every_rule_the_harness_can_break():
+    import inspect
+
+    from stockbot.agent import cycle, rules
+    emitted = set(re.findall(r'return "(\w+)"', inspect.getsource(rules)))
+    emitted |= set(re.findall(r'rejections\.append\(\([\w.]+, "(\w+)"', inspect.getsource(cycle)))
+    assert len(emitted) > 10 and emitted <= set(RULES)
+    assert all(len(v.split()) <= 25 for v in RULES.values())
