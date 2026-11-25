@@ -10,7 +10,7 @@ Jim views JBSB from phone and this PC without localhost (user). Look only (user)
 
 - Same pages as localhost: `/`, `/arm/<arm>`, `/usage`, with their `/api/*` data. Same templates and JS, no second renderer.
 - Minutes behind localhost during session at most.
-- Only Jim can open it (Feishu login, access scope `specific` = Jim).
+- Only Jim can open it. Password, not Feishu login (user, 2026-11-25).
 
 ## Non-goals
 
@@ -22,7 +22,7 @@ Jim views JBSB from phone and this PC without localhost (user). Look only (user)
 ## Anti-goals
 
 - Anything on socket that changes trading or the local DB.
-- Page reachable without Jim's login. P&L, trades, prompts stay private.
+- Page reachable without password. P&L, trades, prompts stay private.
 - Push failure stalls or slows daemon cycles.
 - Secret (API key) in git, logs, or pushed bodies.
 
@@ -66,7 +66,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 - Hand-written TS in repo (no bundle: StockBot is Python). `server/modules/jbsb/`: controller, raw-SQL store via platform Drizzle (creatorio `creatorio.store.ts` pattern).
 - Tables `jbsb_blob(hash text pk, content_type text, body bytea)` (gzip bytes), `jbsb_index(key text pk, hash text)`, `jbsb_meta(id int pk, pushed_at timestamptz)`. DDL on dev DB branch, release carries it (creatorio handbook §Writes).
 - Routes: `GET /` and `GET /*` = lookup key (strip base, sort query), serve with `Content-Encoding: gzip` (inflate if client lacks gzip), else 404 `{"detail":"not mirrored"}`. `POST /openapi/jbsb/{blobs,commit}` = API key (`Authorization: Bearer`, platform-checked before app).
-- Access: `+access-scope-set --scope specific --targets '[{"type":"user","id":"<Jim ou_>"}]'`. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/blobs' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
+- Access: `+access-scope-set --scope public --require-login=false`; app gates every GET (`server/modules/jbsb/jbsb.auth.ts`). Password = online env `JBSB_PASSWORD` (`+env-set --environment online --value @file`), unset = locked. Cookie `jbsb_session` 30 d, HMAC keyed by password: change = all logged out. 10 wrong tries / 15 min, all clients, then 429. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/blobs' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
 
 ### Deploy
 
