@@ -194,6 +194,7 @@ table.gain a { color: inherit; text-decoration: none; } table.gain a:hover { tex
   box-shadow: var(--shadow); }
 .boardhead { padding: 12px 14px; font-weight: 600; border-bottom: 1px solid var(--border); }
 .board th, .board td { padding: 8px 10px; }
+.board td.l { white-space: normal; }  /* a long bot name wraps; on a narrow board it had pushed the numbers into a sideways scroll */
 .board tr:last-child td { border-bottom: none; }
 .board td.n { color: var(--text-muted); width: 28px; text-align: left; }
 .board tr.r1 td { background: color-mix(in oklab, var(--gold) 10%, transparent); } .board tr.r1 td.n { color: var(--gold); font-weight: 700; }
