@@ -70,7 +70,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 
 ### Deploy
 
-`scripts/deploy_miaoda.py`: port of BRecruitHelper `scripts/deploy/miaoda-deploy.mjs` minus build step — commit if dirty, push `sprint/default`, wait 15s, `+release-create --apply-reason`, poll `+release-get`, re-release if shipped commit ≠ pushed. GCM credential helper setup: BRecruitHelper `CLAUDE.md` §Miaoda repos from this machine.
+`scripts/deploy_miaoda.py`: port of BRecruitHelper `scripts/deploy/miaoda-deploy.mjs` minus build step — dirty repo = stop (never auto-commit: repo's `.env` tracked), push `sprint/default`, wait 15s, `+release-create --apply-reason`, poll `+release-get`, re-release if shipped commit ≠ pushed. GCM credential helper setup: BRecruitHelper `CLAUDE.md` §Miaoda repos from this machine.
 
 ## Measured (spike 2026-11-24, app `app_17jr1c29a4u`)
 
@@ -88,4 +88,4 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 
 ## Run
 
-`.env` `JBSB_MIAODA_URL` + `JBSB_MIAODA_KEY` (key: `+openapi-key-reset`, never echoed). `stockbot run` pushes; `stockbot.mirror` log line per push. Socket change: edit `../jbsb-miaoda`, `uv run python scripts/deploy_miaoda.py "<5 words>"`. DDL: `server/database/jbsb.sql` on dev, release carries it.
+`.env` `JBSB_MIAODA_URL` + `JBSB_MIAODA_KEY` (key: `+openapi-key-reset`, never echoed). `stockbot run` pushes; `stockbot.mirror` log line per push. Socket change: edit + commit `../jbsb-miaoda`, `uv run python scripts/deploy_miaoda.py`. DDL: `server/database/jbsb.sql` on dev, release carries it.

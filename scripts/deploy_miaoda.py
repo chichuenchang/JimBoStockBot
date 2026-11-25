@@ -1,6 +1,8 @@
-"""Deploy the JBSB mirror socket (../jbsb-miaoda): commit if dirty, push sprint/default, release, check it shipped.
+"""Deploy the JBSB mirror socket (../jbsb-miaoda): push sprint/default, release, check it shipped.
 
-    uv run python scripts/deploy_miaoda.py ["five word commit message"]
+    uv run python scripts/deploy_miaoda.py
+
+Dirty repo: stop and show it (commit yourself; its .env is tracked, so never `add -A` blind).
 
 Port of BRecruitHelper scripts/deploy/miaoda-deploy.mjs, minus its build step (the socket is plain TS).
 A release cut right after a push can snapshot the parent commit: wait out the mirror, compare, release again.
@@ -50,11 +52,8 @@ def main() -> None:
     if not REPO.exists():
         sys.exit(f"Miaoda repo missing: {REPO}")
     app_id = json.loads((REPO / ".spark" / "meta.json").read_text(encoding="utf-8"))["app_id"]
-    if run("git", "status", "--porcelain"):
-        run("git", "add", "-A")
-        run("git", "commit", "-q", "-m", sys.argv[1] if len(sys.argv) > 1 else "Deploy JBSB mirror socket update")
-    else:
-        print("miaoda repo clean, releasing anyway")
+    if dirty := run("git", "status", "--porcelain"):
+        sys.exit(f"{REPO} has uncommitted changes, commit them first:\n{dirty}")
     run("git", "push", "-q", "origin", BRANCH)
     pushed = run("git", "rev-parse", "HEAD")
     shipped = release(app_id)
