@@ -109,7 +109,7 @@ function md(src, plain = src) {
   marker ??= new marked.Marked({ renderer: { html: ({ text }) => esc(text), image: ({ text }) => esc(text) } });
   return `<div class="md">${DOMPurify.sanitize(marker.parse(src))}</div>`;
 }
-const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~]/g, "\\$&").replace(/\n/g, " ");
+const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~&]/g, "\\$&").replace(/\n/g, " ");
 const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
 function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
   const cols = [...new Set(rows.flatMap(([, o]) => Object.keys(o)))];
