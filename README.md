@@ -32,7 +32,7 @@ Start-ScheduledTask -TaskName StockBot
 ```
 
 Dashboard `http://127.0.0.1:8000`. PC must stay awake 09:30–16:00 ET; downtime gets replayed on restart, missed decision slots skipped.
-Phone/remote: read-only mirror `https://ycnx0knkk9ic.feishuapp.com/app/app_17jr1c29a4u` (Feishu login, Jim only), pushed by `run`. Setup + findings: `docs/superpowers/specs/2026-11-24-jbsb-miaoda-mirror-design.md` §Measured, §Run.
+Phone/remote: read-only mirror `https://ycnx0knkk9ic.feishuapp.com/app/app_17jr1c29a4u` (password), pushed by `run`. Setup + findings: `docs/superpowers/specs/2026-11-24-jbsb-miaoda-mirror-design.md` §Measured, §Run.
 
 ## Control
 

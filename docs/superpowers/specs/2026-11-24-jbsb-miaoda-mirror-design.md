@@ -10,7 +10,7 @@ Jim views JBSB from phone and this PC without localhost (user). Look only (user)
 
 - Same pages as localhost: `/`, `/arm/<arm>`, `/usage`, with their `/api/*` data. Same templates and JS, no second renderer.
 - Minutes behind localhost during session at most.
-- Only Jim can open it (Feishu login, access scope `specific` = Jim).
+- Only Jim can open it. Password, not Feishu login (user, 2026-11-25).
 
 ## Non-goals
 
@@ -22,7 +22,7 @@ Jim views JBSB from phone and this PC without localhost (user). Look only (user)
 ## Anti-goals
 
 - Anything on socket that changes trading or the local DB.
-- Page reachable without Jim's login. P&L, trades, prompts stay private.
+- Page reachable without password. P&L, trades, prompts stay private.
 - Push failure stalls or slows daemon cycles.
 - Secret (API key) in git, logs, or pushed bodies.
 
@@ -66,7 +66,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 - Hand-written TS in repo (no bundle: StockBot is Python). `server/modules/jbsb/`: controller, raw-SQL store via platform Drizzle (creatorio `creatorio.store.ts` pattern).
 - Tables `jbsb_blob(hash text pk, content_type text, body bytea)` (gzip bytes), `jbsb_index(key text pk, hash text)`, `jbsb_meta(id int pk, pushed_at timestamptz)`. DDL on dev DB branch, release carries it (creatorio handbook §Writes).
 - Routes: `GET /` and `GET /*` = lookup key (strip base, sort query), serve with `Content-Encoding: gzip` (inflate if client lacks gzip), else 404 `{"detail":"not mirrored"}`. `POST /openapi/jbsb/{blobs,commit}` = API key (`Authorization: Bearer`, platform-checked before app).
-- Access: `+access-scope-set --scope specific --targets '[{"type":"user","id":"<Jim ou_>"}]'`. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/blobs' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
+- Access: `+access-scope-set --scope public --require-login=false`; app gates every GET (`server/modules/jbsb/jbsb.auth.ts`). Password = online env `JBSB_PASSWORD` (`+env-set --environment online --value @file --yes`); unset or under `MIN_PASSWORD` = locked. No throttle: global cap lets anyone (repo public, URL in README) lock Jim out; per-IP needs proxy-vouched client IP, unknown. Length floor instead. Session cookie = expiry HMAC keyed by password: change = all logged out. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/blobs' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
 
 ### Deploy
 
@@ -74,10 +74,9 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 
 ## Measured (spike 2026-11-24, app `app_17jr1c29a4u`)
 
-- Login wall: unauthenticated `GET /` = 302. `POST /openapi/**` with `Authorization: Bearer <key>` = 200 past it; any other header = 403 `k_ec_000015` "missing or invalid Authorization header". Fallback not needed.
+- Login wall (scope `specific`, pre password gate): unauthenticated `GET /` = 302. `POST /openapi/**` with `Authorization: Bearer <key>` = 200 past it; any other header = 403 `k_ec_000015` "missing or invalid Authorization header". Fallback not needed. Scope `public` + `--require-login=false` (2026-11-25): same 403 without key / with bad key (`api key not found or invalid`); platform key check survives.
 - Body cap: 512 kB ok, 2 MB = 500 `PayloadTooLargeError`. Cap ≈1 MB (body-parser), unset by us.
 - Upload Canada→Miaoda ~40 kB/s: 64 kB 2.3 s, 512 kB 13.1 s. Hence gzip + delta wire.
-- `access-scope-set specific` leaves `apply_config.enabled` with Jim as approver: others may request, Jim approves.
 - Template `npm run lint` / pre-commit hook: `spawn EINVAL` / `spawnSync npm ENOENT` on Windows. Run `npx eslint` + `npm run type:check:server` by hand.
 
 - Platform middleware owns `/app/<id>/static/*` (404 "File not found", browser sees 503) before the app: mirror JS at `/jbsb-js` (`MIRROR_STATIC`).
