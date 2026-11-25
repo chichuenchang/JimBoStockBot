@@ -23,6 +23,14 @@ TIPS = {
     "invested_pct": "Share of the account currently in stocks rather than cash.",
     "r_multiple": "Trade result divided by the amount risked. 2R means it made twice what it risked.",
     "unrealized": "Profit or loss on a position still open, at the latest price.",
+    "worth": "What these shares would sell for at the latest price.",
+    "entry_price": "Average price paid per share.",
+    "range": "Price between the stop (sells to cap the loss) and the target (sells to take profit). "
+             "Grey tick: entry. Dot: now.",
+    "hold_hours": "Time between buying and selling. m = minutes, h = hours, d = days.",
+    "exit_reason": "Why it was sold. stop = fell to the stop-loss, target = reached the profit target, "
+                   "close = the bot chose to sell.",
+    "rule": "The risk rule that blocked the order. The harness enforces these whatever the model asks for.",
     "stop_loss": "Price at which the position is sold to cap the loss.",
     "profit_target": "Price at which the position is sold to take profit.",
     "invalidation": "The model's own condition that would prove its idea wrong.",
