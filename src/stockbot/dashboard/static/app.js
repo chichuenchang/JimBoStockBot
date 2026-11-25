@@ -569,7 +569,8 @@ function drawDaily(daily) {
   const long = (d) => at(d).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
   const months = [];  // [label, span] runs
   for (const d of days) if (months.at(-1)?.[0] === month(d)) months.at(-1)[1]++; else months.push([month(d), 1]);
-  el.classList.toggle("dense", el.parentElement.clientWidth < 280 + days.length * 40);  // no room for "+123" in each square
+  // name + total columns 274 px; "-123" (28 px at 12 px type) needs a 32 px square
+  el.classList.toggle("dense", el.parentElement.clientWidth < 274 + days.length * 32);
   setTable(el, `<colgroup><col class="namecol">${days.map(() => "<col>").join("")}<col class="sumcol"></colgroup>`
     + `<thead><tr><th class="l"></th>${months.map(([m, n]) => `<th class="mon" colspan="${n}">${m}</th>`).join("")}<th class="sum"></th></tr>`
     + `<tr><th class="l">bot</th>${days.map((d) => `<th data-tip="${long(d)}">${+d.slice(8)}</th>`).join("")}<th class="sum" data-tip="All these days added up">total</th></tr></thead><tbody>`
