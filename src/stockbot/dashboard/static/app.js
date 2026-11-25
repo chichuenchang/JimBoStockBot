@@ -722,8 +722,11 @@ function table(id, cols, rows, empty) {
 // no ARM (overview's market chart): bars only, no fills
 const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&tf=${tf}`
   + (window.ARM ? `&arm=${encodeURIComponent(window.ARM)}` : ""));
+// a fetch can take seconds (live feed): fade the old stock's bars meanwhile, so they don't pass for the new one's
+const candlesLoading = (on) => document.getElementById("candles").classList.toggle("loading", on);
 async function loadCandles() {
   const seq = ++candleSeq, tf = document.getElementById("tf").value;
+  candlesLoading(true);
   const res = await fetchCandles(tf);
   if (seq !== candleSeq) return;  // another load started while in flight
   drawCandles(tf, res);
@@ -741,6 +744,7 @@ async function fitCandles() {
 // closed trade: first timeframe whose bars reach back to the buy, framed so buy and sell both show
 async function loadCandlesForTrade(trade) {
   const seq = ++candleSeq;
+  candlesLoading(true);
   let tf, res;
   for (tf of BUY_TFS) {
     res = await fetchCandles(tf);
@@ -819,6 +823,7 @@ function syncPriceLines() {
 }
 function drawCandles(tf, res) {
   const el = document.getElementById("candles");
+  candlesLoading(false);  // only the latest load draws (candleSeq), so this is its answer
   if (!candleChart) {
     candleChart = LightweightCharts.createChart(el, { autoSize: true,
       layout: { background: { color: css("--surface-1") }, textColor: css("--text-secondary"), fontFamily: getComputedStyle(document.body).fontFamily },
