@@ -317,6 +317,14 @@ def test_usage_table_shows_new_calls(dash, page_at):
     assert row.inner_text() != before
 
 
+def test_usage_chart_is_a_line_today_and_bars_over_days(dash, page_at):
+    dash.db.insert_usage("kimi-k3", "kimi-improved", "decision", dash.now, 5000, 0, 500, 0.0)
+    page = page_at("/usage")
+    page.wait_for_function("charts.tokens?.config.type === 'line'")
+    page.click('button[data-span="7d"]')
+    page.wait_for_function("charts.tokens?.config.type === 'bar' && charts.tokens.data.datasets.length > 0")
+
+
 # ---------- trade badges on the price chart ----------
 def badge_pixels(page, when, token):
     """Exact-color pixels of a CSS token in the column of the bar holding `when`, above its high and below its low."""

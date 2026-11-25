@@ -1069,6 +1069,31 @@ function initArm() {
 
 // ---------- usage page: tokens per bot (queries.usage) ----------
 let usageSpan = "today";
+// running total per bot today. Bots call at their own moments: put every total on every moment, so one hover reads them all
+function drawTokensToday(u, drawn) {
+  const ts = [...new Set(drawn.flatMap((b) => u.series[b].map(([x]) => x)))].sort((a, b) => a - b);
+  const o = timeLinear(baseOptions(kTok), ts[0] ?? Date.now() - 36e5, ts.at(-1) ?? Date.now());
+  draw("tokens", "line", { datasets: drawn.map((b) => ({ ...lineStyle(b), stepped: true,
+    data: alignTo(ts, u.series[b], true).map((y, i) => ({ x: ts[i], y })) })) }, o);
+}
+// one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
+function drawTokensDaily(u, drawn, cost) {
+  const tok = (t) => t.input + t.output;
+  // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
+  const ds = drawn.map((b) => ({
+    label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), ...barStyle(b) }));
+  const o = baseOptions(kTok);
+  o.scales.x.stacked = o.scales.y.stacked = true;
+  o.scales.x.grid.display = false;
+  o.interaction = { mode: "point", intersect: true };
+  Object.assign(o.plugins.tooltip, { itemSort: undefined, callbacks: {
+    title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
+      { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
+    label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
+      return [` ${kTok(tok(t))} tokens  ${c.dataset.label} · ${t.calls} calls · ${cost(t, c.dataset.bot)}`,
+              `   ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`]; } } });
+  draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
+}
 function drawUsageKpis(u, st) {
   const today = (k) => u.bots.reduce((a, b) => a + b.today[k], 0);
   const billed = u.bots.filter((b) => !b.flat).reduce((a, b) => a + b.month.cost, 0);
@@ -1096,32 +1121,10 @@ async function loadUsage(st = lastStatus) {
   drawUsageKpis(u, st);
   document.getElementById("tokens-note").textContent = span === "today" ? "running total today, New York time" : "per New York day · hover a bar for detail";
   const drawn = bots.filter((b) => (span === "today" ? u.series[b]?.length : u.daily.some((d) => d.bots[b])));
-  if (chartEmpty("tokens", !drawn.length, span === "today" ? "No AI calls yet today. The bots decide only while the market is open."
-                                                            : "No AI calls in the last 7 days.")) {
-    // every morning before the open: nothing to plot
-  } else if (span === "today") {
-    // bots call at their own moments: put every total on every moment, so one hover reads them all
-    const ts = [...new Set(drawn.flatMap((b) => u.series[b].map(([x]) => x)))].sort((a, b) => a - b);
-    const o = timeLinear(baseOptions(kTok), ts[0] ?? Date.now() - 36e5, ts.at(-1) ?? Date.now());
-    draw("tokens", "line", { datasets: drawn.map((b) => ({ ...lineStyle(b), stepped: true,
-      data: alignTo(ts, u.series[b], true).map((y, i) => ({ x: ts[i], y })) })) }, o);
-  } else {
-    // one stacked bar per ET day, a segment per bot; tooltip: the hovered segment's day totals (queries._totals)
-    const tok = (t) => t.input + t.output;
-    // null, not 0, on a bot's idle day: no zero-height segment to hover, so tooltips always have totals
-    const ds = drawn.map((b) => ({
-      label: nameOf(b), bot: b, data: u.daily.map((d) => d.bots[b] ? tok(d.bots[b]) : null), ...barStyle(b) }));
-    const o = baseOptions(kTok);
-    o.scales.x.stacked = o.scales.y.stacked = true;
-    o.scales.x.grid.display = false;
-    o.interaction = { mode: "point", intersect: true };
-    Object.assign(o.plugins.tooltip, { itemSort: undefined, callbacks: {
-      title: (items) => items.length ? new Date(u.daily[items[0].dataIndex].day + "T12:00:00Z").toLocaleDateString("en-US",
-        { timeZone: "UTC", weekday: "short", year: "numeric", month: "short", day: "numeric" }) : "",
-      label: (c) => { const t = u.daily[c.dataIndex].bots[c.dataset.bot];
-        return [` ${kTok(tok(t))} tokens  ${c.dataset.label} · ${t.calls} calls · ${cost(t, c.dataset.bot)}`,
-                `   ${kTok(t.input)} in (${kTok(t.cached)} cached) / ${kTok(t.output)} out`]; } } });
-    draw("tokens", "bar", { labels: u.daily.map((d) => `${+d.day.slice(5, 7)}/${+d.day.slice(8)}`), datasets: ds }, o);
+  if (!chartEmpty("tokens", !drawn.length, span === "today" ? "No AI calls yet today. The bots decide only while the market is open."
+                                                             : "No AI calls in the last 7 days.")) {
+    if (span === "today") drawTokensToday(u, drawn);
+    else drawTokensDaily(u, drawn, cost);
   }
   drawLegend("tokenslegend", drawn.map((b) => legendItem(b)));
 
