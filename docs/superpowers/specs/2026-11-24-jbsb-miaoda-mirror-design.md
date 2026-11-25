@@ -1,6 +1,6 @@
 # JBSB Miaoda mirror — design
 
-Status: draft 2026-11-24. Branch `feat/jbsb-miaoda`. Pattern source: sibling `BRecruitHelper` creatorio socket (branch `chore/creatorio-drop-env`, `docs/handbooks/creatorio.md`; repo `../brecruit-creatorio-miaoda`).
+Status: live 2026-11-24, app `app_17jr1c29a4u`. Branch `feat/jbsb-miaoda`. Pattern source: sibling `BRecruitHelper` creatorio socket (branch `chore/creatorio-drop-env`, `docs/handbooks/creatorio.md`; repo `../brecruit-creatorio-miaoda`).
 
 ## Intent
 
@@ -47,10 +47,10 @@ Miaoda mounts app at `/app/<app_id>`; templates/JS use absolute `/...` (`base.ht
 Second app instance (`mirror` set) driven by `httpx.ASGITransport` — no network, no uvicorn. Key = path + query sorted. Set:
 
 - HTML: `/`, `/usage`, `/arm/<arm>` each enabled arm.
-- Static: `/static/*.js?v=<js_version>` + any CSS/assets the templates load.
+- Static: `/jbsb-js/*.js?v=<js_version>` (§Measured: platform owns `/static`).
 - API, no params: leaderboard, drawdown, daily_pnl, heatmap, status, `arm/<arm>/{positions,trades,conviction,rejections}`.
-- API, enumerated params: `equity` `mode=usd|pct`, `arms=<arm>,<benchmark>` per arm page as `arm.js` sends; `usage` `span=today|7d`; `market` `sessions=` each `button[data-sessions]` in `index.html`; `decisions` `acted=false|true` per arm; `candles` universe × each `#tf` option × (no arm, each arm).
-- Bounded: `decision/<id>` latest N per arm (N=50, settings); `chart` PNGs those decisions reference.
+- API, enumerated params: `equity` `mode=usd|pct`, `arms=<arm>,<benchmark>` per arm page as `arm.js` sends; `usage` `span=today|7d`; `market` `sessions=` each `button[data-sessions]` in `index.html`; `decisions` `acted=false|true` per arm; `candles` universe × each `#tf` option (1Day/1Week/1Month hourly only); `arm/<arm>/fills?symbol=` per universe symbol.
+- Bounded: `decision/<id>` for ids the two decision lists return; `chart` PNGs those reference.
 
 Builder derives exact query strings from the JS so keys match what browser asks. Test asserts every fetch URL pattern in `static/*.js` is covered or listed as unmirrored.
 
@@ -80,8 +80,12 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 - `access-scope-set specific` leaves `apply_config.enabled` with Jim as approver: others may request, Jim approves.
 - Template `npm run lint` / pre-commit hook: `spawn EINVAL` / `spawnSync npm ENOENT` on Windows. Run `npx eslint` + `npm run type:check:server` by hand.
 
-Open: crawl size/time (candles universe × tf × arms). Measure first push; cut combos if gzipped delta > ~1 MB per cycle.
+- Platform middleware owns `/app/<id>/static/*` (404 "File not found", browser sees 503) before the app: mirror JS at `/jbsb-js` (`MIRROR_STATIC`).
+- Platform Drizzle binds a `Buffer` param as text: bytea insert 500s. Store via `decode(<b64>,'base64')`, read `encode(body,'base64')`.
+- Crawl, live DB 2026-11-24 (31 symbols, 7 arms): 966 keys, 13 s, 24 MB raw, 7 MB gz (decisions 4.0, candles 1.9, equity 0.5). Per-arm candle copies were 5.1 MB more: bot chart now = overview bars + `/api/arm/<arm>/fills`.
+- First full upload 9.3 MB base64, 155 s. Restart push (commit first, 409 lists missing): 150 kB, ~19 s.
+- Decision details pushed = ids the page lists (50 latest + acted), not a setting.
 
-## Left to builder
+## Run
 
-Chunk size, N, crawl threading, exact unchanged-skip granularity, banner styling, test split.
+`.env` `JBSB_MIAODA_URL` + `JBSB_MIAODA_KEY` (key: `+openapi-key-reset`, never echoed). `stockbot run` pushes; `stockbot.mirror` log line per push. Socket change: edit `../jbsb-miaoda`, `uv run python scripts/deploy_miaoda.py "<5 words>"`. DDL: `server/database/jbsb.sql` on dev, release carries it.
