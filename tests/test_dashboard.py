@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from stockbot import interval
 from stockbot.clock import ReplayClock, et_date
-from stockbot.dashboard.app import create_app
+from stockbot.dashboard.app import HERE, SCRIPTS, create_app
 from stockbot.dashboard.glossary import BOARDS, COLUMN_GROUPS, RULES, TIPS
 from stockbot.dashboard.queries import LEADERBOARD_KEYS, boards, daily_pnl, drawdown, leaderboard, market
 from stockbot.db import DB
@@ -53,6 +53,13 @@ def client(db):
 
 def row(rows, arm):
     return next(r for r in rows if r["arm"] == arm)
+
+
+def test_every_script_loaded(db):
+    """A static/*.js left out of SCRIPTS is never loaded; one listed but missing 404s."""
+    assert sorted(SCRIPTS) == sorted(p.stem for p in (HERE / "static").glob("*.js"))
+    html = client(db).get("/").text
+    assert re.findall(r'src="/static/(\w+)\.js\?v=\d+"', html) == list(SCRIPTS)
 
 
 def test_leaderboard_rows(db):
@@ -468,7 +475,7 @@ def test_decision_charts_redraw(db):
     c = client(db)
     [chart] = c.get(f"/api/decision/{i}").json()["charts"]
     assert chart == {"symbol": "MSFT", "tf": "1Week", "start": "2026-01-01", "end": "2026-01-30", "log": True}
-    r = c.get("/api/chart", params=chart)  # app.js passes the object as-is
+    r = c.get("/api/chart", params=chart)  # arm.js passes the object as-is
     assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
 
 

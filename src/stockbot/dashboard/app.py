@@ -31,6 +31,8 @@ HOST = "127.0.0.1"
 LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
 INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
 LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
+# static/*.js, load order. Classic scripts, not modules: one shared global scope, so helpers first, polling last
+SCRIPTS = ("core", "status", "charts", "candles", "index", "arm", "usage", "main")
 
 
 def _regular_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Bar]:
@@ -58,7 +60,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     names = {a.name: a.label or a.name for a in cfg.arms}
     names[BENCHMARK] = f"{BENCHMARK.removeprefix('benchmark-')} buy & hold"  # says what it is; the id says nothing to a newcomer
     tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
-    js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
+    js_version = int(max((HERE / "static" / f"{s}.js").stat().st_mtime for s in SCRIPTS))  # cache-bust: new code, new URL
 
     @app.middleware("http")
     async def same_origin_writes(request: Request, call_next):
@@ -75,7 +77,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
-                                                 "js_version": js_version, **ctx})
+                                                 "scripts": SCRIPTS, "js_version": js_version, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

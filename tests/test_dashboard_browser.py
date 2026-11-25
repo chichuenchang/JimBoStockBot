@@ -168,7 +168,7 @@ def arm_page(page_at, tab, has_touch=False):
 
 
 def assert_trade_framed(page, dash, ago, hold=timedelta(hours=1)):
-    """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from app.js."""
+    """About 80 bars or more, buy and sell (Dashboard.closed) both shown, trade in the middle: derived from the seed, not from candles.js."""
     buy = dash.now - ago
     sell = min(buy + hold, dash.now)
     page.wait_for_function("""([buy, sell]) => {
