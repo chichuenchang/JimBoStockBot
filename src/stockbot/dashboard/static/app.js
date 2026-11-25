@@ -109,7 +109,6 @@ function setHtml(el, html) {
   fresh.innerHTML = html;
   patchChildren(el, fresh);
 }
-const setTable = setHtml;
 
 // server-rendered stats (tiles, stats tables, KPIs): re-fetch this page and swap them in, so they keep pace with the charts.
 // dress[selector](fresh): finish a fresh node the way the one on screen was (layout, sort), so equal data patches nothing
@@ -523,7 +522,7 @@ function drawGainers() {
   }).sort((a, b) => b.d[0] - a.d[0]);
   const num = (v) => (gainMode === "usd" ? dollars(v) : signed(v, 2) + "%");
   const arrow = (v) => `<span class="${cls(v)}">${tri(v)}${gainMode === "usd" ? "$" + Math.abs(v).toFixed(0) : Math.abs(v).toFixed(2) + "%"}</span>`;
-  setTable(document.getElementById("gainers"), rows.length
+  setHtml(document.getElementById("gainers"), rows.length
     ? `<thead><tr><th class="l">bot</th><th${tipAttr(gainMode === "usd" ? window.TIPS.nav : window.TIPS.return_pct)}>now</th>${GAIN_DAYS.map((d) =>
         `<th data-tip="Change in account value over the last ${d} day${d > 1 ? "s" : ""}">Δ${d}D</th>`).join("")}</tr></thead><tbody>` +
       rows.map((r) => `<tr><td class="l"><span class="swatch" style="background:${colorOf(r.arm)}"></span><a href="/arm/${encodeURIComponent(r.arm)}">${esc(nameOf(r.arm))}</a></td>` +
@@ -562,7 +561,7 @@ function drawDaily(daily) {
   const el = document.getElementById("daily");
   const series = window.SERIES.filter((s) => daily[s]?.length);
   const days = [...new Set(series.flatMap((s) => daily[s].map(([d]) => d)))].sort();
-  if (!days.length) { setTable(el, `<tr><td class="l muted">Shows after the first full trading day.</td></tr>`); return; }
+  if (!days.length) { setHtml(el, `<tr><td class="l muted">Shows after the first full trading day.</td></tr>`); return; }
   // 90th percentile gets full colour: one wild day must not wash out all the others
   const shade = shader(Math.max(1, quantile(series.flatMap((s) => daily[s].map(([, v]) => Math.abs(v))), 0.9)));
   const at = (d) => new Date(d + "T12:00:00Z");
@@ -572,7 +571,7 @@ function drawDaily(daily) {
   for (const d of days) if (months.at(-1)?.[0] === month(d)) months.at(-1)[1]++; else months.push([month(d), 1]);
   // name + total columns 274 px; "-123" (28 px at 12 px type) needs a 32 px square
   el.classList.toggle("dense", el.parentElement.clientWidth < 274 + days.length * 32);
-  setTable(el, `<colgroup><col class="namecol">${days.map(() => "<col>").join("")}<col class="sumcol"></colgroup>`
+  setHtml(el, `<colgroup><col class="namecol">${days.map(() => "<col>").join("")}<col class="sumcol"></colgroup>`
     + `<thead><tr><th class="l"></th>${months.map(([m, n]) => `<th class="mon" colspan="${n}">${m}</th>`).join("")}<th class="sum"></th></tr>`
     + `<tr><th class="l">bot</th>${days.map((d) => `<th data-tip="${long(d)}">${+d.slice(8)}</th>`).join("")}<th class="sum" data-tip="All these days added up">total</th></tr></thead><tbody>`
     + series.map((s) => {
@@ -716,7 +715,7 @@ function showStock(symbol, buyIso, sellIso) {
 }
 // cols: [key, label, align (1 left, "wrap"), format(value, row), tip (default: glossary's for key)]
 function table(id, cols, rows, empty) {
-  setTable(document.getElementById(id), !rows.length ? `<tr><td class="l muted">${empty}</td></tr>` :
+  setHtml(document.getElementById(id), !rows.length ? `<tr><td class="l muted">${empty}</td></tr>` :
     `<thead><tr>${cols.map(([k, label, l, , tip]) => `<th class="${l ? "l" : ""}"${tipAttr(tip ?? window.TIPS[k])}>${label}</th>`).join("")}</tr></thead>` +
     `<tbody>${rows.map((r) => `<tr>${cols.map(([k, , l, f]) => `<td class="${l ? (l === "wrap" ? "wrap" : "l") : ""}">${f ? f(r[k], r) : esc(r[k])}</td>`).join("")}</tr>`).join("")}</tbody>`);
 }
@@ -1127,7 +1126,7 @@ async function loadUsage(st = lastStatus) {
   const tip = { calls: "Model calls", input: "Prompt tokens sent", cached: "Part of input the provider served from cache (cheaper)",
                 output: "Tokens the model wrote back", cost: "Dollars billed; $0 on a flat plan" };
   const cell = (t, k, b) => k === "cost" ? `<span class="${b.flat ? "muted" : ""}">${cost(t, b.bot)}</span>` : k === "calls" ? t[k] : kTok(t[k]);
-  setTable(document.getElementById("usage"),
+  setHtml(document.getElementById("usage"),
     `<thead><tr class="groups"><th class="l"></th><th class="l"></th><th colspan="5" class="l gstart">Today</th><th colspan="5" class="l gstart">This month</th></tr>` +
     `<tr><th class="l">bot</th><th class="l">model</th>${["today", "month"].map(() => cols.map((k, i) =>
       `<th data-tip="${tip[k]}" class="${i ? "" : "gstart"}">${k}</th>`).join("")).join("")}</tr></thead><tbody>` +
