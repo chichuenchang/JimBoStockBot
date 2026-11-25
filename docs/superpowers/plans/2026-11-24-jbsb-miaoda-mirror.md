@@ -25,7 +25,7 @@
 - Socket mounted under `/app/<id>`: any link/fetch missing `ROOT` breaks on phone only — test scans rendered HTML + JS (Task 2).
 - PC asleep: page must say how old it is — banner from push time (Task 2, Task 5).
 - Crawl hitting Alpaca 1 call per candle key per arm — `MemoData` dedupes; test counts calls (Task 3).
-- Push dies mid-generation: old gen keeps serving — socket commit test by hand + client test that commit only after all batches ok (Task 4).
+- Push dies mid-way: old index keeps serving — commit only after all blobs ok (Task 4 test), socket commit atomic (Task 5 by hand).
 - Daemon start without `.env` keys: no task, one log line, no crash (Task 4).
 
 ---
@@ -85,12 +85,14 @@
 **Files:** Modify `src/stockbot/mirror.py`, `src/stockbot/daemon.py`, `.env.example`. Test `tests/test_mirror.py`, `tests/test_daemon.py`.
 
 **Interfaces:**
-- Produces: `async def push(entries: dict[str, Entry], url: str, key: str, client: httpx.AsyncClient, max_batch: int) -> str` (returns gen). Wire: `POST {url}/openapi/jbsb/batch` JSON `{gen, entries:[{key, content_type, body_b64}]}` per chunk ≤ `max_batch` bytes; then `POST {url}/openapi/jbsb/commit` `{gen, count, pushed_at}`. Header from Task 1. `class Mirror` with `async def tick(now) -> None`; `Mirror.from_env(ctx) -> Mirror | None`.
+- Produces: `class Pusher(url: str, key: str, client: httpx.AsyncClient, max_request: int = 400_000)` with `acked: set[str]` and `async def push(entries: dict[str, Entry], pushed_at: datetime) -> int` (returns bytes uploaded). Wire per spec §Push: gzip each body, hash = sha256(gz); `POST {url}/openapi/jbsb/blobs` `{blobs:[{hash, content_type, gz_b64}]}` for hashes not in `acked`, chunked ≤ max_request; `POST {url}/openapi/jbsb/commit` `{index:{key:hash}, pushed_at}`; 409 `{missing:[...]}` → upload those, commit once more, else raise. Header `Authorization: Bearer <key>`. gzip `mtime=0` so equal bodies hash equal. `class Mirror` with `async def tick(now) -> None`; `Mirror.from_env(ctx) -> Mirror | None`.
 - Cadence: due if never pushed, or `cycle_every_min` (live interval, `stockbot.interval`) elapsed and `kv market_open == "1"`, or 60 min elapsed. Skip push if sha256 over sorted (key, body) of `/api/*` entries unchanged since last ok push (HTML carries the stamp, always differs).
 
 - [ ] Failing tests (respx):
-  - `test_push_chunks_then_commits`: 3 entries, small max_batch → ≥2 batch calls, then 1 commit with `count == 3`, same gen everywhere, key header present.
-  - `test_push_no_commit_on_batch_error`: batch 500 → raises, no commit call.
+  - `test_push_chunks_then_commits`: 3 entries, small max_request → ≥2 blobs calls, then 1 commit whose index has all 3 keys; Bearer header on every call.
+  - `test_push_skips_acked`: second push of same entries uploads 0 blobs, still commits.
+  - `test_push_uploads_missing_on_409`: commit 409 `{missing:[h]}` → one blobs call with h, second commit.
+  - `test_push_no_commit_on_blob_error`: blobs 500 → raises, no commit call.
   - `test_mirror_off_without_env`: `from_env` → None, logs `mirror off`.
   - `test_tick_swallows_errors`: push raises → tick returns, logs, retries next due.
   - `test_tick_cadence`: market open → pushes at +5 min not +4; closed → +60.
@@ -104,11 +106,11 @@
 **Files:** `../jbsb-miaoda/server/modules/jbsb/{jbsb.controller,jbsb.store,jbsb.module}.ts`, `server/app.module.ts`. Create StockBot `scripts/deploy_miaoda.py`.
 
 - [ ] DDL via `+db-execute` on dev branch (spec §Socket tables). Platform template audit columns per `lark-apps-db-execute.md`.
-- [ ] Store: `putBatch(gen, entries)`, `commit(gen, count, pushedAt)` (checks count rows exist for gen, else 409; swaps `jbsb_current`; deletes other gens), `get(key)`.
-- [ ] Controller: `GET ['/', '*']` strip `CLIENT_BASE_PATH`, build key (sorted query), serve or 404 JSON. `POST openapi/jbsb/batch|commit`. Body limit raised in `main.ts` if Task 1 showed express default.
+- [ ] Store: `putBlobs(blobs)` (insert on conflict do nothing), `commit(index, pushedAt)` (missing hashes → 409 list; else one transaction: replace `jbsb_index`, upsert `jbsb_meta`, delete unreferenced blobs), `get(key)`.
+- [ ] Controller: `GET ['/', '*']` strip `CLIENT_BASE_PATH`, build key (sorted query), serve or 404 JSON. `POST openapi/jbsb/blobs|commit`. Serve gzip bytes with `Content-Encoding: gzip`, `Vary: Accept-Encoding`; inflate when request lacks gzip.
 - [ ] `npm run type:check` in repo passes.
 - [ ] `scripts/deploy_miaoda.py`: port `miaoda-deploy.mjs` (no build). `--apply-reason` constant `"JBSB mirror update"`. Run it.
-- [ ] Re-scope API key to batch+commit (`+openapi-key-update`). Set `.env` `JBSB_MIAODA_URL`.
+- [ ] API key already scoped ping+batch+commit in Task 1: `+openapi-key-update` to blobs+commit. `.env` URL set in Task 1.
 - [ ] `uv run python -c` one-shot crawl+push against prod socket; record size, crawl time, push time.
 - [ ] Open URL in Chrome (logged in): overview, one arm page, usage render with charts; banner time right; decision opens. Screenshot.
 - [ ] Commit socket repo (`Serve mirror generations by key`); StockBot (`Add Miaoda deploy script`).

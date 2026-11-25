@@ -58,25 +58,29 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 
 - `.env`: `JBSB_MIAODA_URL` (`https://ycnx0knkk9ic.feishuapp.com/app/<app_id>`), `JBSB_MIAODA_KEY`. Either missing = mirror off, one log line at start.
 - Daemon task beside dashboard (`daemon.run_forever`): crawl + push every `cycle_every_min` while market open, hourly otherwise, once at start. Skip push when body hashes unchanged. Errors logged, never raised into cycles. Crawl in thread (`asyncio.to_thread`) if it blocks loop >1s — measure.
-- Wire: generation id per push. `POST /openapi/jbsb/batch` (gen, entries `{key, content_type, body_b64}`) chunked under socket body limit, then `POST /openapi/jbsb/commit` (gen, count). Commit swaps current gen, deletes others. Half-pushed gen never served.
+- Wire (delta, content-addressed — upload ~40 kB/s, see Measured): body gzipped, `hash` = sha256 of gzipped bytes. Client remembers hashes the socket acked. `POST /openapi/jbsb/blobs` `{blobs:[{hash, content_type, gz_b64}]}` chunked ≤ 400 kB request, only hashes not acked. Then `POST /openapi/jbsb/commit` `{index:{key: hash}, pushed_at}`: socket in one transaction replaces index if every hash stored, else 409 `{missing:[hash]}` — client uploads those, commits again (once). Old index serves until commit lands. Unreferenced blobs pruned on commit.
 
 ### Socket (new Miaoda repo `../jbsb-miaoda`)
 
 - `+create` full_stack, enable database, `+init`. Template NestJS like creatorio; template React client + ViewModule not mounted (creatorio `app.module.ts` pattern), `enableCsrf: false`.
 - Hand-written TS in repo (no bundle: StockBot is Python). `server/modules/jbsb/`: controller, raw-SQL store via platform Drizzle (creatorio `creatorio.store.ts` pattern).
-- Table `jbsb_mirror(gen text, key text, content_type text, body bytea, pushed_at timestamptz, primary key(gen,key))` + `jbsb_current(gen, pushed_at)` one row. DDL on dev DB branch, release carries it (creatorio handbook §Writes).
-- Routes: `GET /` and `GET /*` = lookup key (strip base, sort query), else 404 `{"detail":"not mirrored"}`. `POST /openapi/jbsb/{batch,commit}` = API-key only. Pushed time sent as header for banner.
-- Access: `+access-scope-set --scope specific --targets '[{"type":"user","id":"<Jim ou_>"}]'`. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/batch' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
+- Tables `jbsb_blob(hash text pk, content_type text, body bytea)` (gzip bytes), `jbsb_index(key text pk, hash text)`, `jbsb_meta(id int pk, pushed_at timestamptz)`. DDL on dev DB branch, release carries it (creatorio handbook §Writes).
+- Routes: `GET /` and `GET /*` = lookup key (strip base, sort query), serve with `Content-Encoding: gzip` (inflate if client lacks gzip), else 404 `{"detail":"not mirrored"}`. `POST /openapi/jbsb/{blobs,commit}` = API key (`Authorization: Bearer`, platform-checked before app).
+- Access: `+access-scope-set --scope specific --targets '[{"type":"user","id":"<Jim ou_>"}]'`. Key: `+openapi-key-create --scope-api 'POST /openapi/jbsb/blobs' --scope-api 'POST /openapi/jbsb/commit'`; value straight into `.env`, never echoed.
 
 ### Deploy
 
 `scripts/deploy_miaoda.py`: port of BRecruitHelper `scripts/deploy/miaoda-deploy.mjs` minus build step — commit if dirty, push `sprint/default`, wait 15s, `+release-create --apply-reason`, poll `+release-get`, re-release if shipped commit ≠ pushed. GCM credential helper setup: BRecruitHelper `CLAUDE.md` §Miaoda repos from this machine.
 
-## Risks — spike first
+## Measured (spike 2026-11-24, app `app_17jr1c29a4u`)
 
-1. `/openapi/**` with API key gets past `specific` access scope login wall? Header name? Undocumented (lark-apps skill). Spike: empty socket, one openapi route, curl with key. Fail: fallback = creatorio pattern (`public`, `--require-login=false`, push secret header) + unguessable view token in path; tell Jim, privacy weaker.
-2. Socket body limit (express default 100 kB unless platform raises). Spike measures; chunk size from it.
-3. Crawl size/time: candles universe × tf × arms may be large. Measure first push; cut combos (e.g. candles without arm only) if > ~20 MB or > 30 s.
+- Login wall: unauthenticated `GET /` = 302. `POST /openapi/**` with `Authorization: Bearer <key>` = 200 past it; any other header = 403 `k_ec_000015` "missing or invalid Authorization header". Fallback not needed.
+- Body cap: 512 kB ok, 2 MB = 500 `PayloadTooLargeError`. Cap ≈1 MB (body-parser), unset by us.
+- Upload Canada→Miaoda ~40 kB/s: 64 kB 2.3 s, 512 kB 13.1 s. Hence gzip + delta wire.
+- `access-scope-set specific` leaves `apply_config.enabled` with Jim as approver: others may request, Jim approves.
+- Template `npm run lint` / pre-commit hook: `spawn EINVAL` / `spawnSync npm ENOENT` on Windows. Run `npx eslint` + `npm run type:check:server` by hand.
+
+Open: crawl size/time (candles universe × tf × arms). Measure first push; cut combos if gzipped delta > ~1 MB per cycle.
 
 ## Left to builder
 
