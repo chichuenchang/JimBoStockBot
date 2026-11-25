@@ -462,7 +462,7 @@ table:empty::before, .heatpair:empty::before, #decisions:empty::before, #stockma
   <main>{% block body %}{% endblock %}</main>
 </div>
 <script>window.SERIES = {{ series | tojson }}; window.NAMES = {{ names | tojson }}; window.TIPS = {{ tips | tojson }};</script>
-{% for js in scripts %}{# app.py SCRIPTS #}<script src="{{ root }}/static/{{ js }}.js?v={{ js_version }}"></script>
+{% for js in scripts %}{# app.py SCRIPTS #}<script src="{{ static }}/{{ js }}.js?v={{ js_version }}"></script>
 {% endfor %}
 </body>
 </html>

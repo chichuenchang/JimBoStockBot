@@ -33,6 +33,7 @@ LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
 INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
 LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
 # static/*.js, load order. Classic scripts, not modules: one shared global scope, so helpers first, polling last
+MIRROR_STATIC = "/jbsb-js"  # mirror's static path: Miaoda's own middleware answers /static/* before the app
 SCRIPTS = ("core", "status", "charts", "candles", "index", "arm", "usage", "main")
 
 
@@ -57,7 +58,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: crawl time = read-only copy
     (stockbot.mirror): no controls, stamped with its age."""
     app = FastAPI(title="StockBot", docs_url=None, redoc_url=None, openapi_url=None)
-    app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    static = MIRROR_STATIC if mirror else "/static"
+    app.mount(static, StaticFiles(directory=HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
@@ -83,7 +85,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
-                                                 "scripts": SCRIPTS, "js_version": js_version, "root": root,
+                                                 "scripts": SCRIPTS, "js_version": js_version, "root": root, "static": root + static,
                                                  "mirror": mirror, "mirror_stamp": stamp, **ctx})
 
     @app.get("/", response_class=HTMLResponse)

@@ -38,7 +38,8 @@ def test_crawl_keys(db):
               "/api/arm/kimi-improved/positions", "/api/candles?symbol=MSFT&tf=1Day",
               "/api/candles?symbol=MSFT&tf=1Min", "/api/arm/kimi-improved/fills?symbol=MSFT"):
         assert k in keys, k
-    assert any(k.startswith("/static/core.js?v=") for k in keys)
+    # Miaoda's own static middleware answers /static/* (404 File not found) before the app: the mirror's JS lives apart
+    assert any(k.startswith("/jbsb-js/core.js?v=") for k in keys) and not [k for k in keys if k.startswith("/static/")]
     assert not [k for k in keys if k.startswith("/api/candles?arm=")]  # bars once, fills apart
 
 
@@ -53,6 +54,7 @@ def test_crawl_pages_carry_root_and_stamp(db):
     page = run_crawl(db)["/"]
     assert page.content_type.startswith("text/html")
     assert b'data-root="/app/x"' in page.body and b'id="mirrorstamp"' in page.body
+    assert b'src="/app/x/jbsb-js/core.js?v=' in page.body
 
 
 def test_crawl_no_writes(db):
@@ -109,8 +111,10 @@ URL = "https://host/app/app_x"
 ENTRIES = {f"/api/k{i}": Entry("application/json", json.dumps({"i": i, "pad": "x" * 300}).encode()) for i in range(3)}
 
 
-def pusher(max_request=400_000):
-    return Pusher(URL, "KEY", httpx.AsyncClient(), max_request)
+def pusher(max_request=400_000, fresh=False):
+    p = Pusher(URL, "KEY", httpx.AsyncClient(), max_request)
+    p.fresh = fresh  # warm: has pushed before, so it uploads before committing
+    return p
 
 
 def sent_blobs(route):
@@ -152,6 +156,22 @@ def test_push_uploads_missing_on_409():
     before = blobs.call_count
     asyncio.run(p.push(ENTRIES, T0))
     assert commit.call_count == 2 and blobs.call_count == before + 1 and sent_blobs(blobs)[-1]["hash"] == lost
+
+
+@respx.mock
+def test_fresh_pusher_asks_socket_first():
+    """A restarted daemon knows nothing acked: commit first, upload only what the socket lacks."""
+    blobs = respx.post(f"{URL}/openapi/jbsb/blobs").mock(return_value=httpx.Response(200, json={}))
+    p = pusher(fresh=True)
+    index = {}
+
+    def first(request):
+        index.update(json.loads(request.content)["index"])
+        return httpx.Response(409, json={"missing": [index["/api/k0"]]})
+    commit = respx.post(f"{URL}/openapi/jbsb/commit").mock(side_effect=[first, httpx.Response(200, json={})])
+    asyncio.run(p.push(ENTRIES, T0))
+    assert commit.call_count == 2 and [b["hash"] for b in sent_blobs(blobs)] == [index["/api/k0"]]
+    assert p.acked == set(index.values())
 
 
 async def _ok_push(p):

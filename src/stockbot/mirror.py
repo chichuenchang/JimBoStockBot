@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 
 from stockbot import interval
 from stockbot.config import AppConfig
-from stockbot.dashboard.app import SCRIPTS, create_app
+from stockbot.dashboard.app import MIRROR_STATIC, SCRIPTS, create_app
 from stockbot.data.base import MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
@@ -107,9 +107,9 @@ async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None,
         universe = list(cfg.settings.universe)
         for path in ("/", "/usage", *(f"/arm/{a}" for a in arms)):
             await get(path)
-        version = out["/"].body.split(b"/static/core.js?v=", 1)[1].split(b'"', 1)[0].decode() if "/" in out else ""
+        version = out["/"].body.split(b"/core.js?v=", 1)[1].split(b'"', 1)[0].decode() if "/" in out else ""
         for s in SCRIPTS:
-            await get(f"/static/{s}.js", f"v={version}")
+            await get(f"{MIRROR_STATIC}/{s}.js", f"v={version}")
         for path in ("/api/status", "/api/leaderboard", "/api/drawdown", "/api/daily_pnl", "/api/heatmap"):
             await get(path)
         for mode in EQUITY_MODES:
@@ -149,7 +149,8 @@ class Pusher:
     def __init__(self, url: str, key: str, client: httpx.AsyncClient, max_request: int = MAX_REQUEST):
         self.url, self.client, self.max_request = url.rstrip("/"), client, max_request
         self.headers = {"Authorization": f"Bearer {key}"}
-        self.acked: set[str] = set()  # blobs the socket confirmed storing
+        self.acked: set[str] = set()  # blobs the socket holds: what the last commit indexed, + uploads since
+        self.fresh = True  # nothing known yet (daemon restart): commit first, the 409 names what to upload
 
     async def _post(self, path: str, body: dict) -> httpx.Response:
         return await self.client.post(f"{self.url}/openapi/jbsb/{path}", json=body, headers=self.headers,
@@ -182,15 +183,16 @@ class Pusher:
             h = hashlib.sha256(gz).hexdigest()
             index[k] = h
             blobs[h] = {"content_type": e.content_type, "gz_b64": base64.b64encode(gz).decode()}
-        sent = await self._upload({h: b for h, b in blobs.items() if h not in self.acked})
+        sent = 0 if self.fresh else await self._upload({h: b for h, b in blobs.items() if h not in self.acked})
         commit = {"index": index, "pushed_at": pushed_at.isoformat()}
         r = await self._post("commit", commit)
-        if r.status_code == 409:  # socket lost blobs it once stored (DB reset): send them, commit once more
+        if r.status_code == 409:  # fresh, or the socket lost blobs (DB reset): send those, commit once more
             missing = set(r.json().get("missing", []))
             self.acked -= missing
             sent += await self._upload({h: b for h, b in blobs.items() if h in missing})
             r = await self._post("commit", commit)
         r.raise_for_status()
+        self.acked, self.fresh = set(index.values()), False  # the commit pruned every blob it did not index
         return sent
 
 
