@@ -4,6 +4,8 @@
 {% block page %}arm{% endblock %}
 {% block body %}
 <script>window.ARM = {{ arm | tojson }};</script>
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
 <section class="card">
   <div class="armhead">
     <h1><span class="swatch" data-series="{{ arm }}"></span>{{ arm | arm_label }}</h1>
