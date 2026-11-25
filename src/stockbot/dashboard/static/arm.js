@@ -112,8 +112,8 @@ function md(src, plain = src) {
 const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~&]/g, "\\$&").replace(/\n/g, " ");
 const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
 function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
-  const cols = [...new Set(rows.flatMap(([, o]) => Object.keys(o)))];
-  return [["", ...cols], ["", ...cols].map(() => "---"), ...rows.map(([k, o]) => [k, ...cols.map((c) => o[c])])]
+  const head = ["", ...new Set(rows.flatMap(([, o]) => Object.keys(o)))], cols = head.slice(1);
+  return [head, head.map(() => "---"), ...rows.map(([k, o]) => [k, ...cols.map((c) => o[c])])]
     .map((r) => `| ${r.map(mdCell).join(" | ")} |`).join("\n");
 }
 // one reply: a JSON object (stocks, chart or search call) as tables; anything else (bad JSON, HTTP error) verbatim
@@ -128,7 +128,7 @@ function replyMd(part) {
   for (const [k, v] of Object.entries(obj)) {
     if (isRow(v)) rows.push([k, v]);
     else if (Array.isArray(v) && v.length && v.every(isRow)) rest.push(`**${mdCell(k)}**\n\n${mdTable(v.map((o, i) => [i + 1, o]))}`);
-    else rest.push(`**${mdCell(k)}:** ${v && typeof v === "object" ? mdCell(JSON.stringify(v)) : mdCell(v)}`);
+    else rest.push(`**${mdCell(k)}:** ${mdCell(v && typeof v === "object" ? JSON.stringify(v) : v)}`);
   }
   return [rows.length ? mdTable(rows) : "", ...rest].filter(Boolean).join("\n\n");
 }
