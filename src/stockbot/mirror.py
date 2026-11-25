@@ -38,15 +38,15 @@ class Entry:
     body: bytes
 
 
+_JS_SAFE = "!'()*"  # encodeURIComponent leaves these (and A-Z a-z 0-9 - _ . ~) unescaped
+
+
 def key(path: str, query: str) -> str:
     """Canonical key, same rule as the socket: params decoded, sorted, re-encoded as encodeURIComponent does."""
     pairs = sorted(parse_qsl(query, keep_blank_values=True))
     if not pairs:
         return path
     return path + "?" + "&".join(f"{quote(k, safe=_JS_SAFE)}={quote(v, safe=_JS_SAFE)}" for k, v in pairs)
-
-
-_JS_SAFE = "!'()*"  # encodeURIComponent leaves these (and A-Z a-z 0-9 - _ . ~) unescaped
 
 
 OFF_HOURS = timedelta(hours=1)  # push cadence with the market closed; also long candles' refresh

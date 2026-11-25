@@ -75,7 +75,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
         return await call_next(request)
 
-    stamp = mirror and f"Mirror · as of {mirror.astimezone(ET):%H:%M} ET, {mirror.astimezone(ET):%b %d}"
+    stamp = mirror and f"Mirror · as of {mirror.astimezone(ET):%H:%M ET, %b %d}"
 
     def known(arm: str) -> str:
         if arm not in db.accounts():

@@ -174,11 +174,11 @@ async function loadArm(st) {
     + `<span class="chip">last decision <b>${me.last_decision ? etTime(me.last_decision) : "–"}</b></span>`
     + (me.paused || st.paused_all ? `<span class="chip"><span class="dot" style="background:${css("--warning")}"></span><b>paused</b></span>` : ""));
   const btn = document.getElementById("pausebtn");
-  if (btn) {
-  btn.textContent = me.paused ? "Resume" : "Pause";
-  btn.classList.toggle("warn", !!me.paused);
-  btn.onclick = async () => { await fetch(url(`/api/${me.paused ? "resume" : "pause"}/${arm}`), { method: "POST" }); loadArm(await loadStatus()); };
-  }  // no button on the read-only mirror
+  if (btn) {  // no button on the read-only mirror
+    btn.textContent = me.paused ? "Resume" : "Pause";
+    btn.classList.toggle("warn", !!me.paused);
+    btn.onclick = async () => { await fetch(url(`/api/${me.paused ? "resume" : "pause"}/${arm}`), { method: "POST" }); loadArm(await loadStatus()); };
+  }
 
   openPositions = pos;
   groupSymbols(pos, trades);
