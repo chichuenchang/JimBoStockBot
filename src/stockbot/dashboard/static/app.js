@@ -913,6 +913,8 @@ let decisionFilter = "all", lastDecisions = [];
 // all: the latest 50. acted: the ones that led to a trade, however far back (queries.decisions)
 const decisionsUrl = () => `/api/arm/${encodeURIComponent(window.ARM)}/decisions${decisionFilter === "acted" ? "?acted=1" : ""}`;
 const SIGNAL = { buy_to_enter: ["buy", "BUY"], close_position: ["sell", "SELL"], hold: ["hold", "hold"] };  // [css class, word]
+// agent/schema.py SIGNALS may grow before this map does: show the raw signal, not a blank pane
+const signalOf = (s) => SIGNAL[s] ?? ["other", s];
 function drawDecisions() {
   const box = document.getElementById("decisions");
   // d.actions: each stock it traded or commented on, trades first. A daemon started before that field existed sends
@@ -924,7 +926,8 @@ function drawDecisions() {
   box.dataset.key = key;
   if (!shown.length) { box.innerHTML = `<p class="empty">${decisionFilter === "acted" ? "No trades yet." : "No decisions yet."}</p>`; return; }
   const have = new Map([...box.querySelectorAll("details")].map((el) => [el.dataset.id, el]));
-  const sig = (a, symbol = "") => `<span class="sig ${SIGNAL[a.signal][0]}">${SIGNAL[a.signal][1]}${symbol && " " + esc(symbol)}</span>`;
+  const sig = (a, symbol = "") => { const [kind, word] = signalOf(a.signal);
+    return `<span class="sig ${kind}">${esc(word)}${symbol && " " + esc(symbol)}</span>`; };
   const nodes = [];
   let day = "";
   for (const d of shown) {
@@ -937,7 +940,7 @@ function drawDecisions() {
       const chips = d.status !== "ok" ? `<span class="sig err">${esc(d.status === "llm_failed" ? "AI call failed" : d.status)}</span>`
         : !d.actions ? "" : trades(d).map((a) => sig(a, a.symbol)).join("") || sig({ signal: "hold" });
       const line = !d.actions ? d.summary
-        : d.actions.map((a) => `${a.symbol} ${SIGNAL[a.signal][1].toLowerCase()}${a.why && ": " + a.why}`).join(" · ") || "hold all";
+        : d.actions.map((a) => `${a.symbol} ${signalOf(a.signal)[1].toLowerCase()}${a.why && ": " + a.why}`).join(" · ") || "hold all";
       const meta = [d.reason === "scheduled" ? "" : esc(d.reason), d.cost > 0 ? "$" + fmt(d.cost, 3) : ""].filter(Boolean).join(" · ");
       el.innerHTML = `<summary><span class="dtime">${etClock(t)}</span>${chips}<span class="dsum">${esc(line)}</span><span class="dmeta">${meta}</span></summary>`
         + `<div class="detail">${d.actions?.length ? `<table class="dnotes"><tbody>${d.actions.map((a) =>

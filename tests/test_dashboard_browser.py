@@ -726,6 +726,13 @@ def test_open_decision_stays_open_when_a_newer_one_arrives(dash, page_at):
     assert opened.count() == 1 and "THE REPLY" in opened.inner_text()
 
 
+def test_decision_with_a_signal_the_page_does_not_know_still_shows(dash, page_at):
+    decide(dash, dash.now, {"MSFT": {"signal": "sell_short", "justification": "new signal"}})
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.wait_for_function("document.querySelectorAll('#decisions details').length === 1")
+    assert page.locator("#decisions summary .sig").inner_text() == "sell_short MSFT"
+
+
 def test_trades_only_reaches_back_to_the_decision_behind_a_fill(dash, page_at):
     decide(dash, dash.now - timedelta(days=11), {"MSFT": {"signal": "buy_to_enter"}})  # a day before Dashboard's MSFT buy
     decide(dash, dash.now, {})
