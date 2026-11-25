@@ -2,6 +2,7 @@
 
 // ---------- bot tabs: drag to reorder, saved server-side (dashboard/tab_order.py) ----------
 (function initTabDrag() {
+  if (MIRROR_AT) return;  // read-only copy
   const nav = document.querySelector("nav.tabs");
   const order = () => [...nav.querySelectorAll("a[data-arm]")].map((a) => a.dataset.arm);
   let dragged = null, before = "";
@@ -30,7 +31,7 @@
     dragged = null;
     const arms = order();
     if (JSON.stringify(arms) === before) return;
-    const r = await fetch("/api/tab_order", { method: "POST", headers: { "Content-Type": "application/json" },
+    const r = await fetch(url("/api/tab_order"), { method: "POST", headers: { "Content-Type": "application/json" },
                                               body: JSON.stringify({ arms }) }).catch(() => null);
     if (!r?.ok) location.reload();  // refused (config changed?) or unreachable: show what the server holds
   });
@@ -57,6 +58,6 @@
   };
   (async function tick() {
     const st = await window.refreshAll();
-    setTimeout(tick, !st || marketOpen ? 5000 : 60000);
+    setTimeout(tick, !MIRROR_AT && (!st || marketOpen) ? 5000 : 60000);  // mirror changes once a push
   })();
 })();

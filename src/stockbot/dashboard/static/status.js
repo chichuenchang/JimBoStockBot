@@ -5,7 +5,7 @@ let marketOpen = false, lastStatus = null;
 async function loadStatus() {
   const st = lastStatus = await get("/api/status");
   marketOpen = st.market_open;
-  const age = st.heartbeat ? (Date.now() - new Date(st.heartbeat)) / 1000 : Infinity;
+  const age = st.heartbeat ? ((MIRROR_AT ?? Date.now()) - new Date(st.heartbeat)) / 1000 : Infinity;  // mirror: as of its crawl
   const up = age < 120;
   const dot = (ok, live) => `<span class="dot${live ? " live" : ""}" style="background:${css(ok ? "--good" : "--critical")}"></span>`;
   const items = [
@@ -37,6 +37,7 @@ async function loadStatus() {
 }
 // interval + pause: built once, then only what changed is touched, so a number being typed is never wiped
 function drawControls(st) {
+  if (MIRROR_AT) return;  // read-only copy: controls live on the PC dashboard
   const box = document.getElementById("controls"), $ = (id) => document.getElementById(id);
   if (!box.firstChild) {
     box.innerHTML = `<label class="interval" data-tip="How often each bot looks at the market and decides. Shorter = faster reactions, more AI calls.">Decide every <input id="intervalin" type="number" min="1" max="60" inputmode="numeric"> min</label>`
@@ -44,7 +45,7 @@ function drawControls(st) {
       + `<button id="pauseall"${tipAttr(window.TIPS.pause)}></button>`
       + `<span id="updated" data-tip="When these numbers were last refreshed: every 5 seconds while the market is open, else every minute."></span>`;
     const postInterval = async (minutes) => {
-      const r = await fetch("/api/interval", { method: "POST", headers: { "Content-Type": "application/json" },
+      const r = await fetch(url("/api/interval"), { method: "POST", headers: { "Content-Type": "application/json" },
                                                body: JSON.stringify({ minutes }) });
       $("intervalin").classList.toggle("bad", !r.ok);
       if (r.ok) { $("intervalin").blur(); loadStatus(); }
@@ -53,7 +54,7 @@ function drawControls(st) {
     $("intervalin").onkeydown = (e) => { if (e.key === "Enter") $("intervalset").click(); };
     $("intervalreset").onclick = () => postInterval(null);
     $("pauseall").onclick = async () => {
-      await fetch(lastStatus.paused_all ? "/api/resume_all" : "/api/pause_all", { method: "POST" });
+      await fetch(url(`/api/${lastStatus.paused_all ? "resume" : "pause"}_all`), { method: "POST" });
       loadStatus();
     };
   }

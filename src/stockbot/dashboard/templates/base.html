@@ -101,6 +101,7 @@ body { margin: 0; background: var(--surface-0); color: var(--text-primary);
 .meter { width: 52px; height: 4px; border-radius: 2px; display: inline-block; overflow: hidden; flex: none;
   background: color-mix(in srgb, var(--mc, var(--accent)) 22%, var(--surface-0)); }  /* track: lighter step of the fill */
 .meter > i { display: block; height: 100%; min-width: 2px; border-radius: 2px; background: var(--mc, var(--accent)); }
+.mirrorstamp { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
 .interval { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
 .interval input { width: 3.6em; font: inherit; padding: 3px 4px 3px 8px; border-radius: 6px; border: 1px solid var(--border);
   background: var(--surface-1); color: var(--text-primary); }
@@ -437,30 +438,31 @@ table:empty::before, .heatpair:empty::before, #decisions:empty::before, #stockma
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
-<body data-page="{% block page %}{% endblock %}">
+<body data-page="{% block page %}{% endblock %}" data-root="{{ root }}"{% if mirror %} data-mirror="{{ mirror.isoformat() }}"{% endif %}>
 {% set active = arm if arm is defined else tab if tab is defined else "" %}
 <aside class="side">
-  <a class="brand" href="/">JBSB</a>
+  <a class="brand" href="{{ root }}/">JBSB</a>
   <nav class="tabs">
     <div class="navgroup">Arena</div>
-    <a href="/" class="{{ 'on' if not active }}">Overview</a>
+    <a href="{{ root }}/" class="{{ 'on' if not active }}">Overview</a>
     {% block subnav %}{% endblock %}
-    <a href="/usage" class="{{ 'on' if active == 'usage' }}">Usage</a>
-    <div class="navgroup">Bots <span data-tip="Drag a bot to reorder this list">⇅</span></div>
-    {% for s in arms %}<a href="/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}" draggable="true"><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
+    <a href="{{ root }}/usage" class="{{ 'on' if active == 'usage' }}">Usage</a>
+    <div class="navgroup">Bots{% if not mirror %} <span data-tip="Drag a bot to reorder this list">⇅</span>{% endif %}</div>
+    {% for s in arms %}<a href="{{ root }}/arm/{{ s }}" class="{{ 'on' if s == active }}" data-arm="{{ s }}"{% if not mirror %} draggable="true"{% endif %}><span class="swatch" data-series="{{ s }}"></span>{{ s | arm_label }}</a>{% endfor %}
   </nav>
   <div class="side-foot muted small strip"><span>Paper money only</span><button id="theme" data-tip="Switch light / dark" aria-label="Switch light / dark">◐</button></div>
 </aside>
 <div class="page">
   <header class="topbar">
-    <div id="offline" role="alert">Can't reach the daemon. Numbers below are stale; retrying…</div>
+    <div id="offline" role="alert">Can't reach the {{ "mirror" if mirror else "daemon" }}. Numbers below are stale; retrying…</div>
+    {% if mirror %}<div class="mirrorstamp" id="mirrorstamp" data-tip="Read-only copy pushed by the daemon. Controls live on the PC dashboard.">{{ mirror_stamp }}</div>{% endif %}
     <div class="health" id="status"></div>
     <div class="controls" id="controls"></div>
   </header>
   <main>{% block body %}{% endblock %}</main>
 </div>
 <script>window.SERIES = {{ series | tojson }}; window.NAMES = {{ names | tojson }}; window.TIPS = {{ tips | tojson }};</script>
-{% for js in scripts %}{# app.py SCRIPTS #}<script src="/static/{{ js }}.js?v={{ js_version }}"></script>
+{% for js in scripts %}{# app.py SCRIPTS #}<script src="{{ static }}/{{ js }}.js?v={{ js_version }}"></script>
 {% endfor %}
 </body>
 </html>

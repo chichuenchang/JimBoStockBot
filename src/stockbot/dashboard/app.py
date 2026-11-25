@@ -17,7 +17,7 @@ from stockbot import charts, history, interval
 from stockbot import pause as pause_flags
 from stockbot.agent import chart_tool
 from stockbot.agent.cycle import REPLY_MARK
-from stockbot.clock import RealClock, et_at, et_date
+from stockbot.clock import ET, RealClock, et_at, et_date
 from stockbot.config import AppConfig
 from stockbot.dashboard import queries as q
 from stockbot.dashboard import tab_order
@@ -33,6 +33,7 @@ LIVE_TTL = 15  # seconds a latest-price fetch serves /api/market
 INTRADAY_SESSIONS = {"1Min": 2, "1Hour": 14}  # candles shown: last n trading sessions that have opened
 LIVE_DAYS = timedelta(days=200)  # 1Day window when no history is stored
 # static/*.js, load order. Classic scripts, not modules: one shared global scope, so helpers first, polling last
+MIRROR_STATIC = "/jbsb-js"  # mirror's static path: Miaoda's own middleware answers /static/* before the app
 SCRIPTS = ("core", "status", "charts", "candles", "index", "arm", "usage", "main")
 
 
@@ -52,9 +53,13 @@ def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Ba
     return history.rollup([replace(b, ts=hour(b)) for b in minutes], lambda b: b.ts)
 
 
-def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None) -> FastAPI:
+def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None, *,
+               root: str = "", mirror: datetime | None = None) -> FastAPI:
+    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: crawl time = read-only copy
+    (stockbot.mirror): no controls, stamped with its age."""
     app = FastAPI(title="StockBot", docs_url=None, redoc_url=None, openapi_url=None)
-    app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+    static = MIRROR_STATIC if mirror else "/static"
+    app.mount(static, StaticFiles(directory=HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
@@ -70,6 +75,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
         return await call_next(request)
 
+    stamp = mirror and f"Mirror · as of {mirror.astimezone(ET):%H:%M ET, %b %d}"
+
     def known(arm: str) -> str:
         if arm not in db.accounts():
             raise HTTPException(404, f"unknown arm {arm}")
@@ -78,7 +85,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def page(request, name, **ctx):
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
-                                                 "scripts": SCRIPTS, "js_version": js_version, **ctx})
+                                                 "scripts": SCRIPTS, "js_version": js_version, "root": root, "static": root + static,
+                                                 "mirror": mirror, "mirror_stamp": stamp, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
@@ -161,6 +169,10 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     def api_rejections(arm: str):
         return q.rejections(db, known(arm))
 
+    @app.get("/api/arm/{arm}/fills")
+    def api_fills(arm: str, symbol: str):
+        return q.chart_fills(db, known(arm), symbol)
+
     @app.get("/api/decision/{decision_id}")
     def api_decision(decision_id: int):
         d = db.decision(decision_id)
@@ -170,8 +182,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
                 "charts": [asdict(c) for c in chart_tool.seen(d["prompt"])]}
 
     @app.get("/api/candles")
-    async def api_candles(symbol: str, arm: str | None = None, tf: str = "1Min"):
-        """Bars for the chart; with arm, that bot's fills too (overview's market chart has none)."""
+    async def api_candles(symbol: str, tf: str = "1Min"):
+        """Bars for the chart. A bot page adds /api/arm/<arm>/fills: one copy of the bars per stock on the mirror."""
         if symbol not in cfg.settings.universe:
             raise HTTPException(404)
         tf = tf if tf in INTRADAY_SESSIONS or tf in history.HISTORY_TFS else "1Min"
@@ -199,8 +211,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         if long:
             bars = history.aggregate(bars, tf)
         return {"bars": [{"time": int(b.ts.timestamp()), "open": b.open, "high": b.high, "low": b.low,
-                          "close": b.close} for b in bars],
-                "fills": q.chart_fills(db, known(arm), symbol) if arm else [], "error": err}
+                          "close": b.close} for b in bars], "error": err}
 
     @app.get("/api/chart")
     def api_chart(symbol: str, tf: str, start: date, end: date, log: bool = False):

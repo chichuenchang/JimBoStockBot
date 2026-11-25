@@ -693,6 +693,15 @@ def test_unreachable_daemon_is_flagged_until_it_answers(page_at):
     assert not page.locator("#offline").is_visible()
 
 
+def test_failed_candles_fetch_says_so_under_the_chart(page_at):
+    """Not a fade that never lifts: on the mirror a missing key reads "not mirrored" (core.js get)."""
+    page = arm_page(page_at, "positions")
+    page.route("**/api/candles*", lambda r: r.fulfill(status=404, body="{}"))
+    page.evaluate("loadCandles()")
+    page.wait_for_function("document.getElementById('candlenote').textContent.startsWith('Price data unavailable')")
+    assert "loading" not in page.locator("#candles").get_attribute("class")
+
+
 # ---------- bot page: chart default, trade bars, decisions ----------
 def test_chart_opens_on_the_held_stock_with_its_exit_plan(dash, page_at):
     acct = dash.db.load_account(ARM)

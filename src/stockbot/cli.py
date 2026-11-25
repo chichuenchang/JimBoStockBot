@@ -285,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
         clock = RealClock()
         data = _alpaca()
         ctx = _ctx(cfg, db, data, clock, _clients(cfg, fake=False), _fundamentals(), _search(cfg), data)
-        asyncio.run(Daemon(ctx, poll_quota=True).run_forever())
+        asyncio.run(Daemon(ctx, poll_quota=True, mirror=True).run_forever())
         return 0
     except ConfigError as e:
         print(f"config error: {e}", file=sys.stderr)

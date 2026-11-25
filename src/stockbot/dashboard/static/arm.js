@@ -60,7 +60,7 @@ function drawTradeBars(trades) {
 // decisions: one line each. Rows are kept across polls (keyed by id), so an open one stays open with its text
 let decisionFilter = "all", lastDecisions = [];
 // all: the latest 50. acted: the ones that led to a trade, however far back (queries.decisions)
-const decisionsUrl = () => `/api/arm/${encodeURIComponent(window.ARM)}/decisions${decisionFilter === "acted" ? "?acted=1" : ""}`;
+const decisionsPath = () => `/api/arm/${encodeURIComponent(window.ARM)}/decisions${decisionFilter === "acted" ? "?acted=1" : ""}`;
 const SIGNAL = { buy_to_enter: ["buy", "BUY"], close_position: ["sell", "SELL"], hold: ["hold", "hold"] };  // [css class, word]
 // agent/schema.py SIGNALS may grow before this map does: show the raw signal, not a blank pane
 const signalOf = (s) => SIGNAL[s] ?? ["other", s];
@@ -136,11 +136,15 @@ async function openDecision(el) {
   if (!el.open || el.dataset.loaded) return;
   el.dataset.loaded = "1";
   const full = el.querySelector(".full");
-  const d = await get(`/api/decision/${el.dataset.id}`).catch(() => null);
-  if (!d) { delete el.dataset.loaded; full.textContent = "Could not load. Close and open again to retry."; return; }
+  const d = await get(`/api/decision/${el.dataset.id}`).catch((e) => e);
+  if (d instanceof Error) {
+    delete el.dataset.loaded;
+    full.textContent = d.message === NOT_MIRRORED ? "Not mirrored: open it on the PC dashboard." : "Could not load. Close and open again to retry.";
+    return;
+  }
   // chart-tool pictures the bot saw, re-drawn (agent/chart_tool.py seen)
   const pics = d.charts.map((c) =>
-    `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
+    `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="${esc(url("/api/chart?" + new URLSearchParams(c)))}">`);
   full.classList.remove("muted");
   const replies = d.replies ?? [d.raw];  // a daemon started before d.replies existed: one block, unsplit
   full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(replies.map(replyMd).join("\n\n---\n\n"), d.raw)}`
@@ -162,7 +166,7 @@ async function loadArm(st) {
   const me = st.arms.find((a) => a.arm === window.ARM) || {};
   const sized = me.variant === "improved";  // only improved arms send conviction
   const [pos, trades, decs, rej, conv] = await Promise.all([get(`/api/arm/${arm}/positions`), get(`/api/arm/${arm}/trades`),
-    get(decisionsUrl()), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : [],
+    get(decisionsPath()), get(`/api/arm/${arm}/rejections`), sized ? get(`/api/arm/${arm}/conviction`) : [],
     refreshRendered([".kpis"]), loadArmEquity().catch((e) => console.error(e))]);
   setHtml(document.getElementById("armstate"),
     (me.model && me.model !== "-" ? `<span class="chip">model <b>${esc(me.model)}</b></span>` : `<span class="chip">no AI model</span>`)
@@ -170,9 +174,11 @@ async function loadArm(st) {
     + `<span class="chip">last decision <b>${me.last_decision ? etTime(me.last_decision) : "–"}</b></span>`
     + (me.paused || st.paused_all ? `<span class="chip"><span class="dot" style="background:${css("--warning")}"></span><b>paused</b></span>` : ""));
   const btn = document.getElementById("pausebtn");
-  btn.textContent = me.paused ? "Resume" : "Pause";
-  btn.classList.toggle("warn", !!me.paused);
-  btn.onclick = async () => { await fetch(`/api/${me.paused ? "resume" : "pause"}/${arm}`, { method: "POST" }); loadArm(await loadStatus()); };
+  if (btn) {  // no button on the read-only mirror
+    btn.textContent = me.paused ? "Resume" : "Pause";
+    btn.classList.toggle("warn", !!me.paused);
+    btn.onclick = async () => { await fetch(url(`/api/${me.paused ? "resume" : "pause"}/${arm}`), { method: "POST" }); loadArm(await loadStatus()); };
+  }
 
   openPositions = pos;
   groupSymbols(pos, trades);
@@ -230,7 +236,7 @@ function initArm() {
   document.getElementById("tf").onchange = loadCandles;
   decisionFilter = segmented("dfilter", async (v) => {
     decisionFilter = v;
-    const fresh = await get(decisionsUrl());
+    const fresh = await get(decisionsPath());
     if (v !== decisionFilter) return;  // clicked again while in flight
     lastDecisions = fresh;
     drawDecisions();
