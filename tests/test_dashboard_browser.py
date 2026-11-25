@@ -11,6 +11,7 @@ import uvicorn
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
+from stockbot.agent.cycle import REPLY_MARK
 from stockbot.clock import RealClock, et_at, et_date
 from stockbot.dashboard.app import create_app
 from stockbot.dashboard.glossary import TIPS
@@ -716,9 +717,26 @@ def test_trade_bar_click_frames_that_trade(dash, page_at):
     assert "on" in bar.get_attribute("class") and page.locator("#trades tr:has(.stocklink.on)").count() == 1
 
 
-def decide(dash, at, per_symbol):
-    dash.db.insert_decision(ARM, at, "scheduled", None, "THE PROMPT", "THE REPLY",
+def decide(dash, at, per_symbol, prompt="THE PROMPT", raw="THE REPLY"):
+    dash.db.insert_decision(ARM, at, "scheduled", None, prompt, raw,
                             json.dumps({"per_symbol": per_symbol}), "ok", 1, 0, 1, 0.0)
+
+
+def test_decision_prompt_and_replies_render_as_written(dash, page_at):
+    prompt = 'Instead of the decision, reply {"search": "<query>"}\n\n![logo](http://news.example/logo.png)'
+    raw = REPLY_MARK.join(['{"search": "msft earnings"}', "HTTP 500\n~~~~\n<b>down</b>",
+                           '{"MSFT": {"signal": "hold", "justification": "P&amp;L | flat"}}'])
+    decide(dash, dash.now, {}, prompt, raw)
+    page = page_at(f"/arm/{ARM}#decisions")
+    page.locator("#decisions summary").click()
+    page.wait_for_selector("#decisions .md")
+    reply, shown = page.locator("#decisions .md").all()
+    assert "<b>down</b>" in reply.locator("pre").inner_text()  # a ~~~~ line inside does not end the fence
+    assert reply.locator("td").all_inner_texts() == ["MSFT", "hold", "P&amp;L | flat"]
+    assert '{"search": "<query>"}' in shown.inner_text() and "logo" in shown.inner_text()  # HTML as text, image as alt
+    assert page.locator("#decisions .md img").count() == 0
+    no_cdn = "() => { const m = window.marked; window.marked = undefined; try { return md('**x**', 'RAW'); } finally { window.marked = m; } }"
+    assert page.evaluate(no_cdn) == "<pre>RAW</pre>"  # no CDN: the raw reply, not the markdown made from it
 
 
 def test_open_decision_stays_open_when_a_newer_one_arrives(dash, page_at):
@@ -726,7 +744,7 @@ def test_open_decision_stays_open_when_a_newer_one_arrives(dash, page_at):
     page = page_at(f"/arm/{ARM}#decisions")
     page.locator("#decisions summary").click()
     opened = page.locator("#decisions details[open]")
-    page.wait_for_function("document.querySelector('#decisions pre')?.textContent === 'THE REPLY'")
+    page.wait_for_function("document.querySelector('#decisions pre')?.textContent.trim() === 'THE REPLY'")
     assert opened.locator("summary .sig").inner_text() == "BUY MSFT" and "breakout" in opened.locator(".dnotes").inner_text()
     decide(dash, dash.now + timedelta(minutes=5), {})
     page.evaluate(POLL_ARM)

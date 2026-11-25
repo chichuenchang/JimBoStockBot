@@ -100,6 +100,38 @@ function drawDecisions() {
   }
   box.replaceChildren(...nodes);
 }
+// prompt and reply as markdown. Text is the model's and the news': HTML in it shows as text, not tags (the prompt's
+// "<query>" would vanish), and still goes through DOMPurify. An image shows its alt text: opening a decision fetches
+// nothing a news story names. No CDN: plain, the original text, not the markdown made from it
+let marker;
+function md(src, plain = src) {
+  if (!window.marked || !window.DOMPurify) return `<pre>${esc(plain)}</pre>`;
+  marker ??= new marked.Marked({ renderer: { html: ({ text }) => esc(text), image: ({ text }) => esc(text) } });
+  return `<div class="md">${DOMPurify.sanitize(marker.parse(src))}</div>`;
+}
+const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~&]/g, "\\$&").replace(/\n/g, " ");
+const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
+function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
+  const head = ["", ...new Set(rows.flatMap(([, o]) => Object.keys(o)))], cols = head.slice(1);
+  return [head, head.map(() => "---"), ...rows.map(([k, o]) => [k, ...cols.map((c) => o[c])])]
+    .map((r) => `| ${r.map(mdCell).join(" | ")} |`).join("\n");
+}
+// one reply: a JSON object (stocks, chart or search call) as tables; anything else (bad JSON, HTTP error) verbatim
+function replyMd(part) {
+  let obj;
+  try { obj = JSON.parse(part); } catch { obj = null; }
+  if (!obj || typeof obj !== "object") {  // fence longer than any ~ run inside, or that run would end it
+    const fence = "~".repeat(Math.max(3, ...(part.match(/~+/g) ?? []).map((t) => t.length)) + 1);
+    return `${fence}\n${part}\n${fence}`;
+  }
+  const rows = [], rest = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (isRow(v)) rows.push([k, v]);
+    else if (Array.isArray(v) && v.length && v.every(isRow)) rest.push(`**${mdCell(k)}**\n\n${mdTable(v.map((o, i) => [i + 1, o]))}`);
+    else rest.push(`**${mdCell(k)}:** ${mdCell(v && typeof v === "object" ? JSON.stringify(v) : v)}`);
+  }
+  return [rows.length ? mdTable(rows) : "", ...rest].filter(Boolean).join("\n\n");
+}
 async function openDecision(el) {
   if (!el.open || el.dataset.loaded) return;
   el.dataset.loaded = "1";
@@ -110,8 +142,9 @@ async function openDecision(el) {
   const pics = d.charts.map((c) =>
     `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
   full.classList.remove("muted");
-  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, word for word</span></h2><pre>${esc(d.raw)}</pre>`
-    + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}<pre>${esc(d.prompt)}</pre>`;
+  const replies = d.replies ?? [d.raw];  // a daemon started before d.replies existed: one block, unsplit
+  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(replies.map(replyMd).join("\n\n---\n\n"), d.raw)}`
+    + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}${md(d.prompt)}`;
 }
 // this bot's account against just holding the benchmark
 async function loadArmEquity() {

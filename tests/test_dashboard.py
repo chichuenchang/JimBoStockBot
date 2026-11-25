@@ -246,6 +246,7 @@ def test_api_shapes(db):
     [d] = c.get("/api/arm/kimi-improved/decisions").json()
     full = c.get(f"/api/decision/{d['id']}").json()
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
+    assert full["replies"] == ["RAW REPLY"]
     candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
     assert len(candles["fills"]) == 2 and candles["bars"] == []
     assert c.get("/api/candles?symbol=MSFT").json()["fills"] == []  # overview's market chart: no bot
