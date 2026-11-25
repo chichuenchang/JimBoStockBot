@@ -290,6 +290,12 @@ class DB:
             "SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
             "ORDER BY slot_ts DESC LIMIT ?", arm, limit)]
 
+    def decision_before(self, arm: str, ts: datetime) -> dict | None:
+        """The arm's last decision at or before ts, shaped as recent_decisions. One index seek on (arm, slot_ts)."""
+        rows = self._q("SELECT id, slot_ts, reason, status, cost, parsed_json FROM decisions WHERE arm=? "
+                       "AND slot_ts<=? ORDER BY slot_ts DESC LIMIT 1", arm, iso(ts))
+        return dict(rows[0]) if rows else None
+
     def decision(self, decision_id: int) -> dict | None:
         rows = self._q("SELECT id, arm, slot_ts, status, prompt, raw FROM decisions WHERE id=?", decision_id)
         return dict(rows[0]) if rows else None
