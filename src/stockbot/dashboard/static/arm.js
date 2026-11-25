@@ -100,6 +100,30 @@ function drawDecisions() {
   }
   box.replaceChildren(...nodes);
 }
+// prompt and reply as markdown. Text is the model's and the news': always through DOMPurify. No CDN: plain text
+const md = (src) => (window.marked && window.DOMPurify
+  ? `<div class="md">${DOMPurify.sanitize(marked.parse(src))}</div>` : `<pre>${esc(src)}</pre>`);
+const mdCell = (v) => String(v ?? "").replace(/[\\`*_[\]<>|#~]/g, "\\$&").replace(/\n/g, " ");
+const isRow = (v) => v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => x === null || typeof x !== "object");
+function mdTable(rows) {  // rows: [label, flat object]; columns: every key, first-seen order
+  const cols = [...new Set(rows.flatMap(([, o]) => Object.keys(o)))];
+  return [["", ...cols], ["", ...cols].map(() => "---"), ...rows.map(([k, o]) => [k, ...cols.map((c) => o[c])])]
+    .map((r) => `| ${r.map(mdCell).join(" | ")} |`).join("\n");
+}
+// one reply: a JSON object (stocks, chart or search call) as tables; anything else (bad JSON, HTTP error) verbatim
+function replyMd(part) {
+  let obj;
+  try { obj = JSON.parse(part); } catch { obj = null; }
+  if (!obj || typeof obj !== "object") return "~~~~\n" + part + "\n~~~~";
+  const rows = [], rest = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (isRow(v)) rows.push([k, v]);
+    else if (Array.isArray(v) && v.length && v.every(isRow)) rest.push(`**${mdCell(k)}**\n\n${mdTable(v.map((o, i) => [i + 1, o]))}`);
+    else rest.push(`**${mdCell(k)}:** ${v && typeof v === "object" ? mdCell(JSON.stringify(v)) : mdCell(v)}`);
+  }
+  return [rows.length ? mdTable(rows) : "", ...rest].filter(Boolean).join("\n\n");
+}
+const REPLY_MARK = "\n\n----- next reply -----\n\n";  // agent/cycle.py REPLY_MARK
 async function openDecision(el) {
   if (!el.open || el.dataset.loaded) return;
   el.dataset.loaded = "1";
@@ -110,8 +134,8 @@ async function openDecision(el) {
   const pics = d.charts.map((c) =>
     `<img alt="${esc(c.symbol)} chart" style="max-width:100%" src="/api/chart?${esc(new URLSearchParams(c))}">`);
   full.classList.remove("muted");
-  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, word for word</span></h2><pre>${esc(d.raw)}</pre>`
-    + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}<pre>${esc(d.prompt)}</pre>`;
+  full.innerHTML = `<h2>Reply <span class="muted">what the model answered, every reply in order</span></h2>${md(d.raw.split(REPLY_MARK).map(replyMd).join("\n\n---\n\n"))}`
+    + `<h2>Prompt <span class="muted">everything it was shown</span></h2>${pics.join("")}${md(d.prompt)}`;
 }
 // this bot's account against just holding the benchmark
 async function loadArmEquity() {

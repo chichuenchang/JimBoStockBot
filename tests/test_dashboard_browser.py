@@ -726,7 +726,7 @@ def test_open_decision_stays_open_when_a_newer_one_arrives(dash, page_at):
     page = page_at(f"/arm/{ARM}#decisions")
     page.locator("#decisions summary").click()
     opened = page.locator("#decisions details[open]")
-    page.wait_for_function("document.querySelector('#decisions pre')?.textContent === 'THE REPLY'")
+    page.wait_for_function("document.querySelector('#decisions pre')?.textContent.trim() === 'THE REPLY'")
     assert opened.locator("summary .sig").inner_text() == "BUY MSFT" and "breakout" in opened.locator(".dnotes").inner_text()
     decide(dash, dash.now + timedelta(minutes=5), {})
     page.evaluate(POLL_ARM)
