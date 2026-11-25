@@ -58,7 +58,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     names = {a.name: a.label or a.name for a in cfg.arms}
     names[BENCHMARK] = f"{BENCHMARK.removeprefix('benchmark-')} buy & hold"  # says what it is; the id says nothing to a newcomer
     tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
-    js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
+    js_version = int(max(p.stat().st_mtime for p in (HERE / "static").glob("*.js")))  # cache-bust: new code, new URL
 
     @app.middleware("http")
     async def same_origin_writes(request: Request, call_next):

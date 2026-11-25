@@ -448,6 +448,8 @@ table:empty::before, .heatpair:empty::before, #decisions:empty::before, #stockma
   <main>{% block body %}{% endblock %}</main>
 </div>
 <script>window.SERIES = {{ series | tojson }}; window.NAMES = {{ names | tojson }}; window.TIPS = {{ tips | tojson }};</script>
-<script src="/static/app.js?v={{ js_version }}"></script>
+{# classic scripts, not modules: they share one global scope, so order is load order (helpers first, polling last) #}
+{% for js in ("app", "usage", "main") %}<script src="/static/{{ js }}.js?v={{ js_version }}"></script>
+{% endfor %}
 </body>
 </html>
