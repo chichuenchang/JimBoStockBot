@@ -2,7 +2,6 @@
 
 // ---------- status strip ----------
 let marketOpen = false, lastStatus = null;
-const meter = (ratio, state) => `<span class="meter" style="--mc:${stateColor(state)}"><i style="width:${(Math.min(1, Math.max(0, ratio)) * 100).toFixed(1)}%"></i></span>`;
 async function loadStatus() {
   const st = lastStatus = await get("/api/status");
   marketOpen = st.market_open;

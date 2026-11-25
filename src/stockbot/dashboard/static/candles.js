@@ -9,6 +9,9 @@ let focused = null;  // closed trade picked in the table: { symbol, from, to }. 
 const isoSeconds = (iso) => Math.floor(new Date(iso).getTime() / 1000);  // floor: as queries.chart_fills
 const isFocused = (symbol, buyIso) => focused?.symbol === symbol && focused.from === isoSeconds(buyIso);
 function focusCandles(trade) { focused = trade; repaintBadges?.(); }  // only writer of focused
+// stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
+const stockLink = (symbol, buyIso = "", sellIso = "") => inUniverse(symbol)
+  ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
 
 // no ARM (overview's market chart): bars only, no fills
 const fetchCandles = (tf) => get(`/api/candles?symbol=${document.getElementById("symbol").value}&tf=${tf}`

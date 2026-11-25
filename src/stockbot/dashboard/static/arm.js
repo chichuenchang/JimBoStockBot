@@ -1,9 +1,6 @@
 "use strict";
 
 // ---------- arm page ----------
-// stock name that points the chart at it; plain text once the symbol left the universe (/api/candles 404s)
-const stockLink = (symbol, buyIso = "", sellIso = "") => inUniverse(symbol)
-  ? `<button class="stocklink${isFocused(symbol, buyIso) ? " on" : ""}" data-symbol="${esc(symbol)}" data-buy="${esc(buyIso)}" data-sell="${esc(sellIso)}">${esc(symbol)}</button>` : esc(symbol);
 function focusTrade(trade) {
   focusCandles(trade);
   document.querySelectorAll("#trades .stocklink, #tradebars .tbar").forEach((l) => l.classList.toggle("on", isFocused(l.dataset.symbol, l.dataset.buy)));

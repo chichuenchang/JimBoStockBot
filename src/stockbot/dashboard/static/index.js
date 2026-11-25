@@ -92,7 +92,7 @@ function layoutStocks(box = document.getElementById("stockmap")) {
 const spanLabel = () => document.querySelector("button[data-sessions].on").textContent;  // label lives in index.html only
 function drawMovers() {
   const by = [...lastMarket].sort((a, b) => b.change_pct - a.change_pct);
-  const li = (s) => `<li><button class="stocklink" data-symbol="${esc(s.symbol)}">${esc(s.symbol)}</button><span class="${cls(s.change_pct)}">${signed(s.change_pct)}%</span></li>`;
+  const li = (s) => `<li>${stockLink(s.symbol)}<span class="${cls(s.change_pct)}">${signed(s.change_pct)}%</span></li>`;
   setHtml(document.getElementById("moversup"), by.filter((s) => s.change_pct > 0).slice(0, 3).map(li).join("") || `<li class="muted">none</li>`);
   setHtml(document.getElementById("moversdown"), by.filter((s) => s.change_pct < 0).slice(-3).reverse().map(li).join("") || `<li class="muted">none</li>`);
   document.querySelectorAll(".moverspan").forEach((el) => { el.textContent = `(${spanLabel()})`; });
@@ -217,7 +217,7 @@ function drawHeatmap(heat) {
   const shade = shader(Math.max(1, quantile(traded.flatMap((s) => Object.values(heat[s]).map(Math.abs)), 0.95)));
   const head = `<colgroup><col class="namecol"><col class="sumcol"></colgroup><thead><tr><th class="l">stock</th><th class="sum" data-tip="Every bot's closed trades on this stock, added up">all bots</th>`
     + `${traded.map((s) => `<th><span class="swatch" style="background:${colorOf(s)}"></span><br>${esc(nameOf(s))}</th>`).join("")}</tr></thead>`;
-  const row = (sym) => `<tr><th class="l" scope="row">${inUniverse(sym) ? `<button class="stocklink" data-symbol="${esc(sym)}">${esc(sym)}</button>` : esc(sym)}</th>`
+  const row = (sym) => `<tr><th class="l" scope="row">${stockLink(sym)}</th>`
     + `<td class="sum"><span class="${cls(total[sym])}">${money(total[sym])}</span></td>${traded.map((s) => {
       const v = heat[s][sym];
       return v === undefined ? `<td class="muted">·</td>`

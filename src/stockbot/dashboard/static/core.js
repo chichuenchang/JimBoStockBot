@@ -15,6 +15,7 @@ function colorOf(series) {
 }
 const nameOf = (s) => (s === ANALYST ? "market report" : window.NAMES[s] || s);
 const stateColor = (state) => css(state === "ok" ? "--good" : state === "warn" ? "--warning" : "--critical");
+const meter = (ratio, state) => `<span class="meter" style="--mc:${stateColor(state)}"><i style="width:${(Math.min(1, Math.max(0, ratio)) * 100).toFixed(1)}%"></i></span>`;
 const fmt = (v, d = 2) => (v === null || v === undefined ? "–" : Number(v).toFixed(d));
 const kTok = (n) => (n >= 1e6 ? fmt(n / 1e6, 1) + "M" : n >= 1e3 ? fmt(n / 1e3, 0) + "k" : String(n));
 const signed = (v, d = 2) => (v === null || v === undefined ? "–" : (v > 0 ? "+" : "") + Number(v).toFixed(d));
