@@ -38,6 +38,9 @@ def test_crawl_keys(db):
               "/api/arm/kimi-improved/positions", "/api/candles?symbol=MSFT&tf=1Day",
               "/api/candles?symbol=MSFT&tf=1Min", "/api/arm/kimi-improved/fills?symbol=MSFT"):
         assert k in keys, k
+    # params read off the rendered pages (index.html data-sessions, _cells.html #tf), not a copy kept here
+    assert {k for k in keys if k.startswith("/api/market?")} == {f"/api/market?sessions={n}" for n in (1, 5, 21)}
+    assert len([k for k in keys if k.startswith("/api/candles?symbol=MSFT&")]) == 5
     # Miaoda's own static middleware answers /static/* (404 File not found) before the app: the mirror's JS lives apart
     assert any(k.startswith("/jbsb-js/core.js?v=") for k in keys) and not [k for k in keys if k.startswith("/static/")]
 

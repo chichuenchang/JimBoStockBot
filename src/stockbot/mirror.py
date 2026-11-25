@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import logging
 import os
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -20,20 +21,13 @@ from dotenv import load_dotenv
 
 from stockbot import interval
 from stockbot.config import AppConfig
-from stockbot.dashboard.app import MIRROR_STATIC, SCRIPTS, create_app
+from stockbot.dashboard.app import INTRADAY_SESSIONS, MIRROR_STATIC, SCRIPTS, create_app
 from stockbot.data.base import MarketData
 from stockbot.db import DB
 from stockbot.llm.budget import Budget
 from stockbot.models import BENCHMARK, Bar, Session
 
 log = logging.getLogger(__name__)
-
-# the pages' own parameters: index.html data-sessions, usage.html data-span, _cells.html #tf, equity modes
-SESSIONS = (1, 5, 21)
-USAGE_SPANS = ("today", "7d")
-TFS = ("1Min", "1Hour", "1Day", "1Week", "1Month")
-INTRADAY_TFS = TFS[:2]
-EQUITY_MODES = ("usd", "pct")
 
 
 @dataclass(frozen=True)
@@ -108,19 +102,21 @@ async def crawl(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None,
         universe = list(cfg.settings.universe)
         for path in ("/", "/usage", *(f"/arm/{a}" for a in arms)):
             await get(path)
-        version = out["/"].body.split(b"/core.js?v=", 1)[1].split(b'"', 1)[0].decode() if "/" in out else ""
+        index, usage = (out[p].body if p in out else b"" for p in ("/", "/usage"))
+        version = (_offered(index, rb'/core\.js\?v=([^"]+)"') or [""])[0]
         for s in SCRIPTS:
             await get(f"{MIRROR_STATIC}/{s}.js", f"v={version}")
         for path in ("/api/status", "/api/leaderboard", "/api/drawdown", "/api/daily_pnl", "/api/heatmap"):
             await get(path)
-        for mode in EQUITY_MODES:
+        for mode in _offered(index, rb'data-mode="([^"]+)"'):
             await get("/api/equity", f"mode={mode}")
-        for n in SESSIONS:
+        for n in _offered(index, rb'data-sessions="([^"]+)"'):
             await get("/api/market", f"sessions={n}")
-        for span in USAGE_SPANS:
+        for span in _offered(usage, rb'data-span="([^"]+)"'):
             await get("/api/usage", f"span={span}")
+        tfs = _offered(b"".join(re.findall(rb'<select id="tf".*?</select>', index, re.S)), rb'value="([^"]+)"')
         for s in universe:
-            for tf in TFS if long_candles else INTRADAY_TFS:
+            for tf in tfs if long_candles else [t for t in tfs if t in INTRADAY_SESSIONS]:
                 await get("/api/candles", f"symbol={s}&tf={tf}")
         for arm in arms:
             await get("/api/equity", f"mode=usd&arms={quote(BENCHMARK + ',' + arm, safe='')}")  # arm.js pair
@@ -254,5 +250,11 @@ class Mirror:
             log.exception("mirror push failed; retrying in %s", RETRY)
 
 
+def _offered(page: bytes, pattern: bytes) -> list[str]:
+    """Values a page hands its JS (segmented buttons' data-*, <select> options), in order: the crawl asks exactly
+    what the page can, so a template change needs no edit here."""
+    return list(dict.fromkeys(m.decode() for m in re.findall(pattern, page)))
+
+
 def _is_long_candles(k: str) -> bool:
-    return k.startswith("/api/candles?") and not any(f"tf={tf}" in k for tf in INTRADAY_TFS)
+    return k.startswith("/api/candles?") and not any(f"tf={tf}" in k for tf in INTRADAY_SESSIONS)
