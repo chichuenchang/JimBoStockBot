@@ -247,11 +247,8 @@ def test_api_shapes(db):
     full = c.get(f"/api/decision/{d['id']}").json()
     assert full["prompt"] == "FULL PROMPT" and full["raw"] == "RAW REPLY" and full["charts"] == []
     assert full["replies"] == ["RAW REPLY"]
-    candles = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()
-    assert len(candles["fills"]) == 2 and candles["bars"] == []
-    assert c.get("/api/candles?symbol=MSFT").json()["fills"] == []  # overview's market chart: no bot
-    # the bot page's chart: overview's bars + this, so the mirror stores bars once (mirror.py)
-    assert c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json() == candles["fills"]
+    assert c.get("/api/candles?symbol=MSFT").json() == {"bars": [], "error": None}
+    assert len(c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json()) == 2  # bot page: overview's bars + these
     assert c.get("/api/arm/nobody/fills?symbol=MSFT").status_code == 404
 
 
@@ -273,7 +270,7 @@ def test_intraday_candles_regular_session_only(db):
         return int(et_at(d, hm).timestamp())
 
     c = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live()))
-    kept = [b["time"] for b in c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]]
+    kept = [b["time"] for b in c.get("/api/candles?symbol=MSFT&tf=1Min").json()["bars"]]
     assert kept == [ts(day, "09:30"), ts(day, "15:59"), ts(half, "12:59")]
 
 
@@ -296,7 +293,7 @@ def test_hour_candles_count_from_the_open_without_pre_market(db):
                     Session(half, et_at(half, "09:30"), et_at(half, "13:00"))]
 
     bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Hour").json()["bars"]
+        "/api/candles?symbol=MSFT&tf=1Hour").json()["bars"]
     assert [(b["time"], b["open"], b["high"], b["low"], b["close"]) for b in bars] == [
         (int(et_at(day, "09:30").timestamp()), 10, 12, 9, 11),
         (int(et_at(day, "10:30").timestamp()), 11, 13, 11, 12),
@@ -321,7 +318,7 @@ def test_minute_candles_reach_back_two_sessions_across_a_closure(db):
             return [s for s in sessions + [not_open_yet] if start <= s.day <= end]
 
     bars = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Min").json()["bars"]
+        "/api/candles?symbol=MSFT&tf=1Min").json()["bars"]
     assert [b["time"] for b in bars] == [int(et_at(d, "10:00").timestamp()) for d in past[1:]]
 
 
@@ -376,7 +373,7 @@ def test_replayed_fills_marked(tmp_path):
     c = client(db)
     [t] = c.get("/api/arm/kimi-improved/trades").json()
     assert t["replayed"] is True
-    fills = c.get("/api/candles?symbol=MSFT&arm=kimi-improved").json()["fills"]
+    fills = c.get("/api/arm/kimi-improved/fills?symbol=MSFT").json()
     assert [f["replayed"] for f in fills] == [False, True]
 
 
@@ -453,16 +450,16 @@ def test_api_market_one_feed_call_for_concurrent_polls(db):
 
 def test_candles_week_from_history(db):
     seed_daily(db)
-    bars = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week").json()["bars"]
+    bars = client(db).get("/api/candles?symbol=MSFT&tf=1Week").json()["bars"]
     assert [(b["open"], b["high"], b["low"], b["close"]) for b in bars] == [(10, 14, 8, 13), (20, 21, 19, 20)]
-    month = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Month").json()["bars"]
+    month = client(db).get("/api/candles?symbol=MSFT&tf=1Month").json()["bars"]
     assert len(month) == 2
-    day = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    day = client(db).get("/api/candles?symbol=MSFT&tf=1Day").json()["bars"]
     assert len(day) == 6
 
 
 def test_candles_week_empty_history(db):
-    r = client(db).get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Week")
+    r = client(db).get("/api/candles?symbol=MSFT&tf=1Week")
     assert r.status_code == 200 and r.json()["bars"] == []
 
 
@@ -507,11 +504,11 @@ async def test_candles_day_appends_live_after_history(db):
 
     clock = ReplayClock(T0)
     c = TestClient(create_app(db, CFG, Budget(db, CFG, clock), Live()))
-    bars = c.get("/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()["bars"]
+    bars = c.get("/api/candles?symbol=MSFT&tf=1Day").json()["bars"]
     assert [b["close"] for b in bars][-2:] == [20, 21.5]
     assert Live.calls[0] == ("1Day", day_bar("X", date(2026, 2, 3), 0, 0, 0, 0).ts)  # day after last stored
     db.upsert_daily([day_bar("NVDA", date(2026, 1, 26), 1, 2, 0.5, 1.5)])
-    r = c.get("/api/candles?symbol=NVDA&arm=kimi-improved&tf=1Week").json()
+    r = c.get("/api/candles?symbol=NVDA&tf=1Week").json()
     assert [b["close"] for b in r["bars"]] == [1.5] and "HTTP 500" in r["error"]  # stored history survives feed error
 
 
@@ -524,7 +521,7 @@ def test_candles_history_through_today_skips_live(db):
 
     db.upsert_daily([day_bar("MSFT", et_date(datetime.now(UTC)), 1, 2, 0.5, 1.5)])  # evening: close synced
     r = TestClient(create_app(db, CFG, Budget(db, CFG, ReplayClock(T0)), Live())).get(
-        "/api/candles?symbol=MSFT&arm=kimi-improved&tf=1Day").json()
+        "/api/candles?symbol=MSFT&tf=1Day").json()
     assert r["error"] is None and [b["close"] for b in r["bars"]] == [1.5]
 
 

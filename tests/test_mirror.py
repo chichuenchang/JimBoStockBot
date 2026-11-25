@@ -40,7 +40,6 @@ def test_crawl_keys(db):
         assert k in keys, k
     # Miaoda's own static middleware answers /static/* (404 File not found) before the app: the mirror's JS lives apart
     assert any(k.startswith("/jbsb-js/core.js?v=") for k in keys) and not [k for k in keys if k.startswith("/static/")]
-    assert not [k for k in keys if k.startswith("/api/candles?arm=")]  # bars once, fills apart
 
 
 def test_crawl_without_long_candles(db):
