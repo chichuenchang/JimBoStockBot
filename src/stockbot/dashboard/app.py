@@ -151,8 +151,8 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return q.conviction(db, known(arm))
 
     @app.get("/api/arm/{arm}/decisions")
-    def api_decisions(arm: str):
-        return q.decisions(db, known(arm))
+    def api_decisions(arm: str, acted: bool = False):
+        return q.decisions(db, known(arm), acted=acted)
 
     @app.get("/api/arm/{arm}/rejections")
     def api_rejections(arm: str):

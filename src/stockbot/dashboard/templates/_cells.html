@@ -11,10 +11,12 @@
 {%- elif k == "alpha_pct" -%}<span class="{{ sign(v) }}">{{ '%+.1f' % v }}%</span>
 {%- else -%}{{ v }}{%- endif -%}
 {%- endmacro %}
+{# signed dollars with the minus before the $ #}
+{% macro money(v, digits=0) -%}<span class="{{ sign(v) }}">{{ '+' if v > 0 else '-' if v < 0 else '' }}${{ ('{:,.%df}' % digits).format(v | abs) }}</span>{%- endmacro %}
 {% macro candle_pickers(universe) -%}
-<select id="symbol" style="margin-left:8px">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
-<select id="tf"><option>1Min</option><option>1Hour</option><option>1Day</option><option>1Week</option><option>1Month</option></select>
+<select id="symbol" aria-label="Stock">{% for s in universe %}<option>{{ s }}</option>{% endfor %}</select>
+<select id="tf" aria-label="Bar size" data-tip="How much time one candle covers"><option value="1Min">1 minute</option><option value="1Hour">1 hour</option><option value="1Day">1 day</option><option value="1Week">1 week</option><option value="1Month">1 month</option></select>
 {%- endmacro %}
 {% macro kpi(k, r) -%}
-<div class="kpi" title="{{ tips.get(k, '') }}"><span>{{ labels.get(k, k) }}</span><b>{{ cell(k, r[k]) }}</b></div>
+<div class="kpi" data-tip="{{ tips.get(k, '') }}"><span>{{ labels.get(k, k) }}</span><b>{{ '$' if k == 'nav' }}{{ cell(k, r[k]) }}</b></div>
 {%- endmacro %}

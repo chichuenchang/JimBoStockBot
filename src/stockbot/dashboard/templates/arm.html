@@ -8,10 +8,16 @@
   <div class="armhead">
     <h1><span class="swatch" data-series="{{ arm }}"></span>{{ arm | arm_label }}</h1>
     <div class="strip" id="armstate"></div>
-    <button id="pausebtn">Pause</button>
+    <button id="pausebtn" data-tip="A paused bot keeps its positions (stops and targets still work) but makes no new decisions.">Pause</button>
   </div>
-  <div class="kpis">
-    {% for k in ("nav", "return_pct", "vs_benchmark_pct", "net_after_llm", "trades", "win_rate", "max_drawdown") %}{{ kpi(k, row) }}{% endfor %}
+  <div class="armgrid">
+    <div class="kpis">
+      {% for k in ("nav", "return_pct", "vs_benchmark_pct", "net_after_llm", "trades", "win_rate", "max_drawdown", "invested_pct") %}{{ kpi(k, row) }}{% endfor %}
+    </div>
+    <div class="armchart">
+      <h3 class="charttitle">Account value <span class="legend inline" id="armlegend"></span></h3>
+      <div class="chart mini"><canvas id="armequity"></canvas></div>
+    </div>
   </div>
 </section>
 
@@ -23,24 +29,33 @@
 </nav>
 
 <div class="tabpane" data-pane="positions">
-  <section class="card"><h2>Open positions</h2><div class="tablewrap"><table id="positions"></table></div></section>
+  <section class="card"><h2>Open positions <span class="muted">what it holds right now · click a stock to see it on the chart</span></h2><div class="tablewrap"><table id="positions"></table></div></section>
 </div>
 <div class="tabpane" data-pane="trades" hidden>
+  <section class="card"><h2>Trade by trade <span class="muted">one bar per closed trade, oldest on the left · up = profit, down = loss · click a bar to see that trade on the chart</span></h2><div class="tradebars" id="tradebars"></div></section>
   <section class="card"><h2>Closed trades <span class="muted">click a stock to see that trade on the chart</span></h2><div class="tablewrap scrolly"><table id="trades"></table></div></section>
 </div>
 <section class="card tabpane" data-pane="positions trades">
-  <h2>Price chart with this bot's trades {{ candle_pickers(universe) }}</h2>
+  <div class="cardhead"><h2>Price chart with this bot's trades</h2>{{ candle_pickers(universe) }}</div>
   <div id="candles"></div>
-  <div class="fillkey small muted"><span class="fillbadge buy">B</span> buy <span class="fillbadge sell">S</span> sell <span class="hint">hollow = replayed; faded = other trades; hover or tap a bar for prices</span> <b id="fillinfo"></b></div>
+  <div class="fillkey small muted"><span class="fillbadge buy">B</span> buy <span class="fillbadge sell">S</span> sell
+    <span id="linekey" hidden><span class="key dash" style="--c:var(--text-muted)"></span> entry <span class="key dash" style="--c:var(--critical)"></span> stop <span class="key dash" style="--c:var(--good)"></span> target</span>
+    <span class="hint">hollow = replayed; faded = other trades; hover or tap a bar for prices</span> <b id="fillinfo"></b></div>
   <p class="muted" id="candlenote"></p>
 </section>
 <div class="tabpane" data-pane="trades" hidden>
-  <section class="card" id="convcard"><h2>Does its confidence pay?</h2><div class="tablewrap"><table id="conviction"></table></div></section>
+  <section class="card" id="convcard"><h2>Does its confidence pay? <span class="muted">if the model's confidence means anything, avg R rises from low to high</span></h2><div class="tablewrap"><table id="conviction"></table></div></section>
 </div>
 <div class="tabpane" data-pane="decisions" hidden>
-  <section class="card"><h2>Decisions <span class="muted">newest first · click one to see the full prompt and reply</span></h2><div id="decisions"></div></section>
+  <section class="card">
+    <div class="cardhead"><h2>Decisions <span class="muted">newest first · click one for the full prompt and reply</span></h2>
+      <span class="seg dfilter"><button data-dfilter="all" class="on">All</button><button data-dfilter="acted" data-tip="Only the decisions that led to a buy or a sell, however far back">Trades only</button></span></div>
+    <div id="decisions"></div>
+  </section>
 </div>
 <div class="tabpane" data-pane="rejected" hidden>
-  <section class="card"><h2>Rejected orders <span class="muted">orders the risk rules blocked</span></h2><div class="tablewrap"><table id="rejections"></table></div></section>
+  <section class="card"><h2>Rejected orders <span class="muted">what the bot asked for and the risk rules refused · latest 100</span></h2>
+    <div class="whys" id="rejectwhy"></div>
+    <div class="tablewrap"><table id="rejections"></table></div></section>
 </div>
 {% endblock %}

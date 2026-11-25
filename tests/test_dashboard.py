@@ -590,9 +590,41 @@ def test_equity_for_named_accounts_only(db):
     assert len(c.get("/api/equity").json()) == 3
 
 
+def decide(db, at, per_symbol):
+    return db.insert_decision("kimi-improved", at, "scheduled", None, "P", "R",
+                              json.dumps({"per_symbol": per_symbol}), "ok", 1, 0, 1, 0.0)
+
+
+def test_decision_actions_trades_first(db):
+    decide(db, T0 + timedelta(minutes=5), {"MSFT": {"signal": "hold", "justification": "wait"},
+                                           "NVDA": {"signal": "hold"},
+                                           "AMZN": {"signal": "buy_to_enter", "justification": "breakout"}})
+    d = client(db).get("/api/arm/kimi-improved/decisions").json()[0]
+    assert d["actions"] == [{"symbol": "AMZN", "signal": "buy_to_enter", "why": "breakout"},
+                            {"symbol": "MSFT", "signal": "hold", "why": "wait"}]  # a hold with no comment: left out
+
+
+def test_acted_decisions_are_the_ones_before_a_chosen_fill(db):
+    """Fixture: MSFT bought at T0 on the T0 decision, sold at its target (the harness sells there, no decision)."""
+    later = decide(db, T0 + timedelta(hours=3), {"MSFT": {"signal": "hold"}})
+    buy = decide(db, T0 + timedelta(hours=4), {"NVDA": {"signal": "buy_to_enter"}})
+    db.insert_fill(Fill("kimi-improved", "NVDA", "buy", 1, 10, T0 + timedelta(hours=4, minutes=1), "entry", False))
+    c = client(db)
+    assert [d["id"] for d in c.get("/api/arm/kimi-improved/decisions").json()][:2] == [buy, later]
+    acted = c.get("/api/arm/kimi-improved/decisions?acted=1").json()
+    assert [d["slot_ts"] for d in acted] == [(T0 + timedelta(hours=4)).isoformat(), T0.isoformat()]
+
+
 def test_benchmark_named_for_what_it_is(db):
     html = client(db).get("/").text
     assert "QQQ buy &amp; hold" in html and f">{BENCHMARK}<" not in html
+
+
+def test_headline_leader_and_bots_beating_benchmark(db):
+    """Fixture: kimi-improved +5% (480 after AI cost), deepseek-baseline flat, QQQ +2%."""
+    head = client(db).get("/").text.split('id="headline"')[1].split('id="sec-arena"')[0]
+    assert 'href="/arm/kimi-improved"' in head and "Leading bot" in head
+    assert "1 <small>of 2</small>" in head and "+$480" in head
 
 
 def test_rejections_explain_their_rule(db):

@@ -196,14 +196,32 @@ def conviction(db: DB, account: str) -> list[dict]:
     return [{**r, "win_rate": r["win_rate"] * 100} for r in conviction_buckets(db.closed_trades(account))]
 
 
-def decisions(db: DB, account: str, limit: int = 50) -> list[dict]:
+DECIDED_FILLS = ("entry", "add", "close")  # fills a decision asked for; stop and target fills are the harness's own
+
+
+def _traded_decisions(db: DB, account: str, limit: int) -> list[dict]:
+    """Newest first: the decision behind each of the bot's latest buys and chosen sells, i.e. the last one before
+    the fill. Found from fills, not by searching decisions for a signal: that reads every stored prompt."""
+    out: dict[int, dict] = {}
+    for f in reversed(db.fills(account)):
+        if f.reason in DECIDED_FILLS and (row := db.decision_before(account, f.ts)):
+            out.setdefault(row["id"], row)
+            if len(out) == limit:
+                break
+    return list(out.values())
+
+
+def decisions(db: DB, account: str, limit: int = 50, acted: bool = False) -> list[dict]:
+    """The latest decisions; acted: only those that led to a trade, however far back."""
     out = []
-    for r in db.recent_decisions(account, limit):
+    for r in _traded_decisions(db, account, limit) if acted else db.recent_decisions(account, limit):
         parsed = json.loads(r["parsed_json"] or "{}").get("per_symbol", {})
-        acts = [f"{s} {d['signal']}: {d.get('justification', '')}".strip(": ")
-                for s, d in parsed.items() if d["signal"] != "hold" or d.get("justification")]
+        # per stock it traded or commented on; trades first: on a 30-stock reply the one buy is what the reader came for
+        acts = sorted(({"symbol": s, "signal": d["signal"], "why": d.get("justification", "")}
+                       for s, d in parsed.items() if d["signal"] != "hold" or d.get("justification")),
+                      key=lambda a: a["signal"] == "hold")
         out.append({"id": r["id"], "slot_ts": r["slot_ts"], "reason": r["reason"], "status": r["status"],
-                    "cost": r["cost"], "summary": " | ".join(acts) or "hold all"})
+                    "cost": r["cost"], "actions": acts})
     return out
 
 
