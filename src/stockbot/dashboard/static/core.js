@@ -37,6 +37,8 @@ const get = (url) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(ne
 const tipAttr = (text) => (text ? ` data-tip="${esc(text)}"` : "");
 const pref = (key, fallback) => { try { return localStorage.getItem("jbsb." + key) ?? fallback; } catch (e) { return fallback; } };
 const setPref = (key, value) => { try { localStorage.setItem("jbsb." + key, value); } catch (e) { /* private window: this page only */ } };
+// symbol still in the stock picker (#symbol, overview and bot page): else /api/candles 404s, so show plain text
+const inUniverse = (symbol) => [...document.getElementById("symbol").options].some((o) => o.value === symbol);
 const quantile = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : 0; };
 
 const paintSwatches = (root) => root.querySelectorAll(".swatch[data-series]").forEach((el) => {
