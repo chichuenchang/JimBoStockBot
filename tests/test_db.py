@@ -1,7 +1,7 @@
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -43,6 +43,16 @@ def test_decision_unique_per_slot(db):
     assert not db.decision_exists("b", T0)
     with pytest.raises(sqlite3.IntegrityError):
         db.insert_decision(**args)
+
+
+def test_traded_decisions_are_the_last_at_or_before_each_fill(db):
+    ids = [db.insert_decision("a", T0 + timedelta(minutes=5 * i), "scheduled", None, "p", "r", "{}", "ok", 0, 0, 0, 0.0)
+           for i in range(3)]
+    for minutes, reason in [(-1, "entry"), (5, "entry"), (9, "close"), (11, "stop")]:  # before any decision; same one twice
+        db.insert_fill(Fill("a", "X", "buy", 1, 10, T0 + timedelta(minutes=minutes), reason, False))
+    assert [d["id"] for d in db.traded_decisions("a", ("entry", "close"), 10)] == [ids[1]]
+    assert [d["id"] for d in db.traded_decisions("a", ("stop",), 10)] == [ids[2]]
+    assert db.traded_decisions("b", ("entry",), 10) == []
 
 
 def test_spent_filters_month_and_model(db):

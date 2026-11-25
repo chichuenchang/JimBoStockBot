@@ -56,6 +56,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     arm_names = [a.name for a in cfg.arms if a.enabled]
     series_order = arm_names + [BENCHMARK]
     names = {a.name: a.label or a.name for a in cfg.arms}
+    names[BENCHMARK] = f"{BENCHMARK.removeprefix('benchmark-')} buy & hold"  # says what it is; the id says nothing to a newcomer
     tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
     js_version = int((HERE / "static" / "app.js").stat().st_mtime)  # cache-bust: new code, new URL
 
@@ -100,8 +101,9 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return q.leaderboard(db, cfg)
 
     @app.get("/api/equity")
-    def api_equity(mode: str = "usd"):
-        return q.equity(db, "pct" if mode == "pct" else "usd")
+    def api_equity(mode: str = "usd", arms: str = ""):
+        """arms: comma list, a bot page asks for itself and the benchmark; empty = every account."""
+        return q.equity(db, "pct" if mode == "pct" else "usd", set(arms.split(",")) if arms else None)
 
     @app.get("/api/drawdown")
     def api_drawdown():
@@ -149,12 +151,12 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return q.conviction(db, known(arm))
 
     @app.get("/api/arm/{arm}/decisions")
-    def api_decisions(arm: str):
-        return q.decisions(db, known(arm))
+    def api_decisions(arm: str, acted: bool = False):
+        return q.decisions(db, known(arm), acted=acted)
 
     @app.get("/api/arm/{arm}/rejections")
     def api_rejections(arm: str):
-        return db.recent_rejections(known(arm), 100)
+        return q.rejections(db, known(arm))
 
     @app.get("/api/decision/{decision_id}")
     def api_decision(decision_id: int):
