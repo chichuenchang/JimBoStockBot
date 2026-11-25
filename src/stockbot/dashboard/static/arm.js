@@ -120,7 +120,10 @@ function mdTable(rows) {  // rows: [label, flat object]; columns: every key, fir
 function replyMd(part) {
   let obj;
   try { obj = JSON.parse(part); } catch { obj = null; }
-  if (!obj || typeof obj !== "object") return "~~~~\n" + part + "\n~~~~";
+  if (!obj || typeof obj !== "object") {  // fence longer than any ~ run inside, or that run would end it
+    const fence = "~".repeat(Math.max(3, ...(part.match(/~+/g) ?? []).map((t) => t.length)) + 1);
+    return `${fence}\n${part}\n${fence}`;
+  }
   const rows = [], rest = [];
   for (const [k, v] of Object.entries(obj)) {
     if (isRow(v)) rows.push([k, v]);
