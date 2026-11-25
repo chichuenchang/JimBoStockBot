@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_cells.html" import kpi, candle_pickers with context %}
+{% from "_cells.html" import kpi, candle_pickers, no_lines_yet with context %}
 {% block title %}{{ arm | arm_label }} · JBSB{% endblock %}
 {% block page %}arm{% endblock %}
 {% block body %}
@@ -8,7 +8,7 @@
   <div class="armhead">
     <h1><span class="swatch" data-series="{{ arm }}"></span>{{ arm | arm_label }}</h1>
     <div class="strip" id="armstate"></div>
-    <button id="pausebtn" data-tip="A paused bot keeps its positions (stops and targets still work) but makes no new decisions.">Pause</button>
+    <button id="pausebtn" data-tip="{{ tips.pause }}">Pause</button>
   </div>
   <div class="armgrid">
     <div class="kpis">
@@ -17,6 +17,7 @@
     <div class="armchart">
       <h3 class="charttitle">Account value <span class="legend inline" id="armlegend"></span></h3>
       <div class="chart mini"><canvas id="armequity"></canvas></div>
+      <p class="empty chartnote" hidden>{{ no_lines_yet() }}</p>
     </div>
   </div>
 </section>

@@ -23,6 +23,9 @@ TIPS = {
     "invested_pct": "Share of the account currently in stocks rather than cash.",
     "r_multiple": "Trade result divided by the amount risked. 2R means it made twice what it risked.",
     "unrealized": "Profit or loss on a position still open, at the latest price.",
+    "pause": "A paused bot keeps its positions (stops and targets still work) but makes no new decisions.",
+    "flat_plan": "Flat-fee plan: share of the allowance used in each rolling window. At 100% the model is refused "
+                 "until the window rolls on.",
     "worth": "What these shares would sell for at the latest price.",
     "entry_price": "Average price paid per share.",
     "range": "Price between the stop (sells to cap the loss) and the target (sells to take profit). "

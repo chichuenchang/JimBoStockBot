@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_cells.html" import cell, money, candle_pickers with context %}
+{% from "_cells.html" import cell, money, candle_pickers, no_lines_yet with context %}
 {% block page %}index{% endblock %}
 {% block subnav %}
     <div class="subnav">{% for id, label in (("sec-arena", "Leaderboard"), ("sec-market", "Market"), ("sec-rank", "Rankings"), ("sec-time", "Over time"), ("sec-stats", "All stats"), ("sec-stocks", "P&L by stock")) %}<a href="#{{ id }}">{{ label }}</a>{% endfor %}</div>
@@ -108,7 +108,7 @@
     </div>
     <div class="legend" id="serieslegend"></div>
   </div>
-  <p class="empty" id="timeempty" hidden>Lines start with the first snapshot, minutes after the market next opens.</p>
+  <p class="empty" id="timeempty" hidden>{{ no_lines_yet() }}</p>
 </section>
 <section class="card">
   <h2>Daily P&amp;L ($) <span class="muted">one square per trading day · green made money, red lost · darker = more</span></h2>

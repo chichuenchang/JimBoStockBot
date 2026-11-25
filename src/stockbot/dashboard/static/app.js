@@ -152,7 +152,7 @@ async function loadStatus() {
     const tk = st.budget[name]?.tokens, pct = (w) => `${fmt(w.used_ratio * 100, 0)}%`;
     const tokens = tk ? `\nThis month: ${tk.calls} calls, ${kTok(tk.input)} tokens in / ${kTok(tk.output)} out.` : "";
     const worst = q.windows.reduce((a, w) => (w.used_ratio > a.used_ratio ? w : a));
-    items.push(`<span class="hstat"${tipAttr(`Flat-fee plan: share of the allowance used per rolling window. At 100% the model is refused until the window rolls on.\n`
+    items.push(`<span class="hstat"${tipAttr(`${window.TIPS.flat_plan}\n`
       + `${q.windows.map((w) => `${w.window} window: ${pct(w)}`).join("\n")}${tokens}\nChecked ${etTime(worst.ts)}.`)}>${esc(name)} plan `
       + `${meter(worst.used_ratio, q.state)}<b>${pct(worst)}</b> of ${esc(worst.window)}</span>`);
   }
@@ -166,7 +166,7 @@ function drawControls(st) {
   if (!box.firstChild) {
     box.innerHTML = `<label class="interval" data-tip="How often each bot looks at the market and decides. Shorter = faster reactions, more AI calls.">Decide every <input id="intervalin" type="number" min="1" max="60" inputmode="numeric"> min</label>`
       + `<button id="intervalset">Set</button><button id="intervalreset" data-tip="Back to the value in settings.yaml" hidden>Reset</button>`
-      + `<button id="pauseall" data-tip="Paused bots keep their positions (stops and targets still work) but make no new decisions."></button>`
+      + `<button id="pauseall"${tipAttr(window.TIPS.pause)}></button>`
       + `<span id="updated" data-tip="When these numbers were last refreshed: every 5 seconds while the market is open, else every minute."></span>`;
     const postInterval = async (minutes) => {
       const r = await fetch("/api/interval", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -250,12 +250,13 @@ function draw(id, type, data, opts) {
   charts[id]?.destroy();  // type changed (usage: line today, bars over days): update cannot switch it
   charts[id] = new Chart(document.getElementById(id), { type, data, options: opts });
 }
-// a chart with nothing to plot: a sentence in its place, not bare axes. Returns empty, so callers can stop there
+// a chart with nothing to plot: a sentence in its place, not bare axes. Returns empty, so callers can stop there.
+// why: the sentence; omitted = the template's own p.chartnote right after the chart
 function chartEmpty(id, empty, why) {
   const box = document.getElementById(id).parentElement;
   let note = box.nextElementSibling;
   if (!note?.classList.contains("chartnote")) box.after(note = Object.assign(document.createElement("p"), { className: "empty chartnote" }));
-  note.textContent = why;
+  if (why) note.textContent = why;
   box.hidden = empty;
   note.hidden = !empty;
   return empty;
@@ -968,7 +969,7 @@ async function loadArmEquity() {
   const eq = Object.fromEntries(pair.filter((s) => all[s]?.length).map((s) => [s, all[s]]));
   const grid = sessionGrid(eq);
   const lines = sessionDatasets(grid, eq, pair);
-  if (chartEmpty("armequity", !lines.length, "The line starts with the first snapshot, minutes after the market next opens.")) return;
+  if (chartEmpty("armequity", !lines.length)) return;
   draw("armequity", "line", { datasets: lines }, sessionOptions(grid, dollars));
   drawLegend("armlegend", lines.map((ds) => legendItem(ds.key, dollars(lastValue(ds)))).reverse());
 }
@@ -1079,7 +1080,7 @@ function drawUsageKpis(u, st) {
      "Dollars for pay-per-token models. Flat-plan models cost a fixed fee and count against a quota instead."],
     ...Object.entries(st?.quota || {}).map(([name, q]) => [`${name} plan quota`, `${fmt(Math.max(...q.windows.map((w) => w.used_ratio)) * 100, 0)}%`,
       q.windows.map((w) => `${meter(w.used_ratio, q.state)} ${esc(w.window)} ${fmt(w.used_ratio * 100, 0)}%`).join(" &nbsp; "),
-      "Flat-fee plan: share of the allowance used in each rolling window. At 100% the model is refused until the window rolls on."]),
+      window.TIPS.flat_plan]),
   ];
   setHtml(document.getElementById("usagekpis"), tiles.map(([label, value, sub, tip]) =>
     `<div class="stat"${tipAttr(tip)}><div class="lbl">${esc(label)}</div><div class="val">${value}</div><div class="sub">${sub}</div></div>`).join(""));
