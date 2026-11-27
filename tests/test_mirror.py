@@ -273,12 +273,14 @@ class FakePusher:
 
 
 def mirror(db, p, crawls):
-    crawler = Crawler(app_ctx(db), "/app/x")
+    m = Mirror(app_ctx(db), "/app/x", p)
+    crawler = m.crawl
 
     async def counting(now, long_candles=True):
         crawls.append(long_candles)
         return await crawler(now, long_candles)
-    return Mirror(app_ctx(db), "/app/x", p, crawl_fn=counting)
+    m.crawl = counting
+    return m
 
 
 def test_mirror_off_without_env(monkeypatch, caplog):

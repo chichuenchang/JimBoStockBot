@@ -12,7 +12,6 @@ import hashlib
 import logging
 import os
 import re
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -237,10 +236,8 @@ class Mirror:
     """Daemon side: crawl + push every decision interval while the market is open, hourly otherwise.
     Long candles (crawl long_candles) only hourly; between, the last ones ride along."""
 
-    def __init__(self, ctx: AppContext, root: str, pusher: Pusher,
-                 crawl_fn: Callable[..., Awaitable[dict[str, Entry]]] | None = None):
-        self.ctx, self.pusher = ctx, pusher
-        self.crawl = crawl_fn or Crawler(ctx, root)
+    def __init__(self, ctx: AppContext, root: str, pusher: Pusher):
+        self.ctx, self.pusher, self.crawl = ctx, pusher, Crawler(ctx, root)
         self.pushed: datetime | None = None
         self.long_candles_at: datetime | None = None
         self.long_candles: dict[str, Entry] = {}  # from the last crawl that took them
