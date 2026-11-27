@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -53,12 +54,17 @@ def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Ba
     return history.rollup([replace(b, ts=hour(b)) for b in minutes], lambda b: b.ts)
 
 
+def _js_version() -> int:
+    """Cache-bust: new code, new URL. Per render: JS is edited on a running daemon."""
+    return int(max((HERE / "static" / f"{s}.js").stat().st_mtime for s in SCRIPTS))
+
+
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None, *,
-               root: str = "", mirror: datetime | None = None) -> FastAPI:
-    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: crawl time = read-only copy
-    (stockbot.mirror): no controls, stamped with its age."""
+               root: str = "", mirror_clock: Callable[[], datetime] | None = None) -> FastAPI:
+    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror_clock: current crawl's time =
+    read-only copy (stockbot.mirror): no controls, stamped with its age. A getter: one app serves every crawl."""
     app = FastAPI(title="StockBot", docs_url=None, redoc_url=None, openapi_url=None)
-    static = MIRROR_STATIC if mirror else "/static"
+    static = MIRROR_STATIC if mirror_clock is not None else "/static"
     app.mount(static, StaticFiles(directory=HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
@@ -66,7 +72,6 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     names = {a.name: a.label or a.name for a in cfg.arms}
     names[BENCHMARK] = f"{BENCHMARK.removeprefix('benchmark-')} buy & hold"  # says what it is; the id says nothing to a newcomer
     tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
-    js_version = int(max((HERE / "static" / f"{s}.js").stat().st_mtime for s in SCRIPTS))  # cache-bust: new code, new URL
 
     @app.middleware("http")
     async def same_origin_writes(request: Request, call_next):
@@ -75,18 +80,18 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
         return await call_next(request)
 
-    stamp = mirror and f"Mirror · as of {mirror.astimezone(ET):%H:%M ET, %b %d}"
-
     def known(arm: str) -> str:
         if arm not in db.accounts():
             raise HTTPException(404, f"unknown arm {arm}")
         return arm
 
     def page(request, name, **ctx):
+        at = mirror_clock and mirror_clock()
+        stamp = at and f"Mirror · as of {at.astimezone(ET):%H:%M ET, %b %d}"
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
-                                                 "scripts": SCRIPTS, "js_version": js_version, "root": root, "static": root + static,
-                                                 "mirror": mirror, "mirror_stamp": stamp, **ctx})
+                                                 "scripts": SCRIPTS, "js_version": _js_version(), "root": root, "static": root + static,
+                                                 "mirror": at, "mirror_stamp": stamp, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

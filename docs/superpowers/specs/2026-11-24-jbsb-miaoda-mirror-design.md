@@ -40,7 +40,7 @@ Miaoda mounts app at `/app/<app_id>`; templates/JS use absolute `/...` (`base.ht
 
 ### Mirror flag
 
-`create_app(..., mirror: MirrorView | None)`. Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` 404 = `get()` error "not mirrored": shown under candle chart and in decision detail; other panels fixed-key, crawl test covers them.
+`create_app(..., mirror_clock: Callable[[], datetime] | None)` (crawl time getter: one app, `mirror.Crawler`, serves every crawl). Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` 404 = `get()` error "not mirrored": shown under candle chart and in decision detail; other panels fixed-key, crawl test covers them.
 
 ### Crawl (daemon side, new `src/stockbot/mirror.py`)
 
@@ -85,6 +85,7 @@ Builder derives exact query strings from the JS so keys match what browser asks.
 - Loop stall, DB copy 2026-11-25: crawl worst 65 ms (stays on loop); gzip + hash of 22 MB 1.1 s, so `_pack` runs in `asyncio.to_thread`.
 - First full upload 9.3 MB base64, 155 s. Restart push (commit first, 409 lists missing): 150 kB, ~19 s.
 - Decision details pushed = ids the page lists (50 latest + acted), not a setting.
+- Leak 2026-11-27: daemon 7.3 GB after 129 pushes. FastAPI 0.158 `fastapi/dependencies/models.py` `lru_cache(4096)` holds every endpoint function, so an app per crawl kept its closures + `MemoData` bars (~57 MB/push live; synthetic bars +228 MB/crawl) for ~157 crawls. Fix: one app per `Mirror`, `MemoData.clear()` after each crawl; same synthetic run now flat.
 
 ## Run
 

@@ -1,14 +1,16 @@
 """Miaoda mirror: crawl, push, daemon task (spec docs/superpowers/specs/2026-11-24-jbsb-miaoda-mirror-design.md)."""
 import asyncio
 import base64
+import gc
 import gzip
 import json
 import logging
 import os
 import re
+import weakref
 from datetime import timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 
 import httpx
 import pytest
@@ -17,7 +19,7 @@ import respx
 from stockbot import dashboard, interval
 from stockbot.clock import ReplayClock
 from stockbot.llm.budget import Budget
-from stockbot.mirror import Entry, MemoData, Mirror, Pusher, crawl, key
+from stockbot.mirror import Crawler, Entry, MemoData, Mirror, Pusher, key
 from stockbot.models import BENCHMARK, Bar
 from tests.snapshot import CFG
 from tests.test_dashboard import T0, db  # noqa: F401  (fixture)
@@ -28,8 +30,8 @@ def app_ctx(db, data=None):
     return SimpleNamespace(db=db, cfg=CFG, budget=Budget(db, CFG, ReplayClock(T0 + timedelta(days=1))), data=data)
 
 
-def run_crawl(db, data=None):
-    return asyncio.run(crawl(app_ctx(db, data), root="/app/x", now=T0))
+def run_crawl(db, data=None, long_candles=True):
+    return asyncio.run(Crawler(app_ctx(db, data), "/app/x")(T0, long_candles))
 
 
 def test_key_sorts_query():
@@ -81,7 +83,7 @@ def test_crawl_covers_every_js_fetch(db):
 
 
 def test_crawl_without_long_candles(db):
-    keys = set(asyncio.run(crawl(app_ctx(db), root="/app/x", now=T0, long_candles=False)))
+    keys = set(run_crawl(db, long_candles=False))
     assert "/api/candles?symbol=MSFT&tf=1Min" in keys and "/api/candles?symbol=MSFT&tf=1Hour" in keys
     assert not [k for k in keys if "tf=1Day" in k or "tf=1Week" in k or "tf=1Month" in k]
 
@@ -140,6 +142,27 @@ def test_memo_data_filters_later_start():
     asyncio.run(memo.bars("MSFT", "1Min", T0, T0 + timedelta(hours=1)))
     later = asyncio.run(memo.bars("MSFT", "1Min", T0 + timedelta(minutes=1), T0 + timedelta(hours=1)))
     assert inner.bars_calls == 1 and [b.ts for b in later] == [T0 + timedelta(minutes=1), T0 + timedelta(minutes=2)]
+
+
+class TracedData(CountingData):
+    """Bars per call, each weakly tracked: alive after the crawl = leaked."""
+    def __init__(self):
+        super().__init__()
+        self.refs = []
+
+    async def bars(self, symbol, tf, start, end):
+        await super().bars(symbol, tf, start, end)
+        out = [Bar(symbol, start, 1, 1, 1, 1, 1)]
+        self.refs += map(weakref.ref, out)
+        return out
+
+
+def test_crawl_frees_its_bars(db):
+    """The app outlives the crawl: its data must not keep the bars (spec §Measured, Leak)."""
+    data = TracedData()
+    run_crawl(db, data)
+    gc.collect()
+    assert data.refs and not [r for r in data.refs if r() is not None]
 
 
 # ---------- push: gzip, content-addressed blobs, then one index commit ----------
@@ -250,10 +273,14 @@ class FakePusher:
 
 
 def mirror(db, p, crawls):
-    async def counting(*a, **kw):
-        crawls.append(kw.get("long_candles", True))
-        return await crawl(*a, **kw)
-    return Mirror(app_ctx(db), "/app/x", p, crawl_fn=counting)
+    m = Mirror(app_ctx(db), "/app/x", p)
+    crawler = m.crawl
+
+    async def counting(now, long_candles=True):
+        crawls.append(long_candles)
+        return await crawler(now, long_candles)
+    m.crawl = counting
+    return m
 
 
 def test_mirror_off_without_env(monkeypatch, caplog):
@@ -299,3 +326,18 @@ def test_tick_pushes_each_crawl_and_keeps_long_candles(db):
     asyncio.run(m.tick(T0 + timedelta(minutes=5)))  # nothing moved: pushed anyway, the stamp says the PC is up
     assert len(crawls) == 2 and len(p.pushes) == 2
     assert "/api/candles?symbol=MSFT&tf=1Day" in p.pushes[1][1]  # short crawl keeps the last long candles
+
+
+def test_ticks_reuse_one_app(db):
+    """An app per crawl is never freed (spec §Measured, Leak)."""
+    def apps():
+        gc.collect()
+        return sum(isinstance(o, FunctionType) and o.__qualname__ == "create_app.<locals>.index"
+                   for o in gc.get_objects())
+    m = Mirror(app_ctx(db), "/app/x", FakePusher())
+    asyncio.run(m.tick(T0))
+    before = apps()
+    assert before  # else a renamed `index` passes 0 == 0
+    for hours in (1, 2):
+        asyncio.run(m.tick(T0 + timedelta(hours=hours)))
+    assert apps() == before

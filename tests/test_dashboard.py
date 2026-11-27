@@ -1,4 +1,5 @@
 import json
+import os
 import random
 import re
 from datetime import UTC, datetime, timedelta
@@ -60,6 +61,20 @@ def test_every_script_loaded(db):
     assert sorted(SCRIPTS) == sorted(p.stem for p in (HERE / "static").glob("*.js"))
     html = client(db).get("/").text
     assert re.findall(r'src="/static/(\w+)\.js\?v=\d+"', html) == list(SCRIPTS)
+
+
+def test_js_edit_busts_cache_without_restart(db):
+    """JS is edited on a running daemon; the mirror's one app lives as long: an old ?v= keeps phones on cached code."""
+    c, core = client(db), HERE / "static" / "core.js"
+
+    def version():
+        return re.search(r'core\.js\?v=(\d+)', c.get("/").text)[1]
+    before, st = version(), core.stat()
+    try:
+        os.utime(core, ns=(st.st_atime_ns, st.st_mtime_ns + 10**10))
+        assert version() != before
+    finally:
+        os.utime(core, ns=(st.st_atime_ns, st.st_mtime_ns))
 
 
 def test_leaderboard_rows(db):
@@ -658,7 +673,7 @@ MIRROR_PAGES = ("/", "/usage", "/arm/kimi-improved")
 
 def mirror_client(db, root="/app/x"):
     clock = ReplayClock(T0 + timedelta(days=1))
-    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror=T0))
+    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror_clock=lambda: T0))
 
 
 def test_root_prefixes_every_link(db):
