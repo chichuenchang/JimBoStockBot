@@ -92,8 +92,7 @@ class MemoData:
 
 
 class Crawler:
-    """Every crawl through one app. FastAPI caches each endpoint function for good (fastapi.dependencies.models,
-    lru_cache 4096): an app per crawl kept ~157 crawls' closures and bars, 7 GB daemon (fixed 2026-11-27)."""
+    """Every crawl through one app, bars cleared after each: FastAPI never frees an app (spec §Measured, Leak)."""
 
     def __init__(self, ctx: AppContext, root: str):
         self.cfg = ctx.cfg

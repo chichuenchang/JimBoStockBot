@@ -158,7 +158,7 @@ class TracedData(CountingData):
 
 
 def test_crawl_frees_its_bars(db):
-    """FastAPI caches every endpoint function for good: a closure over the crawl's data kept its bars (7 GB daemon)."""
+    """The app outlives the crawl: its data must not keep the bars (spec §Measured, Leak)."""
     data = TracedData()
     run_crawl(db, data)
     gc.collect()
@@ -327,7 +327,7 @@ def test_tick_pushes_each_crawl_and_keeps_long_candles(db):
 
 
 def test_ticks_reuse_one_app(db):
-    """An app per crawl stays in FastAPI's endpoint cache (its closures, Jinja env): ~8 MB each, ~157 crawls kept."""
+    """An app per crawl is never freed (spec §Measured, Leak)."""
     def apps():
         gc.collect()
         return sum(isinstance(o, FunctionType) and o.__qualname__ == "create_app.<locals>.index"
