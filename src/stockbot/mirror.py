@@ -1,6 +1,6 @@
 """Read-only copy of the dashboard on Miaoda (spec docs/superpowers/specs/2026-11-24-jbsb-miaoda-mirror-design.md).
 
-crawl(): every GET the pages make, answered by a second in-process app (root = socket mount, mirror = crawl time).
+Crawler: every GET the pages make, answered by a second in-process app (root = socket mount, mirror_clock = crawl time).
 The socket serves those bodies by key; it runs no StockBot code.
 """
 from __future__ import annotations
@@ -163,11 +163,6 @@ class Crawler:
         if failed:
             log.warning("mirror crawl: %d not mirrored, e.g. %s", len(failed), failed[:3])
         return out
-
-
-async def crawl(ctx: AppContext, root: str, now: datetime, long_candles: bool = True) -> dict[str, Entry]:
-    """One-off crawl (tests). The daemon keeps one Crawler: see its docstring."""
-    return await Crawler(ctx, root)(now, long_candles)
 
 
 class Pusher:

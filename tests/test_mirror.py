@@ -19,7 +19,7 @@ import respx
 from stockbot import dashboard, interval
 from stockbot.clock import ReplayClock
 from stockbot.llm.budget import Budget
-from stockbot.mirror import Crawler, Entry, MemoData, Mirror, Pusher, crawl, key
+from stockbot.mirror import Crawler, Entry, MemoData, Mirror, Pusher, key
 from stockbot.models import BENCHMARK, Bar
 from tests.snapshot import CFG
 from tests.test_dashboard import T0, db  # noqa: F401  (fixture)
@@ -30,8 +30,8 @@ def app_ctx(db, data=None):
     return SimpleNamespace(db=db, cfg=CFG, budget=Budget(db, CFG, ReplayClock(T0 + timedelta(days=1))), data=data)
 
 
-def run_crawl(db, data=None):
-    return asyncio.run(crawl(app_ctx(db, data), root="/app/x", now=T0))
+def run_crawl(db, data=None, long_candles=True):
+    return asyncio.run(Crawler(app_ctx(db, data), "/app/x")(T0, long_candles))
 
 
 def test_key_sorts_query():
@@ -83,7 +83,7 @@ def test_crawl_covers_every_js_fetch(db):
 
 
 def test_crawl_without_long_candles(db):
-    keys = set(asyncio.run(crawl(app_ctx(db), root="/app/x", now=T0, long_candles=False)))
+    keys = set(run_crawl(db, long_candles=False))
     assert "/api/candles?symbol=MSFT&tf=1Min" in keys and "/api/candles?symbol=MSFT&tf=1Hour" in keys
     assert not [k for k in keys if "tf=1Day" in k or "tf=1Week" in k or "tf=1Month" in k]
 
