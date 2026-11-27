@@ -99,7 +99,7 @@ class Crawler:
         self.cfg = ctx.cfg
         self.data = MemoData(ctx.data) if ctx.data is not None else None
         self.now: datetime | None = None
-        self.app = create_app(ctx.db, ctx.cfg, ctx.budget, self.data, root=root, mirror=lambda: self.now)
+        self.app = create_app(ctx.db, ctx.cfg, ctx.budget, self.data, root=root, mirror_clock=lambda: self.now)
 
     async def __call__(self, now: datetime, long_candles: bool = True) -> dict[str, Entry]:
         """long_candles False: skip 1Day/1Week/1Month bars (most of the bytes, and only their last bar moves)."""

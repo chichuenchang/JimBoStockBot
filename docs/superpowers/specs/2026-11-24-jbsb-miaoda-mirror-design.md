@@ -40,7 +40,7 @@ Miaoda mounts app at `/app/<app_id>`; templates/JS use absolute `/...` (`base.ht
 
 ### Mirror flag
 
-`create_app(..., mirror: Callable[[], datetime] | None)` (crawl time getter: one app, `mirror.Crawler`, serves every crawl). Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` 404 = `get()` error "not mirrored": shown under candle chart and in decision detail; other panels fixed-key, crawl test covers them.
+`create_app(..., mirror_clock: Callable[[], datetime] | None)` (crawl time getter: one app, `mirror.Crawler`, serves every crawl). Set: `root` = socket base path, write buttons + drag hidden, banner "mirror · as of <ET time>" from push time, `/api/*` 404 = `get()` error "not mirrored": shown under candle chart and in decision detail; other panels fixed-key, crawl test covers them.
 
 ### Crawl (daemon side, new `src/stockbot/mirror.py`)
 

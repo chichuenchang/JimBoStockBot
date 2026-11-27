@@ -60,11 +60,11 @@ def _js_version() -> int:
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None, *,
-               root: str = "", mirror: Callable[[], datetime] | None = None) -> FastAPI:
-    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: current crawl's time =
+               root: str = "", mirror_clock: Callable[[], datetime] | None = None) -> FastAPI:
+    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror_clock: current crawl's time =
     read-only copy (stockbot.mirror): no controls, stamped with its age. A getter: one app serves every crawl."""
     app = FastAPI(title="StockBot", docs_url=None, redoc_url=None, openapi_url=None)
-    static = MIRROR_STATIC if mirror else "/static"
+    static = MIRROR_STATIC if mirror_clock is not None else "/static"
     app.mount(static, StaticFiles(directory=HERE / "static"), name="static")
     tpl = Jinja2Templates(directory=HERE / "templates")
     arm_names = [a.name for a in cfg.arms if a.enabled]
@@ -86,7 +86,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         return arm
 
     def page(request, name, **ctx):
-        at = mirror and mirror()
+        at = mirror_clock and mirror_clock()
         stamp = at and f"Mirror · as of {at.astimezone(ET):%H:%M ET, %b %d}"
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,

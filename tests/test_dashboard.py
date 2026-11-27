@@ -673,7 +673,7 @@ MIRROR_PAGES = ("/", "/usage", "/arm/kimi-improved")
 
 def mirror_client(db, root="/app/x"):
     clock = ReplayClock(T0 + timedelta(days=1))
-    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror=lambda: T0))
+    return TestClient(create_app(db, CFG, Budget(db, CFG, clock), root=root, mirror_clock=lambda: T0))
 
 
 def test_root_prefixes_every_link(db):
