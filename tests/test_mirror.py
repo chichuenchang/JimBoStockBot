@@ -335,6 +335,7 @@ def test_ticks_reuse_one_app(db):
     m = Mirror(app_ctx(db), "/app/x", FakePusher())
     asyncio.run(m.tick(T0))
     before = apps()
+    assert before  # else a renamed `index` passes 0 == 0
     for hours in (1, 2):
         asyncio.run(m.tick(T0 + timedelta(hours=hours)))
     assert apps() == before
