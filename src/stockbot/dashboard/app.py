@@ -54,6 +54,11 @@ def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Ba
     return history.rollup([replace(b, ts=hour(b)) for b in minutes], lambda b: b.ts)
 
 
+def _js_version() -> int:
+    """Cache-bust: new code, new URL. Per render: JS is edited on a running daemon."""
+    return int(max((HERE / "static" / f"{s}.js").stat().st_mtime for s in SCRIPTS))
+
+
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None, *,
                root: str = "", mirror: Callable[[], datetime] | None = None) -> FastAPI:
     """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: current crawl's time =
@@ -67,7 +72,6 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
     names = {a.name: a.label or a.name for a in cfg.arms}
     names[BENCHMARK] = f"{BENCHMARK.removeprefix('benchmark-')} buy & hold"  # says what it is; the id says nothing to a newcomer
     tpl.env.filters["arm_label"] = lambda arm: names.get(arm, arm)  # DB may hold arms no longer in config
-    js_version = int(max((HERE / "static" / f"{s}.js").stat().st_mtime for s in SCRIPTS))  # cache-bust: new code, new URL
 
     @app.middleware("http")
     async def same_origin_writes(request: Request, call_next):
@@ -86,7 +90,7 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
         stamp = at and f"Mirror · as of {at.astimezone(ET):%H:%M ET, %b %d}"
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
-                                                 "scripts": SCRIPTS, "js_version": js_version, "root": root, "static": root + static,
+                                                 "scripts": SCRIPTS, "js_version": _js_version(), "root": root, "static": root + static,
                                                  "mirror": at, "mirror_stamp": stamp, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
