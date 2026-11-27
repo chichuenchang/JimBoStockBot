@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -54,9 +55,9 @@ def _session_hours(minutes: list[Bar], sessions: dict[date, Session]) -> list[Ba
 
 
 def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None = None, *,
-               root: str = "", mirror: datetime | None = None) -> FastAPI:
-    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: crawl time = read-only copy
-    (stockbot.mirror): no controls, stamped with its age."""
+               root: str = "", mirror: Callable[[], datetime] | None = None) -> FastAPI:
+    """root: path prefix of every link (Miaoda mounts the mirror at /app/<id>). mirror: current crawl's time =
+    read-only copy (stockbot.mirror): no controls, stamped with its age. A getter: one app serves every crawl."""
     app = FastAPI(title="StockBot", docs_url=None, redoc_url=None, openapi_url=None)
     static = MIRROR_STATIC if mirror else "/static"
     app.mount(static, StaticFiles(directory=HERE / "static"), name="static")
@@ -75,18 +76,18 @@ def create_app(db: DB, cfg: AppConfig, budget: Budget, data: MarketData | None =
             return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
         return await call_next(request)
 
-    stamp = mirror and f"Mirror · as of {mirror.astimezone(ET):%H:%M ET, %b %d}"
-
     def known(arm: str) -> str:
         if arm not in db.accounts():
             raise HTTPException(404, f"unknown arm {arm}")
         return arm
 
     def page(request, name, **ctx):
+        at = mirror and mirror()
+        stamp = at and f"Mirror · as of {at.astimezone(ET):%H:%M ET, %b %d}"
         return tpl.TemplateResponse(request, name, {"tips": TIPS, "labels": LABELS, "series": series_order,
                                                  "arms": tab_order.get(db, arm_names), "names": names,
                                                  "scripts": SCRIPTS, "js_version": js_version, "root": root, "static": root + static,
-                                                 "mirror": mirror, "mirror_stamp": stamp, **ctx})
+                                                 "mirror": at, "mirror_stamp": stamp, **ctx})
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

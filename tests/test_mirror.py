@@ -17,7 +17,7 @@ import respx
 from stockbot import dashboard, interval
 from stockbot.clock import ReplayClock
 from stockbot.llm.budget import Budget
-from stockbot.mirror import Entry, MemoData, Mirror, Pusher, crawl, key
+from stockbot.mirror import Crawler, Entry, MemoData, Mirror, Pusher, crawl, key
 from stockbot.models import BENCHMARK, Bar
 from tests.snapshot import CFG
 from tests.test_dashboard import T0, db  # noqa: F401  (fixture)
@@ -250,9 +250,11 @@ class FakePusher:
 
 
 def mirror(db, p, crawls):
-    async def counting(*a, **kw):
-        crawls.append(kw.get("long_candles", True))
-        return await crawl(*a, **kw)
+    crawler = Crawler(app_ctx(db), "/app/x")
+
+    async def counting(now, long_candles=True):
+        crawls.append(long_candles)
+        return await crawler(now, long_candles)
     return Mirror(app_ctx(db), "/app/x", p, crawl_fn=counting)
 
 

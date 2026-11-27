@@ -85,63 +85,89 @@ class MemoData:
     async def news(self, symbols, since):
         return await self.inner.news(symbols, since)
 
+    def clear(self) -> None:
+        self._bars.clear()
+        self._calendar.clear()
+        self._prices.clear()
+
+
+class Crawler:
+    """Every crawl through one app. FastAPI caches each endpoint function for good (fastapi.dependencies.models,
+    lru_cache 4096): an app per crawl kept ~157 crawls' closures and bars, 7 GB daemon (fixed 2026-11-27)."""
+
+    def __init__(self, ctx: AppContext, root: str):
+        self.cfg = ctx.cfg
+        self.data = MemoData(ctx.data) if ctx.data is not None else None
+        self.now: datetime | None = None
+        self.app = create_app(ctx.db, ctx.cfg, ctx.budget, self.data, root=root, mirror=lambda: self.now)
+
+    async def __call__(self, now: datetime, long_candles: bool = True) -> dict[str, Entry]:
+        """long_candles False: skip 1Day/1Week/1Month bars (most of the bytes, and only their last bar moves)."""
+        self.now = now
+        try:
+            return await self._crawl(long_candles)
+        finally:
+            if self.data is not None:
+                self.data.clear()  # bars live one crawl
+
+    async def _crawl(self, long_candles: bool) -> dict[str, Entry]:
+        cfg = self.cfg
+        out: dict[str, Entry] = {}
+        failed: list[str] = []
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://mirror") as c:
+            async def get(path: str, query: str = "") -> httpx.Response | None:
+                r = await c.get(path + ("?" + query if query else ""))
+                if r.status_code != 200:
+                    failed.append(f"{path}?{query} {r.status_code}")
+                    return None
+                out[key(path, query)] = Entry(r.headers.get("content-type", ""), r.content)
+                return r
+
+            arms = [a.name for a in cfg.arms if a.enabled]
+            universe = list(cfg.settings.universe)
+            for path in ("/", "/usage", *(f"/arm/{a}" for a in arms)):
+                await get(path)
+            index, usage = (out[p].body if p in out else b"" for p in ("/", "/usage"))
+            version = (_offered(index, rb'/core\.js\?v=([^"]+)"') or [""])[0]
+            for s in SCRIPTS:
+                await get(f"{MIRROR_STATIC}/{s}.js", f"v={version}")
+            for path in ("/api/status", "/api/leaderboard", "/api/drawdown", "/api/daily_pnl", "/api/heatmap"):
+                await get(path)
+            for mode in _offered(index, rb'data-mode="([^"]+)"'):
+                await get("/api/equity", f"mode={mode}")
+            for n in _offered(index, rb'data-sessions="([^"]+)"'):
+                await get("/api/market", f"sessions={n}")
+            for span in _offered(usage, rb'data-span="([^"]+)"'):
+                await get("/api/usage", f"span={span}")
+            tfs = _offered(b"".join(re.findall(rb'<select id="tf".*?</select>', index, re.DOTALL)), rb'value="([^"]+)"')
+            for s in universe:
+                for tf in tfs if long_candles else [t for t in tfs if t in INTRADAY_SESSIONS]:
+                    await get("/api/candles", f"symbol={s}&tf={tf}")
+            for arm in arms:
+                await get("/api/equity", f"mode=usd&arms={quote(BENCHMARK + ',' + arm, safe='')}")  # arm.js pair
+                for part in ("positions", "trades", "conviction", "rejections"):
+                    await get(f"/api/arm/{arm}/{part}")
+                for s in universe:  # the bot page's chart: overview's bars + these (mostly [], one blob on the socket)
+                    await get(f"/api/arm/{arm}/fills", f"symbol={s}")
+                ids: set[int] = set()
+                for query in ("", "acted=1"):
+                    r = await get(f"/api/arm/{arm}/decisions", query)
+                    if r is not None:
+                        ids |= {d["id"] for d in r.json()}
+                for i in sorted(ids):
+                    r = await get(f"/api/decision/{i}")
+                    for chart in (r.json()["charts"] if r is not None else []):
+                        chart_query = "&".join(f"{k}={str(v).lower() if isinstance(v, bool) else v}"
+                                               for k, v in chart.items())  # as arm.js URLSearchParams sends it
+                        await get("/api/chart", chart_query)
+        if failed:
+            log.warning("mirror crawl: %d not mirrored, e.g. %s", len(failed), failed[:3])
+        return out
+
 
 async def crawl(ctx: AppContext, root: str, now: datetime, long_candles: bool = True) -> dict[str, Entry]:
-    """long_candles False: skip 1Day/1Week/1Month bars (most of the bytes, and only their last bar moves)."""
-    data = MemoData(ctx.data) if ctx.data is not None else None
-    app = create_app(ctx.db, ctx.cfg, ctx.budget, data, root=root, mirror=now)
-    cfg = ctx.cfg
-    out: dict[str, Entry] = {}
-    failed: list[str] = []
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://mirror") as c:
-        async def get(path: str, query: str = "") -> httpx.Response | None:
-            r = await c.get(path + ("?" + query if query else ""))
-            if r.status_code != 200:
-                failed.append(f"{path}?{query} {r.status_code}")
-                return None
-            out[key(path, query)] = Entry(r.headers.get("content-type", ""), r.content)
-            return r
-
-        arms = [a.name for a in cfg.arms if a.enabled]
-        universe = list(cfg.settings.universe)
-        for path in ("/", "/usage", *(f"/arm/{a}" for a in arms)):
-            await get(path)
-        index, usage = (out[p].body if p in out else b"" for p in ("/", "/usage"))
-        version = (_offered(index, rb'/core\.js\?v=([^"]+)"') or [""])[0]
-        for s in SCRIPTS:
-            await get(f"{MIRROR_STATIC}/{s}.js", f"v={version}")
-        for path in ("/api/status", "/api/leaderboard", "/api/drawdown", "/api/daily_pnl", "/api/heatmap"):
-            await get(path)
-        for mode in _offered(index, rb'data-mode="([^"]+)"'):
-            await get("/api/equity", f"mode={mode}")
-        for n in _offered(index, rb'data-sessions="([^"]+)"'):
-            await get("/api/market", f"sessions={n}")
-        for span in _offered(usage, rb'data-span="([^"]+)"'):
-            await get("/api/usage", f"span={span}")
-        tfs = _offered(b"".join(re.findall(rb'<select id="tf".*?</select>', index, re.DOTALL)), rb'value="([^"]+)"')
-        for s in universe:
-            for tf in tfs if long_candles else [t for t in tfs if t in INTRADAY_SESSIONS]:
-                await get("/api/candles", f"symbol={s}&tf={tf}")
-        for arm in arms:
-            await get("/api/equity", f"mode=usd&arms={quote(BENCHMARK + ',' + arm, safe='')}")  # arm.js pair
-            for part in ("positions", "trades", "conviction", "rejections"):
-                await get(f"/api/arm/{arm}/{part}")
-            for s in universe:  # the bot page's chart: overview's bars + these (mostly [], one blob on the socket)
-                await get(f"/api/arm/{arm}/fills", f"symbol={s}")
-            ids: set[int] = set()
-            for query in ("", "acted=1"):
-                r = await get(f"/api/arm/{arm}/decisions", query)
-                if r is not None:
-                    ids |= {d["id"] for d in r.json()}
-            for i in sorted(ids):
-                r = await get(f"/api/decision/{i}")
-                for chart in (r.json()["charts"] if r is not None else []):
-                    chart_query = "&".join(f"{k}={str(v).lower() if isinstance(v, bool) else v}"
-                                           for k, v in chart.items())  # as arm.js URLSearchParams sends it
-                    await get("/api/chart", chart_query)
-    if failed:
-        log.warning("mirror crawl: %d not mirrored, e.g. %s", len(failed), failed[:3])
-    return out
+    """One-off crawl (tests). The daemon keeps one Crawler: see its docstring."""
+    return await Crawler(ctx, root)(now, long_candles)
 
 
 class Pusher:
@@ -218,8 +244,9 @@ class Mirror:
     Long candles (crawl long_candles) only hourly; between, the last ones ride along."""
 
     def __init__(self, ctx: AppContext, root: str, pusher: Pusher,
-                 crawl_fn: Callable[..., Awaitable[dict[str, Entry]]] = crawl):
-        self.ctx, self.root, self.pusher, self.crawl = ctx, root, pusher, crawl_fn
+                 crawl_fn: Callable[..., Awaitable[dict[str, Entry]]] | None = None):
+        self.ctx, self.pusher = ctx, pusher
+        self.crawl = crawl_fn or Crawler(ctx, root)
         self.pushed: datetime | None = None
         self.long_candles_at: datetime | None = None
         self.long_candles: dict[str, Entry] = {}  # from the last crawl that took them
@@ -249,7 +276,7 @@ class Mirror:
             return
         try:
             with_long = self.long_candles_at is None or now - self.long_candles_at >= OFF_HOURS
-            entries = await self.crawl(self.ctx, root=self.root, now=now, long_candles=with_long)
+            entries = await self.crawl(now=now, long_candles=with_long)
             if with_long:
                 self.long_candles = {k: e for k, e in entries.items() if _is_long_candles(k)}
             entries = {**self.long_candles, **entries}
